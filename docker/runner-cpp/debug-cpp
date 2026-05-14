@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+echo "__RUNNER_PHASE__:compile:start" >&2
+g++ -std=gnu++20 -g -O0 -Wall -Wextra /workspace/main.cpp -o /workspace/program
+echo "__RUNNER_PHASE__:compile:done" >&2
+
+exec gdb --interpreter=mi2 --quiet --args /workspace/program "$@"

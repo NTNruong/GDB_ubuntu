@@ -1,0 +1,58 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      PORT: "4000"
+      HOST: "0.0.0.0"
+      RUNNER_BASE_URL: "http://runner:4001"
+      RUNNER_WS_URL: "ws://runner:4001"
+    expose:
+      - "4000"
+    depends_on:
+      - runner
+    restart: unless-stopped
+
+  runner:
+    build:
+      context: .
+      dockerfile: apps/runner/Dockerfile
+    environment:
+      PORT: "4001"
+      HOST: "0.0.0.0"
+      CPP_IMAGE: "internal-code-runner-cpp:0.1.0"
+      PYTHON_IMAGE: "internal-code-runner-python:0.1.0"
+      MAX_CONCURRENT_JOBS: "6"
+      RUN_TIMEOUT_MS: "30000"
+      DEBUG_MAX_MS: "900000"
+      DEBUG_IDLE_MS: "300000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "4001"
+    restart: unless-stopped
+
+  runner-cpp-image:
+    image: internal-code-runner-cpp:0.1.0
+    build:
+      context: docker/runner-cpp
+    profiles:
+      - runner-images
+
+  runner-python-image:
+    image: internal-code-runner-python:0.1.0
+    build:
+      context: docker/runner-python
+    profiles:
+      - runner-images

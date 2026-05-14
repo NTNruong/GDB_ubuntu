@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+echo "__RUNNER_PHASE__:run:start" >&2
+exec /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" python3 -I /workspace/main.py "$@" < /workspace/stdin.txt

@@ -1,0 +1,165 @@
+import websocket from "@fastify/websocket";
+import {
+  DebugCommandSchema,
+  DebugRequestSchema,
+  RunRequestSchema,
+  type DebugEvent,
+  type RunEvent
+} from "@internal/shared";
+import Fastify, { type FastifyInstance } from "fastify";
+import type WebSocket from "ws";
+import type { RunnerConfig } from "./config.js";
+import { DebugSession } from "./debugSession.js";
+import { DockerRunner } from "./dockerRunner.js";
+import { EventBuffer } from "./eventBuffer.js";
+
+type RunJob = {
+  events: EventBuffer<RunEvent>;
+};
+
+type RunnerState = {
+  activeJobs: number;
+  runJobs: Map<string, RunJob>;
+  debugSessions: Map<string, DebugSession>;
+  debugByClient: Map<string, string>;
+};
+
+export function createRunnerServer(config: RunnerConfig, dockerRunner = new DockerRunner(config)): FastifyInstance {
+  const app = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+      redact: ["req.body.source", "req.body.stdin", "req.body.argv"]
+    }
+  });
+  const state: RunnerState = {
+    activeJobs: 0,
+    runJobs: new Map(),
+    debugSessions: new Map(),
+    debugByClient: new Map()
+  };
+
+  app.register(websocket);
+
+  app.get("/health", async (_request, reply) => {
+    const readiness = await dockerRunner.readiness();
+    return reply.code(readiness.ok ? 200 : 503).send(readiness);
+  });
+
+  app.post<{ Body: unknown }>("/run", async (request, reply) => {
+    const parsed = RunRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid run request");
+    }
+
+    if (!tryAcquireJobSlot(state, config.maxConcurrentJobs)) {
+      return reply.code(429).send("Runner is busy");
+    }
+
+    const id = crypto.randomUUID();
+    const events = new EventBuffer<RunEvent>();
+    state.runJobs.set(id, { events });
+    events.emit({ type: "ready", id });
+
+    request.log.info({ jobId: id, language: parsed.data.language }, "runner accepted run job");
+    void dockerRunner.run(parsed.data, events).finally(() => {
+      releaseJobSlot(state);
+      setTimeout(() => state.runJobs.delete(id), 5 * 60_000);
+    });
+
+    return reply.code(202).send({ id });
+  });
+
+  app.post<{ Body: unknown }>("/debug", async (request, reply) => {
+    const parsed = DebugRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid debug request");
+    }
+
+    if (state.debugByClient.has(parsed.data.clientId)) {
+      return reply.code(409).send("This browser already has an active debug session");
+    }
+
+    if (!tryAcquireJobSlot(state, config.maxConcurrentJobs)) {
+      return reply.code(429).send("Runner is busy");
+    }
+
+    const events = new EventBuffer<DebugEvent>();
+    const session = new DebugSession(dockerRunner.docker, config, parsed.data, events, () => {
+      state.debugSessions.delete(session.id);
+      state.debugByClient.delete(parsed.data.clientId);
+      releaseJobSlot(state);
+    });
+
+    state.debugSessions.set(session.id, session);
+    state.debugByClient.set(parsed.data.clientId, session.id);
+    request.log.info({ debugId: session.id, language: parsed.data.language }, "runner accepted debug session");
+
+    void session.start().catch((error) => {
+      events.emit({ type: "error", message: error instanceof Error ? error.message : "Failed to start debug session" });
+      void session.close(false);
+    });
+
+    return reply.code(202).send({ id: session.id });
+  });
+
+  app.get<{ Params: { id: string } }>("/run/:id", { websocket: true }, (socket, request) => {
+    const job = state.runJobs.get(request.params.id);
+    if (!job) {
+      send(socket, { type: "error", message: "Run job not found" });
+      socket.close();
+      return;
+    }
+
+    const unsubscribe = job.events.subscribe((event) => send(socket, event));
+    socket.on("close", unsubscribe);
+  });
+
+  app.get<{ Params: { id: string } }>("/debug/:id", { websocket: true }, (socket, request) => {
+    const session = state.debugSessions.get(request.params.id);
+    if (!session) {
+      send(socket, { type: "error", message: "Debug session not found" });
+      socket.close();
+      return;
+    }
+
+    const unsubscribe = session.events.subscribe((event) => send(socket, event));
+    socket.on("message", (message) => {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(message.toString());
+      } catch {
+        send(socket, { type: "error", message: "Invalid JSON debug command" });
+        return;
+      }
+
+      const parsed = DebugCommandSchema.safeParse(payload);
+      if (!parsed.success) {
+        send(socket, { type: "error", message: parsed.error.issues[0]?.message ?? "Invalid debug command" });
+        return;
+      }
+      session.handleCommand(parsed.data);
+    });
+    socket.on("close", unsubscribe);
+  });
+
+  return app;
+}
+
+function tryAcquireJobSlot(state: RunnerState, maxConcurrentJobs: number): boolean {
+  if (state.activeJobs >= maxConcurrentJobs) {
+    return false;
+  }
+
+  state.activeJobs += 1;
+  return true;
+}
+
+function releaseJobSlot(state: RunnerState): void {
+  state.activeJobs = Math.max(0, state.activeJobs - 1);
+}
+
+function send(socket: WebSocket, event: unknown): void {
+  if (socket.readyState === socket.OPEN) {
+    socket.send(JSON.stringify(event));
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "internal-code-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run -w @internal/shared build && npm run -w @internal/api build && npm run -w @internal/runner build && npm run -w @internal/frontend build",
+    "dev": "npm run -w @internal/shared build && concurrently -n api,runner,frontend -c cyan,magenta,green \"npm run -w @internal/api dev\" \"npm run -w @internal/runner dev\" \"npm run -w @internal/frontend dev -- --host 0.0.0.0\"",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "npm run -w @internal/shared build && npm run -w @internal/api typecheck && npm run -w @internal/runner typecheck && npm run -w @internal/frontend typecheck",
+    "lint": "npm run typecheck",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.9.1",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

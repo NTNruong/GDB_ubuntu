@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+echo "__RUNNER_PHASE__:compile:start" >&2
+gcc -std=gnu17 -O2 -pipe -Wall -Wextra /workspace/main.c -o /workspace/program
+echo "__RUNNER_PHASE__:compile:done" >&2
+
+echo "__RUNNER_PHASE__:run:start" >&2
+exec /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" /workspace/program "$@" < /workspace/stdin.txt
