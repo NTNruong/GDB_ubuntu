@@ -94,6 +94,42 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
     proxyWebSocket(client, `${config.runnerWsUrl}/run/${encodeURIComponent(request.params.id)}`);
   });
 
+  app.get<{ Params: { id: string } }>("/api/run/:id/events", async (request, reply) => {
+    const controller = new AbortController();
+    reply.raw.on("close", () => controller.abort());
+
+    const response = await fetch(`${config.runnerBaseUrl}/run/${encodeURIComponent(request.params.id)}/events`, {
+      signal: controller.signal
+    });
+
+    if (!response.ok || !response.body) {
+      const text = await response.text();
+      return reply.code(response.status).send(text || "Runner event stream is unavailable");
+    }
+
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no"
+    });
+
+    try {
+      for await (const chunk of response.body) {
+        reply.raw.write(chunk);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        app.log.warn({ err: error, jobId: request.params.id }, "run event stream failed");
+      }
+    } finally {
+      reply.raw.end();
+    }
+
+    return undefined;
+  });
+
   app.get<{ Params: { id: string } }>("/api/debug/:id", { websocket: true }, (client, request) => {
     proxyWebSocket(client, `${config.runnerWsUrl}/debug/${encodeURIComponent(request.params.id)}`);
   });

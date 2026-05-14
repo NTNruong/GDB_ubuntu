@@ -57,6 +57,7 @@ export function App() {
 
   const clientIdRef = useRef(createClientId());
   const runSocket = useRef<WebSocket | null>(null);
+  const runEvents = useRef<EventSource | null>(null);
   const debugSocket = useRef<WebSocket | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
@@ -78,8 +79,10 @@ export function App() {
 
   const stopSockets = useCallback(() => {
     runSocket.current?.close();
+    runEvents.current?.close();
     debugSocket.current?.close();
     runSocket.current = null;
+    runEvents.current = null;
     debugSocket.current = null;
   }, []);
 
@@ -117,12 +120,20 @@ export function App() {
       }
 
       const { id } = (await response.json()) as { id: string };
-      const socket = new WebSocket(wsUrl(`/api/run/${id}`));
-      runSocket.current = socket;
+      const events = new EventSource(`/api/run/${id}/events`);
+      runEvents.current = events;
 
-      socket.onmessage = (event) => handleRunEvent(JSON.parse(event.data) as RunEvent);
-      socket.onclose = () => setRunStatus((current) => (current === "Running" ? "Closed" : current));
-      socket.onerror = () => setRunStatus("Connection error");
+      events.onmessage = (event) => handleRunEvent(JSON.parse(event.data) as RunEvent);
+      events.onerror = () => {
+        if (runEvents.current !== events) {
+          return;
+        }
+
+        setRunStatus("Connection error");
+        appendOutput("system", "event stream connection failed\n");
+        events.close();
+        runEvents.current = null;
+      };
     } catch (error) {
       setRunStatus("Failed");
       appendOutput("system", `${messageFromError(error)}\n`);
@@ -202,6 +213,8 @@ export function App() {
         return;
       }
       if (event.type === "exit") {
+        runEvents.current?.close();
+        runEvents.current = null;
         setRunStatus(event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
         appendOutput(
           "system",
@@ -212,6 +225,8 @@ export function App() {
         return;
       }
       if (event.type === "error") {
+        runEvents.current?.close();
+        runEvents.current = null;
         setRunStatus("Error");
         appendOutput("system", `${event.message}\n`);
       }

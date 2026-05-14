@@ -114,6 +114,49 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
     socket.on("close", unsubscribe);
   });
 
+  app.get<{ Params: { id: string } }>("/run/:id/events", (request, reply) => {
+    const job = state.runJobs.get(request.params.id);
+    if (!job) {
+      return reply.code(404).send("Run job not found");
+    }
+
+    reply.hijack();
+    reply.raw.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no"
+    });
+
+    let closed = false;
+    let unsubscribe = () => {};
+    const cleanup = () => {
+      closed = true;
+      clearInterval(heartbeat);
+      unsubscribe();
+    };
+    const writeEvent = (event: RunEvent) => {
+      if (closed) {
+        return;
+      }
+
+      reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (event.type === "exit" || event.type === "error") {
+        cleanup();
+        reply.raw.end();
+      }
+    };
+    const heartbeat = setInterval(() => {
+      if (!closed) {
+        reply.raw.write(": heartbeat\n\n");
+      }
+    }, 15_000);
+    unsubscribe = job.events.subscribe(writeEvent);
+
+    reply.raw.on("close", cleanup);
+    return undefined;
+  });
+
   app.get<{ Params: { id: string } }>("/debug/:id", { websocket: true }, (socket, request) => {
     const session = state.debugSessions.get(request.params.id);
     if (!session) {
