@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
@@ -9,6 +8,7 @@ import { MAX_OUTPUT_BYTES, type Language, type RunEvent, type RunRequest } from 
 import type { RunnerConfig } from "./config.js";
 import type { EventBuffer } from "./eventBuffer.js";
 import { PhaseFilter } from "./phaseFilter.js";
+import { createWorkspacePaths, type WorkspacePaths } from "./workspace.js";
 
 export class DockerRunner {
   readonly docker: Docker;
@@ -44,7 +44,7 @@ export class DockerRunner {
 
   async run(request: RunRequest, events: EventBuffer<RunEvent>): Promise<void> {
     const id = randomUUID();
-    const workspace = await createWorkspace(id, request);
+    const workspace = await createWorkspace(id, request, this.config);
     let outputBytes = 0;
     let outputTruncated = false;
     let timedOut = false;
@@ -84,7 +84,7 @@ export class DockerRunner {
         Env: [`RUN_TIMEOUT_SECONDS=${Math.ceil(this.config.runTimeoutMs / 1000)}`],
         HostConfig: {
           AutoRemove: false,
-          Binds: [`${workspace}:/workspace:rw`],
+          Binds: [`${workspace.hostPath}:/workspace:rw`],
           CapDrop: ["ALL"],
           Memory: this.config.memoryBytes,
           NanoCpus: this.config.nanoCpus,
@@ -145,7 +145,7 @@ export class DockerRunner {
       events.emit({ type: "error", message: error instanceof Error ? error.message : "Runner failed" });
     } finally {
       await container?.remove({ force: true }).catch(() => undefined);
-      await rm(workspace, { recursive: true, force: true }).catch(() => undefined);
+      await rm(workspace.containerPath, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -175,8 +175,9 @@ function commandForLanguage(language: Language, argv: string[]): string[] {
   return ["/usr/local/bin/run-python", ...argv];
 }
 
-async function createWorkspace(id: string, request: RunRequest): Promise<string> {
-  const root = await mkdtemp(path.join(tmpdir(), `internal-code-runner-${id}-`));
+async function createWorkspace(id: string, request: RunRequest, config: RunnerConfig): Promise<WorkspacePaths> {
+  const workspace = await createWorkspacePaths(config, `internal-code-runner-${id}-`);
+  const root = workspace.containerPath;
   await mkdir(path.join(root, "tmp"), { recursive: true });
   await writeFile(path.join(root, sourceFileName(request.language)), request.source, { mode: 0o600 });
   await writeFile(path.join(root, "stdin.txt"), request.stdin, { mode: 0o600 });
@@ -189,7 +190,7 @@ async function createWorkspace(id: string, request: RunRequest): Promise<string>
     stream.end("");
   });
 
-  return root;
+  return workspace;
 }
 
 function sourceFileName(language: Language): string {

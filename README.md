@@ -36,6 +36,8 @@ docker compose up --build -d frontend api runner
 
 Expose `http://<tailscale-ip>:8080` inside the tailnet. Do not publish this service to the public internet without adding authentication and rate limiting.
 
+The runner uses `/tmp/gdb-ubuntu-runner-workspaces` on the Ubuntu host as a temporary shared workspace for Docker child containers. The compose file creates and mounts this path automatically.
+
 ## Server Update Helper
 
 After cloning the repo to `/opt/apps/GDB_ubuntu`, update code with:

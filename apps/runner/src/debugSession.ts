@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
@@ -9,6 +8,7 @@ import type { RunnerConfig } from "./config.js";
 import type { EventBuffer } from "./eventBuffer.js";
 import { escapeMiString, parseDoneValue, parseStack, parseStopped, parseVariables, decodeMiString } from "./gdbMi.js";
 import { PhaseFilter } from "./phaseFilter.js";
+import { createWorkspacePaths, type WorkspacePaths } from "./workspace.js";
 
 type TokenMeta = {
   kind: "watch";
@@ -20,7 +20,7 @@ export class DebugSession {
   readonly events: EventBuffer<DebugEvent>;
   private container: Docker.Container | undefined;
   private stdin: NodeJS.WritableStream | undefined;
-  private workspace: string | undefined;
+  private workspace: WorkspacePaths | undefined;
   private idleTimer: NodeJS.Timeout | undefined;
   private maxTimer: NodeJS.Timeout | undefined;
   private token = 1;
@@ -55,7 +55,7 @@ export class DebugSession {
       NetworkDisabled: true,
       HostConfig: {
         AutoRemove: false,
-        Binds: [`${this.workspace}:/workspace:rw`],
+        Binds: [`${this.workspace.hostPath}:/workspace:rw`],
         CapDrop: ["ALL"],
         Memory: this.config.memoryBytes,
         NanoCpus: this.config.nanoCpus,
@@ -203,7 +203,7 @@ export class DebugSession {
     clearTimeout(this.maxTimer);
     await this.container?.remove({ force: true }).catch(() => undefined);
     if (this.workspace) {
-      await rm(this.workspace, { recursive: true, force: true }).catch(() => undefined);
+      await rm(this.workspace.containerPath, { recursive: true, force: true }).catch(() => undefined);
     }
     if (manual) {
       this.events.emit({ type: "exit", code: null, signal: "SIGTERM", timedOut: false });
@@ -211,12 +211,13 @@ export class DebugSession {
     this.onClose();
   }
 
-  private async createWorkspace(): Promise<string> {
-    const root = await mkdtemp(path.join(tmpdir(), `internal-code-debug-${this.id}-`));
+  private async createWorkspace(): Promise<WorkspacePaths> {
+    const workspace = await createWorkspacePaths(this.config, `internal-code-debug-${this.id}-`);
+    const root = workspace.containerPath;
     await mkdir(path.join(root, "tmp"), { recursive: true });
     await writeFile(path.join(root, this.request.language === "c" ? "main.c" : "main.cpp"), this.request.source, { mode: 0o600 });
     await writeFile(path.join(root, "stdin.txt"), this.request.stdin, { mode: 0o600 });
-    return root;
+    return workspace;
   }
 
   private setBreakpoints(lines: number[]): void {
