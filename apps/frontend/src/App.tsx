@@ -55,7 +55,7 @@ export function App() {
   const [rawCommand, setRawCommand] = useState("");
   const [stoppedLine, setStoppedLine] = useState<number | undefined>();
 
-  const clientIdRef = useRef(crypto.randomUUID());
+  const clientIdRef = useRef(createClientId());
   const runSocket = useRef<WebSocket | null>(null);
   const debugSocket = useRef<WebSocket | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -565,4 +565,18 @@ async function readError(response: Response): Promise<string> {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error";
+}
+
+function createClientId(): string {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+
+  if (globalThis.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
