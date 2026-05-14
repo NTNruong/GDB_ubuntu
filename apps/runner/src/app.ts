@@ -40,149 +40,151 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
 
   app.register(websocket);
 
-  app.get("/health", async (_request, reply) => {
-    const readiness = await dockerRunner.readiness();
-    return reply.code(readiness.ok ? 200 : 503).send(readiness);
-  });
-
-  app.post<{ Body: unknown }>("/run", async (request, reply) => {
-    const parsed = RunRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid run request");
-    }
-
-    if (!tryAcquireJobSlot(state, config.maxConcurrentJobs)) {
-      return reply.code(429).send("Runner is busy");
-    }
-
-    const id = crypto.randomUUID();
-    const events = new EventBuffer<RunEvent>();
-    state.runJobs.set(id, { events });
-    events.emit({ type: "ready", id });
-
-    request.log.info({ jobId: id, language: parsed.data.language }, "runner accepted run job");
-    void dockerRunner.run(parsed.data, events).finally(() => {
-      releaseJobSlot(state);
-      setTimeout(() => state.runJobs.delete(id), 5 * 60_000);
+  app.register(async (routes) => {
+    routes.get("/health", async (_request, reply) => {
+      const readiness = await dockerRunner.readiness();
+      return reply.code(readiness.ok ? 200 : 503).send(readiness);
     });
 
-    return reply.code(202).send({ id });
-  });
-
-  app.post<{ Body: unknown }>("/debug", async (request, reply) => {
-    const parsed = DebugRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid debug request");
-    }
-
-    if (state.debugByClient.has(parsed.data.clientId)) {
-      return reply.code(409).send("This browser already has an active debug session");
-    }
-
-    if (!tryAcquireJobSlot(state, config.maxConcurrentJobs)) {
-      return reply.code(429).send("Runner is busy");
-    }
-
-    const events = new EventBuffer<DebugEvent>();
-    const session = new DebugSession(dockerRunner.docker, config, parsed.data, events, () => {
-      state.debugSessions.delete(session.id);
-      state.debugByClient.delete(parsed.data.clientId);
-      releaseJobSlot(state);
-    });
-
-    state.debugSessions.set(session.id, session);
-    state.debugByClient.set(parsed.data.clientId, session.id);
-    request.log.info({ debugId: session.id, language: parsed.data.language }, "runner accepted debug session");
-
-    void session.start().catch((error) => {
-      events.emit({ type: "error", message: error instanceof Error ? error.message : "Failed to start debug session" });
-      void session.close(false);
-    });
-
-    return reply.code(202).send({ id: session.id });
-  });
-
-  app.get<{ Params: { id: string } }>("/run/:id", { websocket: true }, (socket, request) => {
-    const job = state.runJobs.get(request.params.id);
-    if (!job) {
-      send(socket, { type: "error", message: "Run job not found" });
-      socket.close();
-      return;
-    }
-
-    const unsubscribe = job.events.subscribe((event) => send(socket, event));
-    socket.on("close", unsubscribe);
-  });
-
-  app.get<{ Params: { id: string } }>("/run/:id/events", (request, reply) => {
-    const job = state.runJobs.get(request.params.id);
-    if (!job) {
-      return reply.code(404).send("Run job not found");
-    }
-
-    reply.hijack();
-    reply.raw.writeHead(200, {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-      "x-accel-buffering": "no"
-    });
-
-    let closed = false;
-    let unsubscribe = () => {};
-    const cleanup = () => {
-      closed = true;
-      clearInterval(heartbeat);
-      unsubscribe();
-    };
-    const writeEvent = (event: RunEvent) => {
-      if (closed) {
-        return;
-      }
-
-      reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-      if (event.type === "exit" || event.type === "error") {
-        cleanup();
-        reply.raw.end();
-      }
-    };
-    const heartbeat = setInterval(() => {
-      if (!closed) {
-        reply.raw.write(": heartbeat\n\n");
-      }
-    }, 15_000);
-    unsubscribe = job.events.subscribe(writeEvent);
-
-    reply.raw.on("close", cleanup);
-    return undefined;
-  });
-
-  app.get<{ Params: { id: string } }>("/debug/:id", { websocket: true }, (socket, request) => {
-    const session = state.debugSessions.get(request.params.id);
-    if (!session) {
-      send(socket, { type: "error", message: "Debug session not found" });
-      socket.close();
-      return;
-    }
-
-    const unsubscribe = session.events.subscribe((event) => send(socket, event));
-    socket.on("message", (message) => {
-      let payload: unknown;
-      try {
-        payload = JSON.parse(message.toString());
-      } catch {
-        send(socket, { type: "error", message: "Invalid JSON debug command" });
-        return;
-      }
-
-      const parsed = DebugCommandSchema.safeParse(payload);
+    routes.post<{ Body: unknown }>("/run", async (request, reply) => {
+      const parsed = RunRequestSchema.safeParse(request.body);
       if (!parsed.success) {
-        send(socket, { type: "error", message: parsed.error.issues[0]?.message ?? "Invalid debug command" });
+        return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid run request");
+      }
+
+      if (!tryAcquireJobSlot(state, config.maxConcurrentJobs)) {
+        return reply.code(429).send("Runner is busy");
+      }
+
+      const id = crypto.randomUUID();
+      const events = new EventBuffer<RunEvent>();
+      state.runJobs.set(id, { events });
+      events.emit({ type: "ready", id });
+
+      request.log.info({ jobId: id, language: parsed.data.language }, "runner accepted run job");
+      void dockerRunner.run(parsed.data, events).finally(() => {
+        releaseJobSlot(state);
+        setTimeout(() => state.runJobs.delete(id), 5 * 60_000);
+      });
+
+      return reply.code(202).send({ id });
+    });
+
+    routes.post<{ Body: unknown }>("/debug", async (request, reply) => {
+      const parsed = DebugRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid debug request");
+      }
+
+      if (state.debugByClient.has(parsed.data.clientId)) {
+        return reply.code(409).send("This browser already has an active debug session");
+      }
+
+      if (!tryAcquireJobSlot(state, config.maxConcurrentJobs)) {
+        return reply.code(429).send("Runner is busy");
+      }
+
+      const events = new EventBuffer<DebugEvent>();
+      const session = new DebugSession(dockerRunner.docker, config, parsed.data, events, () => {
+        state.debugSessions.delete(session.id);
+        state.debugByClient.delete(parsed.data.clientId);
+        releaseJobSlot(state);
+      });
+
+      state.debugSessions.set(session.id, session);
+      state.debugByClient.set(parsed.data.clientId, session.id);
+      request.log.info({ debugId: session.id, language: parsed.data.language }, "runner accepted debug session");
+
+      void session.start().catch((error) => {
+        events.emit({ type: "error", message: error instanceof Error ? error.message : "Failed to start debug session" });
+        void session.close(false);
+      });
+
+      return reply.code(202).send({ id: session.id });
+    });
+
+    routes.get<{ Params: { id: string } }>("/run/:id", { websocket: true }, (socket, request) => {
+      const job = state.runJobs.get(request.params.id);
+      if (!job) {
+        send(socket, { type: "error", message: "Run job not found" });
+        socket.close();
         return;
       }
-      session.handleCommand(parsed.data);
+
+      const unsubscribe = job.events.subscribe((event) => send(socket, event));
+      socket.on("close", unsubscribe);
     });
-    socket.on("close", unsubscribe);
+
+    routes.get<{ Params: { id: string } }>("/run/:id/events", (request, reply) => {
+      const job = state.runJobs.get(request.params.id);
+      if (!job) {
+        return reply.code(404).send("Run job not found");
+      }
+
+      reply.hijack();
+      reply.raw.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no"
+      });
+
+      let closed = false;
+      let unsubscribe = () => {};
+      const cleanup = () => {
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+      };
+      const writeEvent = (event: RunEvent) => {
+        if (closed) {
+          return;
+        }
+
+        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        if (event.type === "exit" || event.type === "error") {
+          cleanup();
+          reply.raw.end();
+        }
+      };
+      const heartbeat = setInterval(() => {
+        if (!closed) {
+          reply.raw.write(": heartbeat\n\n");
+        }
+      }, 15_000);
+      unsubscribe = job.events.subscribe(writeEvent);
+
+      reply.raw.on("close", cleanup);
+      return undefined;
+    });
+
+    routes.get<{ Params: { id: string } }>("/debug/:id", { websocket: true }, (socket, request) => {
+      const session = state.debugSessions.get(request.params.id);
+      if (!session) {
+        send(socket, { type: "error", message: "Debug session not found" });
+        socket.close();
+        return;
+      }
+
+      const unsubscribe = session.events.subscribe((event) => send(socket, event));
+      socket.on("message", (message) => {
+        let payload: unknown;
+        try {
+          payload = JSON.parse(message.toString());
+        } catch {
+          send(socket, { type: "error", message: "Invalid JSON debug command" });
+          return;
+        }
+
+        const parsed = DebugCommandSchema.safeParse(payload);
+        if (!parsed.success) {
+          send(socket, { type: "error", message: parsed.error.issues[0]?.message ?? "Invalid debug command" });
+          return;
+        }
+        session.handleCommand(parsed.data);
+      });
+      socket.on("close", unsubscribe);
+    });
   });
 
   return app;
