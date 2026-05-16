@@ -46,6 +46,14 @@ describe("DapClient", () => {
 
     await expect(responsePromise).resolves.toMatchObject({ command: "initialize", success: true });
   });
+
+  it("rejects requests that do not receive a response", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const client = new DapClient(input, output, 1);
+
+    await expect(client.request("initialize")).rejects.toThrow("DAP request 'initialize' timed out");
+  });
 });
 
 function encode(message: unknown): Buffer {

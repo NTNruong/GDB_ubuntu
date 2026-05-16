@@ -73,39 +73,46 @@ export class DapDebugSession {
 
   async start(): Promise<void> {
     this.workspace = await this.createWorkspace();
-    this.container = await this.docker.createContainer({
-      Image: imageForLanguage(this.request.language, this.config),
-      Cmd: commandForLanguage(this.request.language, this.request.argv),
-      WorkingDir: "/workspace",
-      OpenStdin: true,
-      StdinOnce: false,
-      Tty: false,
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      NetworkDisabled: true,
-      HostConfig: {
-        AutoRemove: false,
-        Binds: [`${this.workspace.hostPath}:/workspace:rw`],
-        CapDrop: ["ALL"],
-        Memory: this.config.memoryBytes,
-        NanoCpus: this.config.nanoCpus,
-        NetworkMode: "none",
-        PidsLimit: 128,
-        ReadonlyRootfs: true,
-        SecurityOpt: ["no-new-privileges"],
-        Tmpfs: {
-          "/tmp": "rw,nosuid,nodev,size=64m"
+    this.container = await withTimeout(
+      this.docker.createContainer({
+        Image: imageForLanguage(this.request.language, this.config),
+        Cmd: commandForLanguage(this.request.language, this.request.argv),
+        WorkingDir: "/workspace",
+        OpenStdin: true,
+        StdinOnce: false,
+        Tty: false,
+        AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
+        HostConfig: {
+          AutoRemove: false,
+          Binds: [`${this.workspace.hostPath}:/workspace:rw`],
+          CapDrop: ["ALL"],
+          Memory: this.config.memoryBytes,
+          NanoCpus: this.config.nanoCpus,
+          NetworkMode: "none",
+          PidsLimit: 128,
+          ReadonlyRootfs: true,
+          SecurityOpt: ["no-new-privileges"],
+          Tmpfs: {
+            "/tmp": "rw,nosuid,nodev,size=64m"
+          }
         }
-      }
-    });
+      }),
+      10_000,
+      "Timed out creating debug container"
+    );
 
-    const stream = await this.container.attach({
-      stream: true,
-      stdin: true,
-      stdout: true,
-      stderr: true
-    });
+    const stream = await withTimeout(
+      this.container.attach({
+        stream: true,
+        stdin: true,
+        stdout: true,
+        stderr: true
+      }),
+      10_000,
+      "Timed out attaching debug container"
+    );
     this.stdin = stream;
 
     const stdout = new PassThrough();
@@ -133,11 +140,8 @@ export class DapDebugSession {
     });
     this.dap.onError((error) => this.emitError(error));
 
-    await this.container.start();
+    await withTimeout(this.container.start(), 10_000, "Timed out starting debug container");
     this.resetTimers();
-
-    await this.initializeDap();
-    this.events.emit({ type: "ready", id: this.id });
 
     void this.container.wait().then((result) => {
       if (this.closed) {
@@ -147,6 +151,9 @@ export class DapDebugSession {
       this.emitExit(typeof result.StatusCode === "number" ? result.StatusCode : this.pendingExitCode, false);
       void this.close(false);
     });
+
+    await this.initializeDap();
+    this.events.emit({ type: "ready", id: this.id });
   }
 
   handleCommand(command: DebugCommand): void {
@@ -665,4 +672,20 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
 }

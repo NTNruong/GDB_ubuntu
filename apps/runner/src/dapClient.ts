@@ -30,9 +30,11 @@ type PendingRequest = {
   command: string;
   resolve: (response: DapResponse) => void;
   reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
 };
 
 const HEADER_SEPARATOR = Buffer.from("\r\n\r\n", "ascii");
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 
 export class DapClient {
   private readonly emitter = new EventEmitter();
@@ -43,7 +45,8 @@ export class DapClient {
 
   constructor(
     private readonly input: NodeJS.ReadableStream,
-    private readonly output: NodeJS.WritableStream
+    private readonly output: NodeJS.WritableStream,
+    private readonly requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS
   ) {
     this.input.on("data", (chunk: Buffer | string) => {
       this.readChunk(typeof chunk === "string" ? Buffer.from(chunk, "utf8") : chunk);
@@ -83,13 +86,18 @@ export class DapClient {
     const framed = `Content-Length: ${Buffer.byteLength(payload, "utf8")}\r\n\r\n${payload}`;
 
     return await new Promise<DapResponse>((resolve, reject) => {
-      this.pending.set(seq, { command, resolve, reject });
+      const timeout = setTimeout(() => {
+        this.pending.delete(seq);
+        reject(new Error(`DAP request '${command}' timed out after ${this.requestTimeoutMs}ms`));
+      }, this.requestTimeoutMs);
+      this.pending.set(seq, { command, resolve, reject, timeout });
       this.output.write(framed, "utf8", (error) => {
         if (!error) {
           return;
         }
 
         this.pending.delete(seq);
+        clearTimeout(timeout);
         reject(error);
       });
     });
@@ -159,6 +167,7 @@ export class DapClient {
       }
 
       this.pending.delete(message.request_seq);
+      clearTimeout(pending.timeout);
       if (message.success) {
         pending.resolve(message);
       } else {
@@ -187,6 +196,7 @@ export class DapClient {
 
   private failAll(error: Error): void {
     for (const pending of this.pending.values()) {
+      clearTimeout(pending.timeout);
       pending.reject(error);
     }
     this.pending.clear();

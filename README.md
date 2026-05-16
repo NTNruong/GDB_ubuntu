@@ -58,6 +58,28 @@ If runner image scripts or Dockerfiles changed:
 REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh
 ```
 
+## Logs
+
+View logs for all running app services:
+
+```bash
+docker compose logs -f frontend api runner
+```
+
+View logs for a single service:
+
+```bash
+docker compose logs -f runner
+docker compose logs -f api
+docker compose logs -f frontend
+```
+
+Show recent logs without following:
+
+```bash
+docker compose logs --tail=200 runner
+```
+
 ## Verification
 
 ```bash
