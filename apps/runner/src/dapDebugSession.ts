@@ -196,12 +196,14 @@ export class DapDebugSession {
       supportsVariablePaging: true
     });
 
-    const attach = this.dap.request("attach", this.attachArguments());
+    const dapCommand = this.request.language === "python" ? "attach" : "launch";
+    const connect = this.dap.request(dapCommand, this.attachArguments());
+    void connect.catch(() => {}); // prevent unhandled rejection if waitForInitialized throws first
     await this.waitForInitialized(10_000);
     await this.applyBreakpoints(this.request.breakpoints);
     await this.dap.request("configurationDone");
-    await attach.catch((error) => {
-      throw error instanceof Error ? error : new Error("DAP attach failed");
+    await connect.catch((error) => {
+      throw error instanceof Error ? error : new Error("DAP connect failed");
     });
   }
 
@@ -230,10 +232,10 @@ export class DapDebugSession {
     return {
       name: this.request.language === "c" ? "C" : "C++",
       type: "gdb",
-      request: "attach",
       program: "/tmp/program",
+      args: this.request.argv,
       cwd: "/workspace",
-      target: "127.0.0.1:2345"
+      stopAtEntry: false
     };
   }
 
