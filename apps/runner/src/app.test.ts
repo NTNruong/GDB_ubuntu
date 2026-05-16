@@ -16,7 +16,8 @@ describe("runner app", () => {
     nanoCpus: 100_000_000,
     dockerSocketPath: "/var/run/docker.sock",
     workspaceContainerRoot: "/tmp",
-    workspaceHostRoot: "/tmp"
+    workspaceHostRoot: "/tmp",
+    debugEngine: "dap"
   };
 
   it("opens debug websocket routes and reports missing sessions", async () => {

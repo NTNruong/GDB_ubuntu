@@ -17,11 +17,11 @@ describe("api app", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().languages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "cpp", debug: true }),
-        expect.objectContaining({ id: "python", debug: false })
-      ])
-    );
+        expect.arrayContaining([
+          expect.objectContaining({ id: "cpp", debug: true }),
+          expect.objectContaining({ id: "python", debug: true })
+        ])
+      );
   });
 
   it("rejects invalid run requests before the runner is called", async () => {

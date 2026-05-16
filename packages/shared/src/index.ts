@@ -19,7 +19,7 @@ export const RunRequestSchema = z.object({
 });
 
 export const DebugRequestSchema = RunRequestSchema.extend({
-  language: z.enum(["c", "cpp"]),
+  language: z.enum(["c", "cpp", "python"]),
   breakpoints: z.array(z.number().int().positive()).max(100).default([]),
   clientId: z.string().min(1).max(128)
 });
@@ -142,7 +142,7 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
     id: "python",
     label: "Python 3.12",
     run: true,
-    debug: false,
+    debug: true,
     defaultSource: [
       "import numpy as np",
       "",

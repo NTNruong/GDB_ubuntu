@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+python3 -I -m debugpy --listen 127.0.0.1:5678 --wait-for-client /workspace/main.py "$@" < /workspace/stdin.txt 1>&2 2>&2 &
+target_pid=$!
+sleep 0.5
+
+cleanup() {
+  kill "$target_pid" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+exec python3 -I -m debugpy.adapter

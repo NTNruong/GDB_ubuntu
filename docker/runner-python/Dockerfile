@@ -8,11 +8,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \
+  debugpy==1.8.20 \
   numpy==2.1.3 \
   pandas==2.2.3 \
   requests==2.32.3
 
 COPY run-python /usr/local/bin/run-python
-RUN chmod +x /usr/local/bin/run-python
+COPY debug-dap-python /usr/local/bin/debug-dap-python
+RUN chmod +x /usr/local/bin/run-python /usr/local/bin/debug-dap-python
 
 WORKDIR /workspace

@@ -10,13 +10,16 @@ RUN apt-get update \
     gcc \
     g++ \
     gdb \
+    gdbserver \
   && rm -rf /var/lib/apt/lists/*
 
 COPY run-c /usr/local/bin/run-c
 COPY run-cpp /usr/local/bin/run-cpp
 COPY debug-c /usr/local/bin/debug-c
 COPY debug-cpp /usr/local/bin/debug-cpp
+COPY debug-dap-c /usr/local/bin/debug-dap-c
+COPY debug-dap-cpp /usr/local/bin/debug-dap-cpp
 
-RUN chmod +x /usr/local/bin/run-c /usr/local/bin/run-cpp /usr/local/bin/debug-c /usr/local/bin/debug-cpp
+RUN chmod +x /usr/local/bin/run-c /usr/local/bin/run-cpp /usr/local/bin/debug-c /usr/local/bin/debug-cpp /usr/local/bin/debug-dap-c /usr/local/bin/debug-dap-cpp
 
 WORKDIR /workspace

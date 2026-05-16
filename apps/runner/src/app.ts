@@ -3,12 +3,14 @@ import {
   DebugCommandSchema,
   DebugRequestSchema,
   RunRequestSchema,
+  type DebugCommand,
   type DebugEvent,
   type RunEvent
 } from "@internal/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import type WebSocket from "ws";
 import type { RunnerConfig } from "./config.js";
+import { DapDebugSession } from "./dapDebugSession.js";
 import { DebugSession } from "./debugSession.js";
 import { DockerRunner } from "./dockerRunner.js";
 import { EventBuffer } from "./eventBuffer.js";
@@ -17,10 +19,18 @@ type RunJob = {
   events: EventBuffer<RunEvent>;
 };
 
+type DebugSessionLike = {
+  id: string;
+  events: EventBuffer<DebugEvent>;
+  start: () => Promise<void>;
+  handleCommand: (command: DebugCommand) => void;
+  close: (manual: boolean) => Promise<void>;
+};
+
 type RunnerState = {
   activeJobs: number;
   runJobs: Map<string, RunJob>;
-  debugSessions: Map<string, DebugSession>;
+  debugSessions: Map<string, DebugSessionLike>;
   debugByClient: Map<string, string>;
 };
 
@@ -85,7 +95,8 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
       }
 
       const events = new EventBuffer<DebugEvent>();
-      const session = new DebugSession(dockerRunner.docker, config, parsed.data, events, () => {
+      const createDebugSession = config.debugEngine === "mi" && parsed.data.language !== "python" ? DebugSession : DapDebugSession;
+      const session = new createDebugSession(dockerRunner.docker, config, parsed.data, events, () => {
         state.debugSessions.delete(session.id);
         state.debugByClient.delete(parsed.data.clientId);
         releaseJobSlot(state);

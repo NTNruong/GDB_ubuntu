@@ -31,19 +31,19 @@ describe("schemas", () => {
     expect(parsed.argv).toEqual([]);
   });
 
-  it("rejects Python debug requests", () => {
-    expect(() =>
-      DebugRequestSchema.parse({
-        language: "python",
-        source: "print('no')",
-        clientId: "browser"
-      })
-    ).toThrow();
+  it("accepts Python debug requests", () => {
+    const parsed = DebugRequestSchema.parse({
+      language: "python",
+      source: "print('ok')",
+      clientId: "browser"
+    });
+
+    expect(parsed.language).toBe("python");
   });
 
-  it("declares Python as run-only", () => {
+  it("declares Python as debuggable", () => {
     const python = LANGUAGE_CAPABILITIES.find((language) => language.id === "python");
     expect(python?.run).toBe(true);
-    expect(python?.debug).toBe(false);
+    expect(python?.debug).toBe(true);
   });
 });

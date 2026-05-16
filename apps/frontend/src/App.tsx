@@ -23,6 +23,7 @@ import {
   type Language,
   type RunEvent
 } from "@internal/shared";
+import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
@@ -42,7 +43,7 @@ export function App() {
   const [source, setSource] = useState(initialLanguage.defaultSource);
   const [stdin, setStdin] = useState("World\n");
   const [argvInput, setArgvInput] = useState("");
-  const [breakpointText, setBreakpointText] = useState("6");
+  const [breakpointText, setBreakpointText] = useState("");
   const [activeTab, setActiveTab] = useState<"output" | "debug">("output");
   const [runStatus, setRunStatus] = useState("Idle");
   const [debugStatus, setDebugStatus] = useState("Idle");
@@ -153,6 +154,12 @@ export function App() {
     setWatches([]);
     setStoppedLine(undefined);
     setDebugStatus("Starting");
+
+    if (breakpoints.length === 0) {
+      setDebugStatus("No breakpoints");
+      appendDebug("system", "No breakpoints set. Add a breakpoint before starting debug.\n");
+      return;
+    }
 
     let argv: string[];
     try {
@@ -407,7 +414,7 @@ export function App() {
               id="breakpoints"
               value={breakpointText}
               onChange={(event) => setBreakpointText(event.target.value)}
-              placeholder="6, 12"
+              placeholder="e.g. 6, 12"
             />
           </div>
 
@@ -497,7 +504,7 @@ export function App() {
                     setRawCommand("");
                   }}
                 >
-                  <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="gdb" />
+                  <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
                   <button type="submit">Send</button>
                 </form>
               </div>
@@ -537,30 +544,6 @@ function Inspector({ title, empty, rows }: { title: string; empty: string; rows:
       )}
     </section>
   );
-}
-
-function parseBreakpointText(value: string): number[] {
-  return Array.from(
-    new Set(
-      value
-        .split(/[,\s]+/)
-        .map((item) => Number.parseInt(item, 10))
-        .filter((item) => Number.isInteger(item) && item > 0)
-    )
-  ).sort((a, b) => a - b);
-}
-
-function toggleBreakpointText(current: string, line: number): string {
-  const currentLines = new Set(parseBreakpointText(current));
-  if (currentLines.has(line)) {
-    currentLines.delete(line);
-  } else {
-    currentLines.add(line);
-  }
-
-  return Array.from(currentLines)
-    .sort((a, b) => a - b)
-    .join(", ");
 }
 
 function wsUrl(path: string): string {

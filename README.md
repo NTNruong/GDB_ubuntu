@@ -1,12 +1,12 @@
 # Internal Online Code Runner MVP
 
-Tailnet-only code runner for C, C++, and Python with C/C++ GDB debugging.
+Tailnet-only code runner for C, C++, and Python with DAP-based debugging.
 
 ## Features
 
 - No login, no database, no server-side code persistence.
 - C `gnu17`, C++ `gnu++20`, Python 3.12.
-- C/C++ GDB debugger through a hybrid UI and raw GDB console.
+- C/C++ debugging through GDB/gdbserver and Python debugging through debugpy, bridged by DAP.
 - Docker-isolated execution with no network, CPU/RAM/time/output limits.
 - Metadata-only logging. Source, stdin, and output are not logged.
 
@@ -64,5 +64,6 @@ REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh
 npm run typecheck
 npm test
 RUN_DOCKER_TESTS=1 npm test -- apps/runner/src/dockerRunner.integration.test.ts
+RUN_DOCKER_TESTS=1 npm test -- apps/runner/src/dapDebugSession.integration.test.ts
 npm run e2e
 ```

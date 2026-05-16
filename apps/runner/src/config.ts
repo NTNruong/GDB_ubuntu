@@ -14,6 +14,7 @@ export type RunnerConfig = {
   dockerSocketPath: string;
   workspaceContainerRoot: string;
   workspaceHostRoot: string;
+  debugEngine: "dap" | "mi";
 };
 
 export function readConfig(): RunnerConfig {
@@ -30,6 +31,7 @@ export function readConfig(): RunnerConfig {
     nanoCpus: Number.parseInt(process.env.NANO_CPUS ?? "1000000000", 10),
     dockerSocketPath: process.env.DOCKER_SOCKET_PATH ?? "/var/run/docker.sock",
     workspaceContainerRoot: process.env.WORKSPACE_CONTAINER_ROOT ?? tmpdir(),
-    workspaceHostRoot: process.env.WORKSPACE_HOST_ROOT ?? process.env.WORKSPACE_CONTAINER_ROOT ?? tmpdir()
+    workspaceHostRoot: process.env.WORKSPACE_HOST_ROOT ?? process.env.WORKSPACE_CONTAINER_ROOT ?? tmpdir(),
+    debugEngine: process.env.DEBUG_ENGINE === "mi" ? "mi" : "dap"
   };
 }
