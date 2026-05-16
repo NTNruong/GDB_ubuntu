@@ -51,11 +51,13 @@ export class DockerRunner {
     let container: Docker.Container | undefined;
 
     const emitLimited = async (type: "stdout" | "stderr", data: string) => {
+      const bytes = Buffer.from(data);
       if (outputBytes >= MAX_OUTPUT_BYTES) {
+        outputTruncated = true;
+        await container?.kill().catch(() => undefined);
         return;
       }
 
-      const bytes = Buffer.from(data);
       const remaining = MAX_OUTPUT_BYTES - outputBytes;
       const chunk = bytes.length > remaining ? bytes.subarray(0, remaining).toString("utf8") : data;
       outputBytes += Buffer.byteLength(chunk);
@@ -93,6 +95,7 @@ export class DockerRunner {
           ReadonlyRootfs: true,
           SecurityOpt: ["no-new-privileges"],
           Tmpfs: {
+            "/exec": "rw,exec,nosuid,nodev,size=64m",
             "/tmp": "rw,nosuid,nodev,size=64m"
           }
         }

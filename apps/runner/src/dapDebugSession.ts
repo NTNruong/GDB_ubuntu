@@ -72,6 +72,15 @@ export class DapDebugSession {
 
   async start(): Promise<void> {
     this.workspace = await this.createWorkspace();
+    let resolveCompileDone: (() => void) | undefined;
+    const compileDone = new Promise<void>((resolve) => {
+      resolveCompileDone = resolve;
+    });
+    let resolveFirstAdapterEvent: (() => void) | undefined;
+    const firstAdapterEvent = new Promise<void>((resolve) => {
+      resolveFirstAdapterEvent = resolve;
+    });
+
     this.container = await withTimeout(
       this.docker.createContainer({
         Image: imageForLanguage(this.request.language, this.config),
@@ -95,6 +104,7 @@ export class DapDebugSession {
           ReadonlyRootfs: true,
           SecurityOpt: ["no-new-privileges"],
           Tmpfs: {
+            "/exec": "rw,exec,nosuid,nodev,size=64m",
             "/tmp": "rw,nosuid,nodev,size=64m"
           }
         }
@@ -106,6 +116,7 @@ export class DapDebugSession {
     const stream = await withTimeout(
       this.container.attach({
         stream: true,
+        hijack: true,
         stdin: true,
         stdout: true,
         stderr: true
@@ -124,6 +135,10 @@ export class DapDebugSession {
       (marker) => {
         if (marker.phase === "compile") {
           this.events.emit({ type: "compile", status: marker.status });
+          if (marker.status === "done") {
+            resolveCompileDone?.();
+            resolveCompileDone = undefined;
+          }
         }
       }
     );
@@ -134,6 +149,8 @@ export class DapDebugSession {
 
     this.dap = new DapClient(stdout, stream);
     this.dap.onEvent((event) => {
+      resolveFirstAdapterEvent?.();
+      resolveFirstAdapterEvent = undefined;
       void this.handleDapEvent(event).catch((error) => this.emitError(error));
     });
     this.dap.onError((error) => this.emitError(error));
@@ -150,7 +167,7 @@ export class DapDebugSession {
       void this.close(false);
     });
 
-    await this.initializeDap();
+    await this.initializeDap(compileDone, firstAdapterEvent);
     this.events.emit({ type: "ready", id: this.id });
   }
 
@@ -179,10 +196,12 @@ export class DapDebugSession {
     this.onClose();
   }
 
-  private async initializeDap(): Promise<void> {
+  private async initializeDap(compileDone: Promise<void>, firstAdapterEvent: Promise<void>): Promise<void> {
     if (!this.dap) {
       throw new Error("DAP client was not started");
     }
+
+    await this.waitForDebugAdapterReady(compileDone, firstAdapterEvent);
 
     await this.dap.request("initialize", {
       clientID: "gdb-ubuntu-runner",
@@ -196,12 +215,18 @@ export class DapDebugSession {
       supportsVariablePaging: true
     });
 
-    const dapCommand = this.request.language === "python" ? "attach" : "launch";
+    const dapCommand = "launch";
     const connect = this.dap.request(dapCommand, this.attachArguments());
     void connect.catch(() => {}); // prevent unhandled rejection if waitForInitialized throws first
     await this.waitForInitialized(10_000);
     await this.applyBreakpoints(this.request.breakpoints);
-    await this.dap.request("configurationDone");
+    await this.dap.request("configurationDone").catch((error) => {
+      if (this.request.language !== "python" && error instanceof Error && error.message === "notStopped") {
+        return;
+      }
+
+      throw error;
+    });
     await connect.catch((error) => {
       throw error instanceof Error ? error : new Error("DAP connect failed");
     });
@@ -212,17 +237,12 @@ export class DapDebugSession {
       return {
         name: "Python",
         type: "python",
-        request: "attach",
-        connect: {
-          host: "127.0.0.1",
-          port: 5678
-        },
-        pathMappings: [
-          {
-            localRoot: "/workspace",
-            remoteRoot: "/workspace"
-          }
-        ],
+        request: "launch",
+        program: "/workspace/__debugpy_runner.py",
+        args: ["/workspace/main.py", ...this.request.argv],
+        cwd: "/workspace",
+        console: "internalConsole",
+        python: ["python3", "-I"],
         justMyCode: false,
         subProcess: false,
         redirectOutput: true
@@ -232,7 +252,7 @@ export class DapDebugSession {
     return {
       name: this.request.language === "c" ? "C" : "C++",
       type: "gdb",
-      program: "/tmp/program",
+      program: "/exec/program",
       args: this.request.argv,
       cwd: "/workspace",
       stopAtEntry: false
@@ -258,6 +278,17 @@ export class DapDebugSession {
       };
       this.resolveInitialized = resolveInitialized;
     });
+  }
+
+  private async waitForDebugAdapterReady(compileDone: Promise<void>, firstAdapterEvent: Promise<void>): Promise<void> {
+    if (this.request.language === "python") {
+      await withTimeout(firstAdapterEvent, 5_000, "Timed out waiting for Python debug adapter to start");
+      await delay(1_000);
+      return;
+    }
+
+    await withTimeout(compileDone, 30_000, "Timed out compiling debug program");
+    await delay(100);
   }
 
   private async handleCommandAsync(command: DebugCommand): Promise<void> {
@@ -414,29 +445,33 @@ export class DapDebugSession {
       return;
     }
 
-    const scopesResponse = await this.dap.request("scopes", { frameId: this.currentFrameId });
-    const scopes = asArray(asRecord(scopesResponse.body).scopes)
-      .map(toScope)
-      .filter((scope): scope is DapScope => Boolean(scope && scope.variablesReference > 0 && !scope.expensive));
-    const variables: DebugVariable[] = [];
+    try {
+      const scopesResponse = await this.dap.request("scopes", { frameId: this.currentFrameId });
+      const scopes = asArray(asRecord(scopesResponse.body).scopes)
+        .map(toScope)
+        .filter((scope): scope is DapScope => Boolean(scope && scope.variablesReference > 0 && !scope.expensive));
+      const variables: DebugVariable[] = [];
 
-    for (const scope of scopes.slice(0, 3)) {
-      const response = await this.dap.request("variables", {
-        variablesReference: scope.variablesReference,
-        start: 0,
-        count: 100
-      });
-      const scopedVariables = asArray(asRecord(response.body).variables)
-        .map(toVariable)
-        .filter((variable): variable is DapVariable => Boolean(variable))
-        .map((variable) => ({
-          name: variable.name,
-          value: variable.value
-        }));
-      variables.push(...scopedVariables);
+      for (const scope of scopes.slice(0, 3)) {
+        const response = await this.dap.request("variables", {
+          variablesReference: scope.variablesReference,
+          start: 0,
+          count: 100
+        });
+        const scopedVariables = asArray(asRecord(response.body).variables)
+          .map(toVariable)
+          .filter((variable): variable is DapVariable => Boolean(variable))
+          .map((variable) => ({
+            name: variable.name,
+            value: variable.value
+          }));
+        variables.push(...scopedVariables);
+      }
+
+      this.events.emit({ type: "variables", variables });
+    } catch {
+      this.events.emit({ type: "variables", variables: [] });
     }
-
-    this.events.emit({ type: "variables", variables });
   }
 
   private async evaluateWatch(expression: string): Promise<void> {
@@ -522,6 +557,9 @@ export class DapDebugSession {
     await mkdir(path.join(root, "tmp"), { recursive: true });
     await writeFile(path.join(root, sourceFileName(this.request.language)), this.request.source, { mode: 0o600 });
     await writeFile(path.join(root, "stdin.txt"), this.request.stdin, { mode: 0o600 });
+    if (this.request.language === "python") {
+      await writeFile(path.join(root, "__debugpy_runner.py"), pythonDebugRunnerSource(), { mode: 0o600 });
+    }
     return workspace;
   }
 
@@ -541,11 +579,13 @@ export class DapDebugSession {
   }
 
   private async emitLimitedOutput(type: "stdout" | "stderr" | "console", data: string): Promise<void> {
+    const bytes = Buffer.from(data);
     if (this.outputBytes >= MAX_OUTPUT_BYTES) {
+      this.events.emit({ type: "error", message: "Debug output exceeded the 5MB limit" });
+      await this.close(false);
       return;
     }
 
-    const bytes = Buffer.from(data);
     const remaining = MAX_OUTPUT_BYTES - this.outputBytes;
     const chunk = bytes.length > remaining ? bytes.subarray(0, remaining).toString("utf8") : data;
     this.outputBytes += Buffer.byteLength(chunk);
@@ -601,6 +641,23 @@ function sourceFileName(language: Language): string {
 
 function sourcePath(language: Language): string {
   return `/workspace/${sourceFileName(language)}`;
+}
+
+function pythonDebugRunnerSource(): string {
+  return [
+    "import runpy",
+    "import sys",
+    "",
+    "target = sys.argv[1]",
+    "sys.argv = [target, *sys.argv[2:]]",
+    "stdin = open('/workspace/stdin.txt', 'r', encoding='utf-8', errors='replace')",
+    "try:",
+    "    sys.stdin = stdin",
+    "    runpy.run_path(target, run_name='__main__')",
+    "finally:",
+    "    stdin.close()",
+    ""
+  ].join("\n");
 }
 
 function toStackFrame(value: unknown): DapStackFrame | null {
@@ -688,4 +745,8 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
       clearTimeout(timeout);
     }
   }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

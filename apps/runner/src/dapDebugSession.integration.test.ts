@@ -48,10 +48,18 @@ maybeDescribe("DapDebugSession integration", () => {
     const events = new EventBuffer<DebugEvent>();
     const collected: DebugEvent[] = [];
     const stopped = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Timed out waiting for breakpoint")), 12_000);
+      let sawStopped = false;
+      let sawVariables = false;
+      const timeout = setTimeout(() => reject(new Error("Timed out waiting for breakpoint variables")), 12_000);
       events.subscribe((event) => {
         collected.push(event);
         if (event.type === "stopped") {
+          sawStopped = true;
+        }
+        if (event.type === "variables") {
+          sawVariables = true;
+        }
+        if (sawStopped && sawVariables) {
           clearTimeout(timeout);
           resolve();
         }

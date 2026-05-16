@@ -65,6 +65,7 @@ export class DebugSession {
         ReadonlyRootfs: true,
         SecurityOpt: ["no-new-privileges"],
         Tmpfs: {
+          "/exec": "rw,exec,nosuid,nodev,size=64m",
           "/tmp": "rw,nosuid,nodev,size=64m"
         }
       }
@@ -72,6 +73,7 @@ export class DebugSession {
 
     const stream = await this.container.attach({
       stream: true,
+      hijack: true,
       stdin: true,
       stdout: true,
       stderr: true
