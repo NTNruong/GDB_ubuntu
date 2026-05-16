@@ -57,6 +57,7 @@ export class DebugSession {
         AutoRemove: false,
         Binds: [`${this.workspace.hostPath}:/workspace:rw`],
         CapDrop: ["ALL"],
+        CapAdd: ["SYS_PTRACE"],
         Memory: this.config.memoryBytes,
         NanoCpus: this.config.nanoCpus,
         NetworkMode: "none",

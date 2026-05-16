@@ -46,7 +46,6 @@ export class DapDebugSession {
   readonly id = randomUUID();
   readonly events: EventBuffer<DebugEvent>;
   private container: Docker.Container | undefined;
-  private stdin: NodeJS.WritableStream | undefined;
   private dap: DapClient | undefined;
   private workspace: WorkspacePaths | undefined;
   private idleTimer: NodeJS.Timeout | undefined;
@@ -88,6 +87,7 @@ export class DapDebugSession {
           AutoRemove: false,
           Binds: [`${this.workspace.hostPath}:/workspace:rw`],
           CapDrop: ["ALL"],
+          CapAdd: ["SYS_PTRACE"],
           Memory: this.config.memoryBytes,
           NanoCpus: this.config.nanoCpus,
           NetworkMode: "none",
@@ -113,8 +113,6 @@ export class DapDebugSession {
       10_000,
       "Timed out attaching debug container"
     );
-    this.stdin = stream;
-
     const stdout = new PassThrough();
     const stderr = new PassThrough();
     this.docker.modem.demuxStream(stream, stdout, stderr);
@@ -233,7 +231,7 @@ export class DapDebugSession {
       name: this.request.language === "c" ? "C" : "C++",
       type: "gdb",
       request: "attach",
-      program: "/workspace/program",
+      program: "/tmp/program",
       cwd: "/workspace",
       target: "127.0.0.1:2345"
     };

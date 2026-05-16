@@ -6,10 +6,10 @@ mkdir -p /workspace/tmp
 export TMPDIR=/workspace/tmp
 
 echo "__RUNNER_PHASE__:compile:start" >&2
-g++ -std=gnu++20 -g -O0 -Wall -Wextra /workspace/main.cpp -o /workspace/program
+g++ -std=gnu++20 -g -O0 -Wall -Wextra /workspace/main.cpp -o /tmp/program
 echo "__RUNNER_PHASE__:compile:done" >&2
 
-gdbserver --once 127.0.0.1:2345 /workspace/program "$@" < /workspace/stdin.txt 1>&2 2>&2 &
+gdbserver --once 127.0.0.1:2345 /tmp/program "$@" < /workspace/stdin.txt 1>&2 2>&2 &
 target_pid=$!
 sleep 0.5
 
