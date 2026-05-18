@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"f:\\\\GDB_ubuntu\" -Recurse -Include \"*.ts\", \"*.tsx\", \"*.py\", \"Dockerfile*\", \"docker-compose.yml\", \"*.sh\" -File)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(findstr /i \"internal runner\")",
+      "PowerShell(docker compose ps --format \"table {{.Name}}`t{{.Image}}`t{{.Status}}\")"
+    ]
+  }
+}
