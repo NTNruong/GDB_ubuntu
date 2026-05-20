@@ -193,7 +193,7 @@ export function App() {
       debugSocket.current = socket;
 
       socket.onmessage = (event) => handleDebugEvent(JSON.parse(event.data) as DebugEvent);
-      socket.onclose = () => setDebugStatus((current) => (current === "Running" ? "Closed" : current));
+      socket.onclose = () => setDebugStatus((current) => (current === "Running" || current === "Starting") ? "Closed" : current);
       socket.onerror = () => setDebugStatus("Connection error");
     } catch (error) {
       setDebugStatus("Failed");
