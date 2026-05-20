@@ -6,7 +6,7 @@ mkdir -p /workspace/tmp
 export TMPDIR=/workspace/tmp
 
 echo "__RUNNER_PHASE__:compile:start" >&2
-gcc -std=gnu17 -O2 -pipe -Wall -Wextra /workspace/main.c -o /exec/program
+gcc -std=gnu17 -O2 -pipe -Wall -Wextra /workspace/main.c -o /exec/program -lm
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 echo "__RUNNER_PHASE__:run:start" >&2
