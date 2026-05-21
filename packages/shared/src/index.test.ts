@@ -46,4 +46,18 @@ describe("schemas", () => {
     expect(python?.run).toBe(true);
     expect(python?.debug).toBe(true);
   });
+
+  it("uses compact language labels and defaults to C", () => {
+    expect(LANGUAGE_CAPABILITIES.map((language) => language.id)).toEqual(["c", "cpp", "python"]);
+    expect(LANGUAGE_CAPABILITIES.map((language) => language.label)).toEqual(["C", "C++", "Python"]);
+  });
+
+  it("uses simple Hello World starter sources", () => {
+    for (const capability of LANGUAGE_CAPABILITIES) {
+      expect(capability.defaultSource).toContain("Hello World");
+      expect(capability.defaultSource).not.toContain("argc");
+      expect(capability.defaultSource).not.toContain("input()");
+      expect(capability.defaultSource).not.toContain("scanf");
+    }
+  });
 });

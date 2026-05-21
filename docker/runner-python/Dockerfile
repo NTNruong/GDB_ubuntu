@@ -4,7 +4,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends bash coreutils ca-certificates \
+  && apt-get install -y --no-install-recommends bash coreutils ca-certificates time \
   && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir \

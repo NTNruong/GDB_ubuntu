@@ -1,3 +1,5 @@
+import { findMetricMarker, parseRunMetricMarker, type RunMetric } from "./runMetrics.js";
+
 type PhaseMarker = {
   phase: "compile" | "run";
   status: "start" | "done";
@@ -10,7 +12,8 @@ export class PhaseFilter {
 
   constructor(
     private readonly onData: (data: string) => void,
-    private readonly onMarker: (marker: PhaseMarker) => void
+    private readonly onMarker: (marker: PhaseMarker) => void,
+    private readonly onMetric?: (metric: RunMetric) => void
   ) {}
 
   write(data: string): void {
@@ -32,6 +35,21 @@ export class PhaseFilter {
   }
 
   private processLine(line: string): void {
+    if (this.onMetric) {
+      const metricIndex = findMetricMarker(line);
+      if (metricIndex >= 0) {
+        const metric = parseRunMetricMarker(line.slice(metricIndex));
+        if (metric) {
+          const preceding = line.slice(0, metricIndex);
+          if (preceding.length > 0) {
+            this.onData(preceding);
+          }
+          this.onMetric(metric);
+          return;
+        }
+      }
+    }
+
     const trimmed = line.trim();
     if (trimmed.startsWith(MARKER_PREFIX)) {
       const [, phase, status] = trimmed.split(":");

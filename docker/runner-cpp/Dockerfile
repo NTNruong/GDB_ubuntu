@@ -11,6 +11,7 @@ RUN apt-get update \
     g++ \
     gdb \
     gdbserver \
+    time \
   && rm -rf /var/lib/apt/lists/*
 
 COPY run-c /usr/local/bin/run-c

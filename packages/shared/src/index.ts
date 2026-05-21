@@ -72,6 +72,7 @@ export type RunEvent =
   | { type: "ready"; id: string }
   | { type: "compile"; status: "start" | "done" }
   | { type: "run"; status: "start" }
+  | { type: "metric"; phase: "run"; elapsedMs: number; memoryBytes: number }
   | { type: "stdout"; data: string }
   | { type: "stderr"; data: string }
   | { type: "exit"; code: number | null; signal?: string | null; timedOut: boolean; outputTruncated: boolean }
@@ -106,50 +107,40 @@ export type DebugEvent =
 
 export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
   {
-    id: "cpp",
-    label: "C++20",
-    run: true,
-    debug: true,
-    defaultSource: [
-      "#include <bits/stdc++.h>",
-      "using namespace std;",
-      "",
-      "int main(int argc, char** argv) {",
-      "    string name;",
-      "    cin >> name;",
-      "    cout << \"Hello, \" << name << \"\\n\";",
-      "    return 0;",
-      "}"
-    ].join("\n")
-  },
-  {
     id: "c",
-    label: "C17",
+    label: "C",
     run: true,
     debug: true,
     defaultSource: [
       "#include <stdio.h>",
       "",
-      "int main(int argc, char** argv) {",
-      "    char name[128];",
-      "    scanf(\"%127s\", name);",
-      "    printf(\"Hello, %s\\n\", name);",
+      "int main() {",
+      "    printf(\"Hello World\\n\");",
+      "    return 0;",
+      "}"
+    ].join("\n")
+  },
+  {
+    id: "cpp",
+    label: "C++",
+    run: true,
+    debug: true,
+    defaultSource: [
+      "#include <iostream>",
+      "using namespace std;",
+      "",
+      "int main() {",
+      "    cout << \"Hello World\" << endl;",
       "    return 0;",
       "}"
     ].join("\n")
   },
   {
     id: "python",
-    label: "Python 3.12",
+    label: "Python",
     run: true,
     debug: true,
-    defaultSource: [
-      "import numpy as np",
-      "",
-      "name = input().strip()",
-      "print(f\"Hello, {name}\")",
-      "print(np.array([1, 2, 3]).sum())"
-    ].join("\n")
+    defaultSource: "print(\"Hello World\")"
   }
 ];
 

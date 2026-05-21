@@ -217,6 +217,109 @@ textarea {
   color: #f8fafc;
 }
 
+.diagnostics-panel {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  background: #0c0f12;
+}
+
+.diagnostic-section {
+  border: 1px solid #303741;
+  border-radius: 6px;
+  background: #12161b;
+  overflow: hidden;
+}
+
+.diagnostic-section + .diagnostic-section {
+  margin-top: 10px;
+}
+
+.diagnostic-section h2 {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-bottom: 1px solid #252b33;
+  color: #d6dde7;
+  font-size: 13px;
+}
+
+.diagnostic-count {
+  justify-self: end;
+  color: #9aa6b2;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.diagnostic-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(120px, auto);
+  justify-content: stretch;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid #20262d;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.diagnostic-row:hover:not(:disabled) {
+  border-color: #20262d;
+  background: #18212a;
+}
+
+.diagnostic-row:disabled {
+  opacity: 0.8;
+}
+
+.diagnostic-row:last-child {
+  border-bottom: 0;
+}
+
+.diagnostic-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.diagnostic-icon.error {
+  color: #ff7b72;
+}
+
+.diagnostic-icon.warning {
+  color: #f0c674;
+}
+
+.diagnostic-message,
+.diagnostic-location {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-message {
+  color: #eef2f7;
+}
+
+.diagnostic-location {
+  color: #9cc9ff;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 12px;
+  text-align: right;
+}
+
+.diagnostic-empty {
+  margin: 0;
+  padding: 12px;
+  color: #7d8793;
+  font-size: 13px;
+}
+
 .debug-grid {
   display: grid;
   grid-template-rows: auto minmax(150px, 1fr) auto auto;

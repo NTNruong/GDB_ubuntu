@@ -6,4 +6,26 @@ mkdir -p /workspace/tmp
 export TMPDIR=/workspace/tmp
 
 echo "__RUNNER_PHASE__:run:start" >&2
-exec /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" python3 -I /workspace/main.py "$@" < /workspace/stdin.txt
+run_with_metrics() {
+  local metric_file="/workspace/tmp/run-metrics.txt"
+  rm -f "$metric_file"
+
+  set +e
+  /usr/bin/time -f "elapsed_seconds=%e\nmax_rss_kb=%M" -o "$metric_file" \
+    /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" "$@" < /workspace/stdin.txt
+  local exit_code=$?
+  set -e
+
+  if [[ -s "$metric_file" ]]; then
+    local elapsed_seconds max_rss_kb
+    elapsed_seconds="$(sed -n 's/^elapsed_seconds=//p' "$metric_file" | tail -n 1)"
+    max_rss_kb="$(sed -n 's/^max_rss_kb=//p' "$metric_file" | tail -n 1)"
+    if [[ -n "$elapsed_seconds" && -n "$max_rss_kb" ]]; then
+      printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" "$elapsed_seconds" "$max_rss_kb" >&2
+    fi
+  fi
+
+  return "$exit_code"
+}
+
+run_with_metrics python3 -I /workspace/main.py "$@"

@@ -116,6 +116,9 @@ export class DockerRunner {
           } else {
             events.emit({ type: "run", status: "start" });
           }
+        },
+        (metric) => {
+          events.emit({ type: "metric", phase: metric.phase, elapsedMs: metric.elapsedMs, memoryBytes: metric.memoryBytes });
         }
       );
 

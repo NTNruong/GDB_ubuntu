@@ -22,6 +22,7 @@ maybeDescribe("DockerRunner integration", () => {
 
     expect(text(events, "stdout")).toContain("hi ada");
     expect(exit(events)?.code).toBe(0);
+    expect(metric(events)).toBeDefined();
   });
 
   it("runs C++ code with bits/stdc++.h", async () => {
@@ -34,6 +35,7 @@ maybeDescribe("DockerRunner integration", () => {
 
     expect(text(events, "stdout")).toContain("3");
     expect(exit(events)?.code).toBe(0);
+    expect(metric(events)).toBeDefined();
   });
 
   it("runs Python with practical packages", async () => {
@@ -46,6 +48,20 @@ maybeDescribe("DockerRunner integration", () => {
 
     expect(text(events, "stdout")).toContain("6");
     expect(exit(events)?.code).toBe(0);
+    expect(metric(events)).toBeDefined();
+  });
+
+  it("emits run metrics for non-zero exits after execution starts", async () => {
+    const events = await run({
+      language: "c",
+      source: '#include <stdio.h>\nint main(){ puts("before exit"); return 7; }',
+      stdin: "",
+      argv: []
+    });
+
+    expect(text(events, "stdout")).toContain("before exit");
+    expect(exit(events)?.code).toBe(7);
+    expect(metric(events)).toBeDefined();
   });
 
   it("times out infinite loops", async () => {
@@ -89,4 +105,8 @@ function text(events: RunEvent[], type: "stdout" | "stderr"): string {
 
 function exit(events: RunEvent[]): Extract<RunEvent, { type: "exit" }> | undefined {
   return events.find((event): event is Extract<RunEvent, { type: "exit" }> => event.type === "exit");
+}
+
+function metric(events: RunEvent[]): Extract<RunEvent, { type: "metric" }> | undefined {
+  return events.find((event): event is Extract<RunEvent, { type: "metric" }> => event.type === "metric");
 }

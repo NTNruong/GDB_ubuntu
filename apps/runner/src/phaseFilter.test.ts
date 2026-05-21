@@ -16,4 +16,19 @@ describe("PhaseFilter", () => {
     expect(data).toEqual(["warning\n"]);
     expect(markers).toEqual(["compile:start", "compile:done"]);
   });
+
+  it("emits run metric markers without forwarding them as stderr", () => {
+    const data: string[] = [];
+    const metrics: string[] = [];
+    const filter = new PhaseFilter(
+      (chunk) => data.push(chunk),
+      () => undefined,
+      (metric) => metrics.push(`${metric.elapsedMs}:${metric.memoryBytes}`)
+    );
+
+    filter.write("partial stderr__RUNNER_METRIC__:run:elapsed_seconds=0.123:max_rss_kb=4\n");
+
+    expect(data).toEqual(["partial stderr"]);
+    expect(metrics).toEqual([`123:${4 * 1024}`]);
+  });
 });

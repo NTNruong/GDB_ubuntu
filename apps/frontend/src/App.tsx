@@ -3,6 +3,7 @@ import {
   Bug,
   ChevronRight,
   CircleStop,
+  CircleX,
   ListTree,
   Pause,
   Play,
@@ -10,6 +11,7 @@ import {
   SkipForward,
   StepForward,
   Terminal,
+  TriangleAlert,
   Variable
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,11 +26,16 @@ import {
   type RunEvent
 } from "@internal/shared";
 import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
+import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
+import { formatRunMetric } from "./runMetrics";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
   text: string;
 };
+
+type ActiveTab = "output" | "errors" | "debug";
+type RunPhase = "idle" | "compile" | "run";
 
 type WatchValue = {
   expression: string;
@@ -41,13 +48,14 @@ const initialLanguage = LANGUAGE_CAPABILITIES[0]!;
 export function App() {
   const [language, setLanguage] = useState<Language>(initialLanguage.id);
   const [source, setSource] = useState(initialLanguage.defaultSource);
-  const [stdin, setStdin] = useState("World\n");
+  const [stdin, setStdin] = useState("");
   const [argvInput, setArgvInput] = useState("");
   const [breakpointText, setBreakpointText] = useState("");
-  const [activeTab, setActiveTab] = useState<"output" | "debug">("output");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("output");
   const [runStatus, setRunStatus] = useState("Idle");
   const [debugStatus, setDebugStatus] = useState("Idle");
   const [output, setOutput] = useState<TerminalLine[]>([]);
+  const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [debugConsole, setDebugConsole] = useState<TerminalLine[]>([]);
   const [variables, setVariables] = useState<DebugVariable[]>([]);
   const [frames, setFrames] = useState<DebugFrame[]>([]);
@@ -59,6 +67,8 @@ export function App() {
   const clientIdRef = useRef(createClientId());
   const runSocket = useRef<WebSocket | null>(null);
   const runEvents = useRef<EventSource | null>(null);
+  const runPhaseRef = useRef<RunPhase>("idle");
+  const runLanguageRef = useRef<Language>(initialLanguage.id);
   const debugSocket = useRef<WebSocket | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
@@ -93,12 +103,52 @@ export function App() {
     }
   }, []);
 
+  const jumpToDiagnostic = useCallback((diagnostic: Diagnostic) => {
+    if (!diagnostic.line) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    if (!editor) {
+      return;
+    }
+
+    editor.focus();
+    editor.revealLineInCenter(diagnostic.line);
+    editor.setPosition({ lineNumber: diagnostic.line, column: diagnostic.column ?? 1 });
+  }, []);
+
+  const appendRunStderr = useCallback(
+    (data: string) => {
+      const shouldParseDiagnostics = runPhaseRef.current === "compile" && runLanguageRef.current !== "python";
+
+      if (!shouldParseDiagnostics) {
+        appendOutput("stderr", data);
+        return;
+      }
+
+      const parsed = parseCompilerDiagnostics(data);
+      if (parsed.length > 0) {
+        setDiagnostics((current) => [...current, ...parsed]);
+        return;
+      }
+
+      if (!isCompilerDiagnosticContext(data)) {
+        appendOutput("stderr", data);
+      }
+    },
+    [appendOutput]
+  );
+
   const startRun = useCallback(async () => {
     stopSockets();
     setActiveTab("output");
     setOutput([]);
+    setDiagnostics([]);
     setRunStatus("Starting");
     setStoppedLine(undefined);
+    runPhaseRef.current = "idle";
+    runLanguageRef.current = language;
 
     let argv: string[];
     try {
@@ -208,20 +258,31 @@ export function App() {
         return;
       }
       if (event.type === "compile") {
+        runPhaseRef.current = event.status === "start" ? "compile" : "idle";
         appendOutput("system", `compile ${event.status}\n`);
         return;
       }
       if (event.type === "run") {
+        runPhaseRef.current = "run";
         appendOutput("system", "run start\n");
         return;
       }
-      if (event.type === "stdout" || event.type === "stderr") {
-        appendOutput(event.type, event.data);
+      if (event.type === "stdout") {
+        appendOutput("stdout", event.data);
+        return;
+      }
+      if (event.type === "stderr") {
+        appendRunStderr(event.data);
+        return;
+      }
+      if (event.type === "metric") {
+        appendOutput("system", `${formatRunMetric(event)}\n`);
         return;
       }
       if (event.type === "exit") {
         runEvents.current?.close();
         runEvents.current = null;
+        runPhaseRef.current = "idle";
         setRunStatus(event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
         appendOutput(
           "system",
@@ -234,11 +295,12 @@ export function App() {
       if (event.type === "error") {
         runEvents.current?.close();
         runEvents.current = null;
+        runPhaseRef.current = "idle";
         setRunStatus("Error");
         appendOutput("system", `${event.message}\n`);
       }
     },
-    [appendOutput]
+    [appendOutput, appendRunStderr]
   );
 
   const handleDebugEvent = useCallback(
@@ -423,14 +485,21 @@ export function App() {
               <button className={activeTab === "output" ? "selected" : ""} onClick={() => setActiveTab("output")}>
                 Output
               </button>
+              <button className={activeTab === "errors" ? "selected" : ""} onClick={() => setActiveTab("errors")}>
+                Error List
+              </button>
               <button className={activeTab === "debug" ? "selected" : ""} onClick={() => setActiveTab("debug")}>
                 Debug
               </button>
             </div>
 
-            {activeTab === "output" ? (
+            {activeTab === "output" && (
               <TerminalView lines={output} />
-            ) : (
+            )}
+            {activeTab === "errors" && (
+              <DiagnosticsPanel diagnostics={diagnostics} onSelect={jumpToDiagnostic} />
+            )}
+            {activeTab === "debug" && (
               <div className="debug-grid">
                 <div className="debug-toolbar">
                   <button onClick={() => sendDebug({ type: "continue" })} title="Continue">
@@ -516,6 +585,71 @@ export function App() {
   );
 }
 
+function DiagnosticsPanel({ diagnostics, onSelect }: { diagnostics: Diagnostic[]; onSelect: (diagnostic: Diagnostic) => void }) {
+  const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+  const warnings = diagnostics.filter((diagnostic) => diagnostic.severity === "warning");
+
+  if (diagnostics.length === 0) {
+    return (
+      <div className="diagnostics-panel">
+        <p className="diagnostic-empty">No errors or warnings</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="diagnostics-panel">
+      <DiagnosticSection title="Errors" severity="error" diagnostics={errors} onSelect={onSelect} />
+      <DiagnosticSection title="Warnings" severity="warning" diagnostics={warnings} onSelect={onSelect} />
+    </div>
+  );
+}
+
+function DiagnosticSection({
+  title,
+  severity,
+  diagnostics,
+  onSelect
+}: {
+  title: string;
+  severity: Diagnostic["severity"];
+  diagnostics: Diagnostic[];
+  onSelect: (diagnostic: Diagnostic) => void;
+}) {
+  const Icon = severity === "error" ? CircleX : TriangleAlert;
+
+  return (
+    <section className="diagnostic-section">
+      <h2>
+        <span className={`diagnostic-icon ${severity}`}>
+          <Icon size={16} />
+        </span>
+        {title}
+        <span className="diagnostic-count">{diagnostics.length}</span>
+      </h2>
+      {diagnostics.length === 0 ? (
+        <p className="diagnostic-empty">None</p>
+      ) : (
+        diagnostics.map((diagnostic, index) => (
+          <button
+            type="button"
+            className="diagnostic-row"
+            key={`${diagnostic.raw}-${index}`}
+            onClick={() => onSelect(diagnostic)}
+            disabled={!diagnostic.line}
+          >
+            <span className={`diagnostic-icon ${severity}`}>
+              <Icon size={15} />
+            </span>
+            <span className="diagnostic-message">{diagnostic.message}</span>
+            <span className="diagnostic-location">{formatDiagnosticLocation(diagnostic)}</span>
+          </button>
+        ))
+      )}
+    </section>
+  );
+}
+
 function TerminalView({ lines, compact = false }: { lines: TerminalLine[]; compact?: boolean }) {
   return (
     <pre className={compact ? "terminal compact" : "terminal"} aria-live="polite">
@@ -544,6 +678,15 @@ function Inspector({ title, empty, rows }: { title: string; empty: string; rows:
       )}
     </section>
   );
+}
+
+function formatDiagnosticLocation(diagnostic: Diagnostic): string {
+  const file = diagnostic.file?.replace(/^\/workspace\//, "") ?? "source";
+  if (!diagnostic.line) {
+    return file;
+  }
+
+  return `${file}:${diagnostic.line}${diagnostic.column ? `:${diagnostic.column}` : ""}`;
 }
 
 function wsUrl(path: string): string {
