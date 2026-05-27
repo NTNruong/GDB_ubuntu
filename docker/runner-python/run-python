@@ -7,22 +7,26 @@ export TMPDIR=/workspace/tmp
 
 echo "__RUNNER_PHASE__:run:start" >&2
 run_with_metrics() {
-  local metric_file="/workspace/tmp/run-metrics.txt"
-  rm -f "$metric_file"
+  local rss_file="/workspace/tmp/run-rss.txt"
+  rm -f "$rss_file"
+
+  local start_ns
+  start_ns=$(date +%s%N)
 
   set +e
-  /usr/bin/time -f "elapsed_seconds=%e\nmax_rss_kb=%M" -o "$metric_file" \
+  /usr/bin/time -f "max_rss_kb=%M" -o "$rss_file" \
     /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" "$@" < /workspace/stdin.txt
   local exit_code=$?
   set -e
 
-  if [[ -s "$metric_file" ]]; then
-    local elapsed_seconds max_rss_kb
-    elapsed_seconds="$(sed -n 's/^elapsed_seconds=//p' "$metric_file" | tail -n 1)"
-    max_rss_kb="$(sed -n 's/^max_rss_kb=//p' "$metric_file" | tail -n 1)"
-    if [[ -n "$elapsed_seconds" && -n "$max_rss_kb" ]]; then
-      printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" "$elapsed_seconds" "$max_rss_kb" >&2
-    fi
+  local end_ns elapsed_ms max_rss_kb
+  end_ns=$(date +%s%N)
+  elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+  max_rss_kb="$(sed -n 's/^max_rss_kb=//p' "$rss_file" 2>/dev/null | tail -n 1)"
+
+  if [[ -n "$max_rss_kb" ]]; then
+    printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" \
+      "$(echo "scale=3; $elapsed_ms / 1000" | bc)" "$max_rss_kb" >&2
   fi
 
   return "$exit_code"

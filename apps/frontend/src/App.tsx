@@ -130,6 +130,7 @@ export function App() {
       const parsed = parseCompilerDiagnostics(data);
       if (parsed.length > 0) {
         setDiagnostics((current) => [...current, ...parsed]);
+        setActiveTab("errors");
         return;
       }
 
@@ -259,12 +260,12 @@ export function App() {
       }
       if (event.type === "compile") {
         runPhaseRef.current = event.status === "start" ? "compile" : "idle";
-        appendOutput("system", `compile ${event.status}\n`);
+        appendOutput("system", event.status === "start" ? "⟳ Compiling...\n" : "✓ Compiled\n");
         return;
       }
       if (event.type === "run") {
         runPhaseRef.current = "run";
-        appendOutput("system", "run start\n");
+        appendOutput("system", "▶ Running\n");
         return;
       }
       if (event.type === "stdout") {
@@ -284,12 +285,14 @@ export function App() {
         runEvents.current = null;
         runPhaseRef.current = "idle";
         setRunStatus(event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
-        appendOutput(
-          "system",
-          `\nprocess exited with code ${event.code ?? "unknown"}${event.timedOut ? " (timeout)" : ""}${
-            event.outputTruncated ? " (output truncated)" : ""
-          }\n`
-        );
+        const truncatedSuffix = event.outputTruncated ? " (output truncated)" : "";
+        if (event.timedOut) {
+          appendOutput("system", `\n⚠ Timed out${truncatedSuffix}\n`);
+        } else if (event.code === 0) {
+          appendOutput("system", `\n✓ Finished${truncatedSuffix}\n`);
+        } else {
+          appendOutput("system", `\n✗ Exited with code ${event.code ?? "unknown"}${truncatedSuffix}\n`);
+        }
         return;
       }
       if (event.type === "error") {
@@ -310,7 +313,7 @@ export function App() {
         return;
       }
       if (event.type === "compile") {
-        appendDebug("system", `compile ${event.status}\n`);
+        appendDebug("system", event.status === "start" ? "⟳ Compiling...\n" : "✓ Compiled\n");
         return;
       }
       if (event.type === "stdout" || event.type === "stderr" || event.type === "console") {

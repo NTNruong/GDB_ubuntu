@@ -67,6 +67,10 @@ Runner: `CPP_IMAGE`, `PYTHON_IMAGE`, `MAX_CONCURRENT_JOBS`, `RUN_TIMEOUT_MS`, `D
 
 API: `RUNNER_BASE_URL` (HTTP) and `RUNNER_WS_URL` (WebSocket) must point at the same runner instance.
 
+## Windows development environment
+
+Dev on Windows uses Docker Desktop with the WSL2 backend. Run all commands (`npm install`, `npm run dev`, etc.) from a WSL2 terminal — not PowerShell or CMD. No config changes needed; paths like `/var/run/docker.sock` and `/tmp/...` work normally inside WSL2.
+
 ## Conventions to be aware of
 
 - TypeScript strict + `noUncheckedIndexedAccess` (see [tsconfig.base.json](tsconfig.base.json)). Array/Record indexing returns `T | undefined`; handle it.
