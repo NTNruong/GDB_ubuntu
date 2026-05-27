@@ -12,3 +12,5 @@ ISSUES.md
 *.md~
 update-*.md
 .claude/
+QC_TEST_CASES.md
+QC_TEST_CASES.pdf

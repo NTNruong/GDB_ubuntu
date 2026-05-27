@@ -1,15 +1,16 @@
 import Editor, { type OnMount } from "@monaco-editor/react";
 import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
   Bug,
-  ChevronRight,
-  CircleStop,
   CircleX,
   ListTree,
+  MoreHorizontal,
   Pause,
   Play,
   RotateCcw,
   SkipForward,
-  StepForward,
+  Square,
   Terminal,
   TriangleAlert,
   Variable
@@ -65,6 +66,8 @@ export function App() {
   const [stoppedLine, setStoppedLine] = useState<number | undefined>();
   const [isRunActive, setIsRunActive] = useState(false);
   const [isDebugActive, setIsDebugActive] = useState(false);
+  const [runElapsed, setRunElapsed] = useState(0);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
 
   const clientIdRef = useRef(createClientId());
   const runSocket = useRef<WebSocket | null>(null);
@@ -75,12 +78,16 @@ export function App() {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const decorationIds = useRef<string[]>([]);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   const capability = useMemo(
     () => LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage,
     [language]
   );
   const breakpoints = useMemo(() => parseBreakpointText(breakpointText), [breakpointText]);
+
+  const isDebugRunning = isDebugActive && debugStatus === "Running";
+  const isDebugStopped = isDebugActive && debugStatus !== "Running" && debugStatus !== "Starting";
 
   const appendOutput = useCallback((stream: TerminalLine["stream"], text: string) => {
     setOutput((current) => [...current, { stream, text }]);
@@ -102,6 +109,13 @@ export function App() {
   const handleStop = useCallback(() => {
     const stoppingRun = runSocket.current !== null || runEvents.current !== null;
     const stoppingDebug = debugSocket.current !== null;
+    if (stoppingDebug && debugSocket.current?.readyState === WebSocket.OPEN) {
+      try {
+        debugSocket.current.send(JSON.stringify({ type: "stop" }));
+      } catch {
+        // Runner ws-close handler sẽ cleanup nếu send fail
+      }
+    }
     stopSockets();
     if (stoppingRun) {
       setRunStatus("Stopped");
@@ -120,6 +134,16 @@ export function App() {
       debugSocket.current.send(JSON.stringify(command));
     }
   }, []);
+
+  const startDebugRef = useRef<() => Promise<void>>(async () => {});
+
+  const handleRestart = useCallback(async () => {
+    if (!isDebugActive) return;
+    setIsMoreMenuOpen(false);
+    handleStop();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await startDebugRef.current();
+  }, [isDebugActive, handleStop]);
 
   const jumpToDiagnostic = useCallback((diagnostic: Diagnostic) => {
     if (!diagnostic.line) {
@@ -288,6 +312,21 @@ export function App() {
     }
   }, [appendDebug, argvInput, breakpoints, capability.debug, language, source, stdin, stopSockets]);
 
+  useEffect(() => {
+    startDebugRef.current = startDebug;
+  }, [startDebug]);
+
+  useEffect(() => {
+    if (!isMoreMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMoreMenuOpen]);
+
   const handleRunEvent = useCallback(
     (event: RunEvent) => {
       if (event.type === "ready") {
@@ -447,6 +486,18 @@ export function App() {
 
   useEffect(() => () => stopSockets(), [stopSockets]);
 
+  useEffect(() => {
+    if (!isRunActive) {
+      setRunElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    const interval = setInterval(() => {
+      setRunElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRunActive]);
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -485,10 +536,16 @@ export function App() {
           <Bug size={16} />
           <span>Debug</span>
         </button>
-        <button type="button" onClick={handleStop} title="Stop">
-          <CircleStop size={16} />
+        <button type="button" data-testid="btn-topbar-stop" onClick={handleStop} title="Stop">
+          <Square size={16} fill="currentColor" />
         </button>
-        <span className="status-pill">{activeTab === "debug" ? debugStatus : runStatus}</span>
+        <span className={`status-pill${isRunActive && runElapsed >= 3 ? " running-long" : ""}`}>
+          {activeTab === "debug"
+            ? debugStatus
+            : isRunActive && runElapsed >= 3
+              ? `Running ${runElapsed}s…`
+              : runStatus}
+        </span>
       </header>
 
       <main className="workspace">
@@ -547,30 +604,74 @@ export function App() {
             {activeTab === "debug" && (
               <div className="debug-grid">
                 <div className="debug-toolbar">
-                  <button aria-label="Continue" onClick={() => sendDebug({ type: "continue" })} title="Continue">
-                    <ChevronRight size={15} />
-                  </button>
-                  <button aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
-                    <Pause size={15} />
-                  </button>
-                  <button aria-label="Step over" onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
-                    <StepForward size={15} />
-                  </button>
-                  <button aria-label="Step into" onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
-                    <SkipForward size={15} />
-                  </button>
-                  <button aria-label="Step out" onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
-                    <RotateCcw size={15} />
-                  </button>
-                  <button aria-label="Variables" onClick={() => sendDebug({ type: "variables" })} title="Variables">
-                    <Variable size={15} />
-                  </button>
-                  <button aria-label="Stack" onClick={() => sendDebug({ type: "stack" })} title="Stack">
-                    <ListTree size={15} />
-                  </button>
-                  <button aria-label="Stop" onClick={() => sendDebug({ type: "stop" })} title="Stop">
-                    <CircleStop size={15} />
-                  </button>
+                  <div className="debug-group">
+                    {isDebugRunning ? (
+                      <button aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
+                        <Pause size={15} fill="currentColor" />
+                      </button>
+                    ) : (
+                      <button aria-label="Continue" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "continue" })} title="Continue">
+                        <Play size={15} fill="currentColor" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="debug-group">
+                    <button aria-label="Step over" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
+                      <SkipForward size={15} fill="currentColor" />
+                    </button>
+                    <button aria-label="Step into" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
+                      <ArrowDownToLine size={15} />
+                    </button>
+                    <button aria-label="Step out" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
+                      <ArrowUpFromLine size={15} />
+                    </button>
+                  </div>
+                  <div className="debug-group">
+                    <button aria-label="Restart" disabled={!isDebugActive} onClick={handleRestart} title="Restart">
+                      <RotateCcw size={15} />
+                    </button>
+                    <button aria-label="Stop" disabled={!isDebugActive} onClick={() => sendDebug({ type: "stop" })} title="Stop">
+                      <Square size={15} fill="currentColor" className="icon-stop" />
+                    </button>
+                  </div>
+                  <div className="debug-group debug-more" ref={moreMenuRef}>
+                    <button
+                      aria-label="More"
+                      aria-haspopup="menu"
+                      aria-expanded={isMoreMenuOpen}
+                      disabled={!isDebugActive}
+                      onClick={() => setIsMoreMenuOpen((open) => !open)}
+                      title="More"
+                    >
+                      <MoreHorizontal size={15} />
+                    </button>
+                    {isMoreMenuOpen && (
+                      <div className="debug-more-menu" role="menu">
+                        <button
+                          role="menuitem"
+                          disabled={!isDebugStopped}
+                          onClick={() => {
+                            sendDebug({ type: "variables" });
+                            setIsMoreMenuOpen(false);
+                          }}
+                        >
+                          <Variable size={14} />
+                          <span>Variables</span>
+                        </button>
+                        <button
+                          role="menuitem"
+                          disabled={!isDebugStopped}
+                          onClick={() => {
+                            sendDebug({ type: "stack" });
+                            setIsMoreMenuOpen(false);
+                          }}
+                        >
+                          <ListTree size={14} />
+                          <span>Call Stack</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <TerminalView lines={debugConsole} compact />

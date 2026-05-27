@@ -35,6 +35,7 @@ export class DebugSession {
     private readonly config: RunnerConfig,
     private readonly request: DebugRequest,
     events: EventBuffer<DebugEvent>,
+    private readonly onCloseStart: () => void,
     private readonly onClose: () => void
   ) {
     this.events = events;
@@ -59,6 +60,7 @@ export class DebugSession {
         CapDrop: ["ALL"],
         CapAdd: ["SYS_PTRACE"],
         Memory: this.config.memoryBytes,
+        MemorySwap: this.config.memoryBytes,
         NanoCpus: this.config.nanoCpus,
         NetworkMode: "none",
         PidsLimit: 128,
@@ -202,6 +204,7 @@ export class DebugSession {
     }
 
     this.closed = true;
+    this.onCloseStart();
     clearTimeout(this.idleTimer);
     clearTimeout(this.maxTimer);
     await this.container?.remove({ force: true }).catch(() => undefined);

@@ -99,6 +99,7 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
       const session = new createDebugSession(dockerRunner.docker, config, parsed.data, events, () => {
         state.debugSessions.delete(session.id);
         state.debugByClient.delete(parsed.data.clientId);
+      }, () => {
         releaseJobSlot(state);
       });
 
@@ -194,7 +195,10 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
         }
         session.handleCommand(parsed.data);
       });
-      socket.on("close", unsubscribe);
+      socket.on("close", () => {
+        unsubscribe();
+        void session.close(false);
+      });
     });
   });
 

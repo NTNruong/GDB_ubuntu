@@ -34,7 +34,7 @@ services:
       CPP_IMAGE: "internal-code-runner-cpp:0.1.0"
       PYTHON_IMAGE: "internal-code-runner-python:0.1.0"
       MAX_CONCURRENT_JOBS: "6"
-      RUN_TIMEOUT_MS: "30000"
+      RUN_TIMEOUT_MS: "15000"
       DEBUG_MAX_MS: "900000"
       DEBUG_IDLE_MS: "300000"
       DEBUG_ENGINE: "dap"

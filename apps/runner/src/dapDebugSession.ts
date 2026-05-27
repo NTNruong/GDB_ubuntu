@@ -66,6 +66,7 @@ export class DapDebugSession {
     private readonly config: RunnerConfig,
     private readonly request: DebugRequest,
     events: EventBuffer<DebugEvent>,
+    private readonly onCloseStart: () => void,
     private readonly onClose: () => void
   ) {
     this.events = events;
@@ -99,6 +100,7 @@ export class DapDebugSession {
           CapDrop: ["ALL"],
           CapAdd: ["SYS_PTRACE"],
           Memory: this.config.memoryBytes,
+          MemorySwap: this.config.memoryBytes,
           NanoCpus: this.config.nanoCpus,
           NetworkMode: "none",
           PidsLimit: 128,
@@ -183,6 +185,7 @@ export class DapDebugSession {
     }
 
     this.closed = true;
+    this.onCloseStart();
     clearTimeout(this.idleTimer);
     clearTimeout(this.maxTimer);
     await this.dap?.request("disconnect", { terminateDebuggee: true }).catch(() => undefined);
@@ -283,7 +286,8 @@ export class DapDebugSession {
 
   private async waitForDebugAdapterReady(compileDone: Promise<void>, firstAdapterEvent: Promise<void>): Promise<void> {
     if (this.request.language === "python") {
-      await withTimeout(firstAdapterEvent, 5_000, "Timed out waiting for Python debug adapter to start");
+      const pythonStartupMs = Number.parseInt(process.env.DAP_PYTHON_STARTUP_MS ?? "5000", 10);
+      await withTimeout(firstAdapterEvent, pythonStartupMs, "Timed out waiting for Python debug adapter to start");
       await delay(1_000);
       return;
     }

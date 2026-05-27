@@ -89,6 +89,7 @@ export class DockerRunner {
           Binds: [`${workspace.hostPath}:/workspace:rw`],
           CapDrop: ["ALL"],
           Memory: this.config.memoryBytes,
+          MemorySwap: this.config.memoryBytes,
           NanoCpus: this.config.nanoCpus,
           NetworkMode: "none",
           PidsLimit: 128,

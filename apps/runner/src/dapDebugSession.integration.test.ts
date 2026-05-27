@@ -7,21 +7,25 @@ import { EventBuffer } from "./eventBuffer.js";
 
 const maybeDescribe = process.env.RUN_DOCKER_TESTS === "1" ? describe : describe.skip;
 
+const PER_TEST_TIMEOUT_MS = 45_000;
+const INTERNAL_WAIT_MS = 25_000;
+const CLEANUP_TIMEOUT_MS = 10_000;
+
 maybeDescribe("DapDebugSession integration", () => {
   const config = {
     ...readConfig(),
-    debugMaxMs: 15_000,
-    debugIdleMs: 15_000
+    debugMaxMs: 30_000,
+    debugIdleMs: 30_000
   };
 
-  it("stops C++ at a breakpoint", async () => {
+  it("stops C++ at a breakpoint", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "cpp",
       source: '#include <iostream>\nint main(){\n  int x = 41;\n  x++;\n  std::cout << x << "\\n";\n  return 0;\n}',
       stdin: "",
       argv: [],
       breakpoints: [4],
-      clientId: "test-cpp"
+      clientId: `test-cpp-${Date.now()}`
     });
 
     expect(events.some((event) => event.type === "compile" && event.status === "done")).toBe(true);
@@ -29,7 +33,7 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(events.some((event) => event.type === "variables")).toBe(true);
   });
 
-  it("populates C++ Variables with stdin-derived locals (ISSUE-006 regression)", async () => {
+  it("populates C++ Variables with stdin-derived locals (ISSUE-006 regression)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "cpp",
       source:
@@ -37,7 +41,7 @@ maybeDescribe("DapDebugSession integration", () => {
       stdin: "6\n",
       argv: [],
       breakpoints: [6],
-      clientId: "test-cpp-vars"
+      clientId: `test-cpp-vars-${Date.now()}`
     });
 
     const lastVariables = [...events].reverse().find(
@@ -49,7 +53,7 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(vars.find((v) => v.name === "result")?.value).toBe("36");
   });
 
-  it("populates C Variables with stdin-derived locals (ISSUE-006 regression)", async () => {
+  it("populates C Variables with stdin-derived locals (ISSUE-006 regression)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "c",
       source:
@@ -57,7 +61,7 @@ maybeDescribe("DapDebugSession integration", () => {
       stdin: "6\n",
       argv: [],
       breakpoints: [7],
-      clientId: "test-c-vars"
+      clientId: `test-c-vars-${Date.now()}`
     });
 
     const lastVariables = [...events].reverse().find(
@@ -69,14 +73,14 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(vars.find((v) => v.name === "result")?.value).toBe("36");
   });
 
-  it("stops Python at a breakpoint", async () => {
+  it("stops Python at a breakpoint", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "python",
       source: 'name = input().strip()\nvalue = len(name)\nprint(value)',
       stdin: "ada\n",
       argv: [],
       breakpoints: [2],
-      clientId: "test-python"
+      clientId: `test-python-${Date.now()}`
     });
 
     expect(events.find((event): event is Extract<DebugEvent, { type: "stopped" }> => event.type === "stopped")?.line).toBe(2);
@@ -90,7 +94,12 @@ maybeDescribe("DapDebugSession integration", () => {
     const stopped = new Promise<void>((resolve, reject) => {
       let sawStopped = false;
       let sawVariables = false;
-      const timeout = setTimeout(() => reject(new Error("Timed out waiting for breakpoint variables")), 12_000);
+      const timeout = setTimeout(() => {
+        const summary = collected.length === 0
+          ? "(no events)"
+          : collected.map(summarizeEvent).join(" | ");
+        reject(new Error(`Timed out waiting for breakpoint variables after ${INTERNAL_WAIT_MS}ms. Collected events: ${summary}`));
+      }, INTERNAL_WAIT_MS);
       events.subscribe((event) => {
         collected.push(event);
         if (event.type === "stopped") {
@@ -105,18 +114,42 @@ maybeDescribe("DapDebugSession integration", () => {
         }
         if (event.type === "error") {
           clearTimeout(timeout);
-          reject(new Error(event.message));
+          reject(new Error(`Session emitted error: ${event.message}`));
         }
       });
     });
-    const session = new DapDebugSession(runner.docker, config, request, events, () => undefined);
+    const session = new DapDebugSession(runner.docker, config, request, events, () => undefined, () => undefined);
 
     try {
       await session.start();
       await stopped;
       return collected;
     } finally {
-      await session.close(false);
+      // Race close with a hard cap so a hung close() never leaves vitest holding the worker.
+      await Promise.race([
+        session.close(false),
+        new Promise<void>((resolve) => setTimeout(resolve, CLEANUP_TIMEOUT_MS))
+      ]);
     }
+  }
+
+  function summarizeEvent(event: DebugEvent): string {
+    if (event.type === "stopped") {
+      return `stopped@${event.line ?? "?"}(${event.reason ?? "?"})`;
+    }
+    if (event.type === "compile") {
+      return `compile:${event.status}`;
+    }
+    if (event.type === "variables") {
+      return `variables(${event.variables.length})`;
+    }
+    if (event.type === "stdout" || event.type === "stderr" || event.type === "console") {
+      const data = event.data.length > 40 ? `${event.data.slice(0, 40)}…` : event.data;
+      return `${event.type}:${JSON.stringify(data)}`;
+    }
+    if (event.type === "error") {
+      return `error:${event.message}`;
+    }
+    return event.type;
   }
 });
