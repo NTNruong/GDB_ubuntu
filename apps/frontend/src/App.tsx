@@ -439,7 +439,7 @@ export function App() {
           <Play size={16} />
           <span>Run</span>
         </button>
-        <button type="button" onClick={startDebug} disabled={!capability.debug} title="Debug">
+        <button type="button" data-testid="btn-debug" onClick={startDebug} disabled={!capability.debug} title="Debug">
           <Bug size={16} />
           <span>Debug</span>
         </button>

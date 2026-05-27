@@ -30,7 +30,7 @@ run_with_metrics() {
 
   if [[ -n "$max_rss_kb" ]]; then
     printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" \
-      "$(echo "scale=3; $elapsed_ms / 1000" | bc)" "$max_rss_kb" >&2
+      "$(printf "%d.%03d" $((elapsed_ms / 1000)) $((elapsed_ms % 1000)))" "$max_rss_kb" >&2
   fi
 
   return "$exit_code"

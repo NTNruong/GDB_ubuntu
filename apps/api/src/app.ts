@@ -152,16 +152,16 @@ function proxyWebSocket(client: WebSocket, upstreamUrl: string): void {
   };
 
   upstream.on("open", () => {
-    client.on("message", (message) => {
+    client.on("message", (message, isBinary) => {
       if (upstream.readyState === WebSocket.OPEN) {
-        upstream.send(message);
+        upstream.send(message, { binary: isBinary });
       }
     });
   });
 
-  upstream.on("message", (message) => {
+  upstream.on("message", (message, isBinary) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
+      client.send(message, { binary: isBinary });
     }
   });
 
