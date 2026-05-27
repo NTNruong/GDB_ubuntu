@@ -32,6 +32,23 @@ Dev ports: frontend `5173` (Vite, proxies `/api` → `4000`), api `4000`, runner
 
 Server deploy helper (on an Ubuntu host with the repo at `/opt/apps/GDB_ubuntu`): `bash bin/pull-latest.sh`. Flags: `RESTART_APP=1`, `REBUILD_RUNNER_IMAGES=1`.
 
+### WinSCP deploy workflow (preferred for the maintainer)
+
+The maintainer deploys to an Ubuntu 24.04 LTS host (`/opt/apps/GDB_ubuntu`) by copying only the changed files via **WinSCP** rather than `git pull` on the server. After making changes, the workflow is:
+
+1. **Identify the changed files.** Source files only — do not copy test files (`*.test.ts`), `LOG.md`, plan files, or anything under `.claude/`. The repository keeps the server tree mirroring the workspace structure, so the destination path is just `/opt/apps/GDB_ubuntu/<same/relative/path>`.
+2. **Copy via WinSCP** (Windows → server) preserving the path layout.
+3. **SSH in and rebuild only the services that changed.** Pick the narrowest command:
+   - TypeScript / shared schema changes in `apps/runner/src/**` → `docker compose up --build -d runner`
+   - TypeScript changes in `apps/api/src/**` → `docker compose up --build -d api`
+   - Frontend (`apps/frontend/src/**`, `apps/frontend/index.html`, Vite config) → `docker compose up --build -d frontend`
+   - Multiple of the above → `docker compose up --build -d` (rebuilds all app services; safe default when unsure)
+   - Anything under `docker/runner-cpp/` or `docker/runner-python/` (Dockerfile, run-*, debug-*, debug-dap-*) → **must also** run `docker compose --profile runner-images build runner-cpp-image runner-python-image` *before* `docker compose up --build -d` so child containers pick up the new image. Skipping this is the most common deploy mistake.
+   - `docker-compose.yml` env-var changes → `docker compose up -d` (no `--build` needed unless code also changed).
+4. **Verify.** `docker compose logs --tail=50 <service>` to confirm clean start, then manual UI smoke for the specific behavior the change targets, and hard-reload (Ctrl+Shift+R) the browser if the frontend was rebuilt.
+
+When writing the LOG.md entry for the session, the **Deploy status** block must list the exact files to copy and the exact `docker compose` command(s) — match the rules above. Past entries in LOG.md are the canonical examples of the expected format.
+
 ## Architecture
 
 Three-process npm workspace. Browser ⇄ **api** (Fastify, port 4000) ⇄ **runner** (Fastify, port 4001) ⇄ **Docker** (sibling containers per job).
@@ -70,6 +87,22 @@ API: `RUNNER_BASE_URL` (HTTP) and `RUNNER_WS_URL` (WebSocket) must point at the 
 ## Windows development environment
 
 Dev on Windows uses Docker Desktop with the WSL2 backend. Run all commands (`npm install`, `npm run dev`, etc.) from a WSL2 terminal — not PowerShell or CMD. No config changes needed; paths like `/var/run/docker.sock` and `/tmp/...` work normally inside WSL2.
+
+## Session workflow
+
+After making code changes in any session, append a new entry at the **top** of `LOG.md` (newest first) before ending the session. The file is gitignored; it is the running record QC and human reviewers read to understand what changed between sessions.
+
+Each entry follows the existing format — header `## YYYY-MM-DD — <Agent> (session N)`, then:
+
+- **Agent:** Claude Code / Codex / Antigravity IDE / Human
+- **Files Modified:** one bullet per file, with a short Vietnamese/English note saying *what* changed and *which ISSUE-### it addresses* (if any)
+- **Summary:** 2–4 sentences in Vietnamese on root cause and fix direction (matching the existing tone)
+- **Deploy status:** which files need to be copied to the server and the exact `docker compose` command(s); note explicitly whether `--profile runner-images` rebuild is needed (yes if anything under [docker/runner-cpp/](docker/runner-cpp/) or [docker/runner-python/](docker/runner-python/) changed)
+- **Verification:** optional, but include when the fix has a non-trivial test/QC story
+
+Increment the session number from the previous top entry. If a session only does research/reading without code edits, do not add an entry.
+
+When an issue is fixed and verified, also update its status in `ISSUES.md` to `PASSED` (do not create duplicate entries — append `**Additional QC verification (timestamp):**` lines to the existing issue instead).
 
 ## Conventions to be aware of
 

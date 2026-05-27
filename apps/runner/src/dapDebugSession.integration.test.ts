@@ -29,6 +29,46 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(events.some((event) => event.type === "variables")).toBe(true);
   });
 
+  it("populates C++ Variables with stdin-derived locals (ISSUE-006 regression)", async () => {
+    const events = await debugUntilStopped({
+      language: "cpp",
+      source:
+        '#include <iostream>\nint main(){\n  int n;\n  std::cin >> n;\n  int result = n * n;\n  std::cout << result << "\\n";\n  return 0;\n}',
+      stdin: "6\n",
+      argv: [],
+      breakpoints: [6],
+      clientId: "test-cpp-vars"
+    });
+
+    const lastVariables = [...events].reverse().find(
+      (event): event is Extract<DebugEvent, { type: "variables" }> => event.type === "variables"
+    );
+    expect(lastVariables, "expected a variables event").toBeDefined();
+    const vars = lastVariables!.variables;
+    expect(vars.find((v) => v.name === "n")?.value).toBe("6");
+    expect(vars.find((v) => v.name === "result")?.value).toBe("36");
+  });
+
+  it("populates C Variables with stdin-derived locals (ISSUE-006 regression)", async () => {
+    const events = await debugUntilStopped({
+      language: "c",
+      source:
+        '#include <stdio.h>\nint main(){\n  int n;\n  if (scanf("%d", &n) != 1) return 1;\n  int result = n * n;\n  printf("%d\\n", result);\n  return 0;\n}',
+      stdin: "6\n",
+      argv: [],
+      breakpoints: [7],
+      clientId: "test-c-vars"
+    });
+
+    const lastVariables = [...events].reverse().find(
+      (event): event is Extract<DebugEvent, { type: "variables" }> => event.type === "variables"
+    );
+    expect(lastVariables, "expected a variables event").toBeDefined();
+    const vars = lastVariables!.variables;
+    expect(vars.find((v) => v.name === "n")?.value).toBe("6");
+    expect(vars.find((v) => v.name === "result")?.value).toBe("36");
+  });
+
   it("stops Python at a breakpoint", async () => {
     const events = await debugUntilStopped({
       language: "python",

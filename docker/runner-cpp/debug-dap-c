@@ -9,4 +9,7 @@ echo "__RUNNER_PHASE__:compile:start" >&2
 gcc -std=gnu17 -g -O0 -Wall -Wextra /workspace/main.c -o /exec/program -lm
 echo "__RUNNER_PHASE__:compile:done" >&2
 
-exec gdb --interpreter=dap --quiet
+cat > /tmp/gdb-stdin.gdb << 'GDBEOF'
+set exec-wrapper sh -c 'exec "$@" </workspace/stdin.txt' --
+GDBEOF
+exec gdb --interpreter=dap --quiet --init-command=/tmp/gdb-stdin.gdb

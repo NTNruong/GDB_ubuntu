@@ -63,6 +63,8 @@ export function App() {
   const [watchInput, setWatchInput] = useState("");
   const [rawCommand, setRawCommand] = useState("");
   const [stoppedLine, setStoppedLine] = useState<number | undefined>();
+  const [isRunActive, setIsRunActive] = useState(false);
+  const [isDebugActive, setIsDebugActive] = useState(false);
 
   const clientIdRef = useRef(createClientId());
   const runSocket = useRef<WebSocket | null>(null);
@@ -96,6 +98,22 @@ export function App() {
     runEvents.current = null;
     debugSocket.current = null;
   }, []);
+
+  const handleStop = useCallback(() => {
+    const stoppingRun = runSocket.current !== null || runEvents.current !== null;
+    const stoppingDebug = debugSocket.current !== null;
+    stopSockets();
+    if (stoppingRun) {
+      setRunStatus("Stopped");
+      setIsRunActive(false);
+      appendOutput("system", "\nStopped by user\n");
+    }
+    if (stoppingDebug) {
+      setDebugStatus("Stopped");
+      setIsDebugActive(false);
+      appendDebug("system", "\nStopped by user\n");
+    }
+  }, [appendDebug, appendOutput, stopSockets]);
 
   const sendDebug = useCallback((command: DebugCommand) => {
     if (debugSocket.current?.readyState === WebSocket.OPEN) {
@@ -143,6 +161,8 @@ export function App() {
 
   const startRun = useCallback(async () => {
     stopSockets();
+    setIsRunActive(true);
+    setIsDebugActive(false);
     setActiveTab("output");
     setOutput([]);
     setDiagnostics([]);
@@ -156,6 +176,7 @@ export function App() {
       argv = parseArgv(argvInput);
     } catch (error) {
       setRunStatus("Invalid arguments");
+      setIsRunActive(false);
       appendOutput("system", `${messageFromError(error)}\n`);
       return;
     }
@@ -188,6 +209,7 @@ export function App() {
       };
     } catch (error) {
       setRunStatus("Failed");
+      setIsRunActive(false);
       appendOutput("system", `${messageFromError(error)}\n`);
     }
   }, [appendOutput, argvInput, language, source, stdin, stopSockets]);
@@ -198,6 +220,8 @@ export function App() {
     }
 
     stopSockets();
+    setIsDebugActive(true);
+    setIsRunActive(false);
     setActiveTab("debug");
     setDebugConsole([]);
     setVariables([]);
@@ -208,7 +232,17 @@ export function App() {
 
     if (breakpoints.length === 0) {
       setDebugStatus("No breakpoints");
+      setIsDebugActive(false);
       appendDebug("system", "No breakpoints set. Add a breakpoint before starting debug.\n");
+      return;
+    }
+
+    const lineCount = editorRef.current?.getModel()?.getLineCount() ?? 0;
+    if (lineCount > 0 && breakpoints.some((line) => line > lineCount)) {
+      const invalid = breakpoints.filter((line) => line > lineCount);
+      setDebugStatus("Invalid breakpoints");
+      setIsDebugActive(false);
+      appendDebug("system", `Breakpoints out of range: lines ${invalid.join(", ")} (file has ${lineCount} lines)\n`);
       return;
     }
 
@@ -217,6 +251,7 @@ export function App() {
       argv = parseArgv(argvInput);
     } catch (error) {
       setDebugStatus("Invalid arguments");
+      setIsDebugActive(false);
       appendDebug("system", `${messageFromError(error)}\n`);
       return;
     }
@@ -248,6 +283,7 @@ export function App() {
       socket.onerror = () => setDebugStatus("Connection error");
     } catch (error) {
       setDebugStatus("Failed");
+      setIsDebugActive(false);
       appendDebug("system", `${messageFromError(error)}\n`);
     }
   }, [appendDebug, argvInput, breakpoints, capability.debug, language, source, stdin, stopSockets]);
@@ -284,6 +320,7 @@ export function App() {
         runEvents.current?.close();
         runEvents.current = null;
         runPhaseRef.current = "idle";
+        setIsRunActive(false);
         setRunStatus(event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
         const truncatedSuffix = event.outputTruncated ? " (output truncated)" : "";
         if (event.timedOut) {
@@ -299,6 +336,7 @@ export function App() {
         runEvents.current?.close();
         runEvents.current = null;
         runPhaseRef.current = "idle";
+        setIsRunActive(false);
         setRunStatus("Error");
         appendOutput("system", `${event.message}\n`);
       }
@@ -348,11 +386,13 @@ export function App() {
         return;
       }
       if (event.type === "exit") {
+        setIsDebugActive(false);
         setDebugStatus(event.timedOut ? "Timed out" : "Exited");
         appendDebug("system", `\ndebug session exited${event.code === null ? "" : ` with code ${event.code}`}\n`);
         return;
       }
       if (event.type === "error") {
+        setIsDebugActive(false);
         setDebugStatus("Error");
         appendDebug("system", `${event.message}\n`);
       }
@@ -381,8 +421,10 @@ export function App() {
       return;
     }
 
+    const lineCount = editor.getModel()?.getLineCount() ?? Infinity;
+    const validBreakpoints = breakpoints.filter((line) => line <= lineCount);
     decorationIds.current = editor.deltaDecorations(decorationIds.current, [
-      ...breakpoints.map((line) => ({
+      ...validBreakpoints.map((line) => ({
         range: new monaco.Range(line, 1, line, 1),
         options: {
           isWholeLine: false,
@@ -435,15 +477,15 @@ export function App() {
           placeholder="argv"
           onChange={(event) => setArgvInput(event.target.value)}
         />
-        <button type="button" className="primary" onClick={startRun} title="Run">
+        <button type="button" className="primary" onClick={startRun} disabled={isRunActive || isDebugActive} title="Run">
           <Play size={16} />
           <span>Run</span>
         </button>
-        <button type="button" data-testid="btn-debug" onClick={startDebug} disabled={!capability.debug} title="Debug">
+        <button type="button" data-testid="btn-debug" onClick={startDebug} disabled={isRunActive || isDebugActive || !capability.debug} title="Debug">
           <Bug size={16} />
           <span>Debug</span>
         </button>
-        <button type="button" onClick={stopSockets} title="Stop">
+        <button type="button" onClick={handleStop} title="Stop">
           <CircleStop size={16} />
         </button>
         <span className="status-pill">{activeTab === "debug" ? debugStatus : runStatus}</span>
@@ -505,28 +547,28 @@ export function App() {
             {activeTab === "debug" && (
               <div className="debug-grid">
                 <div className="debug-toolbar">
-                  <button onClick={() => sendDebug({ type: "continue" })} title="Continue">
+                  <button aria-label="Continue" onClick={() => sendDebug({ type: "continue" })} title="Continue">
                     <ChevronRight size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "pause" })} title="Pause">
+                  <button aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
                     <Pause size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
+                  <button aria-label="Step over" onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
                     <StepForward size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
+                  <button aria-label="Step into" onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
                     <SkipForward size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
+                  <button aria-label="Step out" onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
                     <RotateCcw size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "variables" })} title="Variables">
+                  <button aria-label="Variables" onClick={() => sendDebug({ type: "variables" })} title="Variables">
                     <Variable size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "stack" })} title="Stack">
+                  <button aria-label="Stack" onClick={() => sendDebug({ type: "stack" })} title="Stack">
                     <ListTree size={15} />
                   </button>
-                  <button onClick={() => sendDebug({ type: "stop" })} title="Stop">
+                  <button aria-label="Stop" onClick={() => sendDebug({ type: "stop" })} title="Stop">
                     <CircleStop size={15} />
                   </button>
                 </div>

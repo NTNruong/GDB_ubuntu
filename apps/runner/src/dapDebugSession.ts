@@ -54,6 +54,7 @@ export class DapDebugSession {
   private resolveInitialized: (() => void) | undefined;
   private currentThreadId: number | undefined;
   private currentFrameId: number | undefined;
+  private stopped = false;
   private autoContinueOnInitialStop = true;
   private outputBytes = 0;
   private exitEmitted = false;
@@ -186,6 +187,7 @@ export class DapDebugSession {
     clearTimeout(this.maxTimer);
     await this.dap?.request("disconnect", { terminateDebuggee: true }).catch(() => undefined);
     this.dap?.close();
+    this.dap = undefined;
     await this.container?.remove({ force: true }).catch(() => undefined);
     if (this.workspace) {
       await rm(this.workspace.containerPath, { recursive: true, force: true }).catch(() => undefined);
@@ -211,8 +213,7 @@ export class DapDebugSession {
       linesStartAt1: true,
       columnsStartAt1: true,
       supportsRunInTerminalRequest: false,
-      supportsVariableType: false,
-      supportsVariablePaging: true
+      supportsVariableType: false
     });
 
     const dapCommand = "launch";
@@ -298,6 +299,7 @@ export class DapDebugSession {
 
     if (command.type === "continue") {
       const threadId = await this.requireThreadId();
+      this.stopped = false;
       await this.dap.request("continue", { threadId });
       this.events.emit({ type: "running" });
       return;
@@ -311,6 +313,7 @@ export class DapDebugSession {
 
     if (command.type === "stepOver") {
       const threadId = await this.requireThreadId();
+      this.stopped = false;
       await this.dap.request("next", { threadId });
       this.events.emit({ type: "running" });
       return;
@@ -318,6 +321,7 @@ export class DapDebugSession {
 
     if (command.type === "stepInto") {
       const threadId = await this.requireThreadId();
+      this.stopped = false;
       await this.dap.request("stepIn", { threadId });
       this.events.emit({ type: "running" });
       return;
@@ -325,6 +329,7 @@ export class DapDebugSession {
 
     if (command.type === "stepOut") {
       const threadId = await this.requireThreadId();
+      this.stopped = false;
       await this.dap.request("stepOut", { threadId });
       this.events.emit({ type: "running" });
       return;
@@ -380,6 +385,7 @@ export class DapDebugSession {
     }
 
     if (event.event === "continued") {
+      this.stopped = false;
       this.events.emit({ type: "running" });
       return;
     }
@@ -391,12 +397,14 @@ export class DapDebugSession {
 
       if (this.autoContinueOnInitialStop && reason !== "breakpoint") {
         this.autoContinueOnInitialStop = false;
+        this.stopped = false;
         await this.dap?.request("continue", { threadId }).catch((error) => this.emitError(error));
         this.events.emit({ type: "running" });
         return;
       }
 
       this.autoContinueOnInitialStop = false;
+      this.stopped = true;
       await this.refreshStackAndVariables(threadId, reason);
       return;
     }
@@ -424,10 +432,18 @@ export class DapDebugSession {
     });
     const frames = asArray(asRecord(response.body).stackFrames)
       .map(toStackFrame)
-      .filter((frame): frame is DapStackFrame => Boolean(frame));
+      .filter((frame): frame is DapStackFrame => {
+        if (!frame) return false;
+        if (this.request.language !== "python") return true;
+        const src = frame.source?.path ?? frame.source?.name ?? "";
+        return src.startsWith("/workspace/") && !src.endsWith("__debugpy_runner.py");
+      });
 
     const topFrame = frames[0];
     this.currentFrameId = topFrame?.id;
+    if (!topFrame) {
+      this.events.emit({ type: "console", data: "[stack] No frames in stackTrace response\n" });
+    }
     this.events.emit({
       type: "stopped",
       reason,
@@ -440,38 +456,99 @@ export class DapDebugSession {
   }
 
   private async refreshVariables(): Promise<void> {
-    if (!this.dap || this.currentFrameId === undefined) {
+    if (!this.dap || this.currentFrameId === undefined || !this.stopped) {
       this.events.emit({ type: "variables", variables: [] });
       return;
     }
 
-    try {
-      const scopesResponse = await this.dap.request("scopes", { frameId: this.currentFrameId });
-      const scopes = asArray(asRecord(scopesResponse.body).scopes)
-        .map(toScope)
-        .filter((scope): scope is DapScope => Boolean(scope && scope.variablesReference > 0 && !scope.expensive));
-      const variables: DebugVariable[] = [];
+    const frameId = this.currentFrameId;
+    const variables: DebugVariable[] = [];
+    let scopes: DapScope[] = [];
 
-      for (const scope of scopes.slice(0, 3)) {
+    try {
+      const scopesResponse = await this.dap.request("scopes", { frameId });
+      scopes = asArray(asRecord(scopesResponse.body).scopes)
+        .map(toScope)
+        .filter((scope): scope is DapScope => Boolean(
+          scope &&
+          scope.variablesReference > 0 &&
+          (this.request.language === "python"
+            ? !scope.expensive && /^(local|argument)/i.test(scope.name)
+            : !/^register/i.test(scope.name))
+        ));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.events.emit({ type: "console", data: `[variables] scopes frame=${frameId} error="${msg}"\n` });
+    }
+
+    if (scopes.length === 0 && this.request.language !== "python") {
+      this.events.emit({ type: "console", data: `[variables] no scopes for frame ${frameId}\n` });
+    }
+
+    for (const scope of scopes) {
+      try {
         const response = await this.dap.request("variables", {
-          variablesReference: scope.variablesReference,
-          start: 0,
-          count: 100
+          variablesReference: scope.variablesReference
         });
         const scopedVariables = asArray(asRecord(response.body).variables)
           .map(toVariable)
-          .filter((variable): variable is DapVariable => Boolean(variable))
+          .filter((variable): variable is DapVariable =>
+            variable !== null &&
+            !/^(special variables|function variables|class variables)$/i.test(variable.name)
+          )
           .map((variable) => ({
             name: variable.name,
             value: variable.value
           }));
         variables.push(...scopedVariables);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        this.events.emit({
+          type: "console",
+          data: `[variables] scope="${scope.name}" ref=${scope.variablesReference} error="${msg}"\n`
+        });
       }
-
-      this.events.emit({ type: "variables", variables });
-    } catch {
-      this.events.emit({ type: "variables", variables: [] });
     }
+
+    if (variables.length === 0 && this.request.language !== "python") {
+      const fallback = await this.fetchVariablesViaInfoLocals(frameId);
+      variables.push(...fallback);
+    }
+
+    this.events.emit({ type: "variables", variables });
+  }
+
+  private async fetchVariablesViaInfoLocals(frameId: number): Promise<DebugVariable[]> {
+    if (!this.dap) {
+      return [];
+    }
+
+    const collected: DebugVariable[] = [];
+    const seen = new Set<string>();
+
+    for (const expression of ["info args", "info locals"]) {
+      try {
+        const response = await this.dap.request("evaluate", {
+          expression,
+          frameId,
+          context: "repl"
+        });
+        const text = asString(asRecord(response.body).result) ?? "";
+        for (const variable of parseInfoLocals(text)) {
+          if (seen.has(variable.name)) continue;
+          seen.add(variable.name);
+          collected.push(variable);
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        this.events.emit({
+          type: "console",
+          data: `[variables] fallback "${expression}" frame=${frameId} error="${msg}"\n`
+        });
+      }
+    }
+
+    return collected;
   }
 
   private async evaluateWatch(expression: string): Promise<void> {
@@ -658,6 +735,44 @@ function pythonDebugRunnerSource(): string {
     "    stdin.close()",
     ""
   ].join("\n");
+}
+
+export function parseInfoLocals(output: string): DebugVariable[] {
+  const variables: DebugVariable[] = [];
+  if (!output) return variables;
+
+  const lines = output.split(/\r?\n/);
+  let current: { name: string; value: string } | null = null;
+  let depth = 0;
+  const flush = () => {
+    if (!current) return;
+    const name = current.name.trim();
+    const value = current.value.trim();
+    if (name) variables.push({ name, value });
+    current = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\s+$/, "");
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^(No locals\.|No arguments\.|No symbol .* in current context\.)$/.test(trimmed)) continue;
+
+    const match = depth === 0 ? /^\s*([A-Za-z_][\w]*)\s*=\s*(.*)$/.exec(line) : null;
+    if (match) {
+      flush();
+      current = { name: match[1] ?? "", value: match[2] ?? "" };
+    } else if (current) {
+      current.value += `\n${trimmed}`;
+    }
+
+    for (const ch of line) {
+      if (ch === "{") depth++;
+      else if (ch === "}") depth = Math.max(0, depth - 1);
+    }
+  }
+  flush();
+  return variables;
 }
 
 function toStackFrame(value: unknown): DapStackFrame | null {

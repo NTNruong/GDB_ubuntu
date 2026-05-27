@@ -1,1 +1,18 @@
 *.sh text eol=lf
+
+# Files excluded from `git archive` (GitHub release ZIP / tarball).
+# Source repo keeps them for development; production archive stays minimal.
+CLAUDE.md            export-ignore
+.gitignore           export-ignore
+.gitattributes       export-ignore
+.editorconfig        export-ignore
+.github/             export-ignore
+.vscode/             export-ignore
+
+# Test sources, configs, and fixtures
+tests/               export-ignore
+**/*.test.ts         export-ignore
+**/*.spec.ts         export-ignore
+**/*.integration.test.ts export-ignore
+playwright.config.ts export-ignore
+vitest.config.ts     export-ignore
