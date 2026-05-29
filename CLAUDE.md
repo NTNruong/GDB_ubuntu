@@ -103,11 +103,10 @@ Each entry follows the existing format — header `## YYYY-MM-DD — <Agent> (se
 
 Increment the session number from the previous top entry. If a session only does research/reading without code edits, do not add an entry.
 
-After writing the LOG.md entry (i.e. once implement → verify → LOG are done), also **generate the commit message content** for the session and present it to the user in the chat (do not commit/push unless the user asks). The user pushes manually. Provide it as a ready-to-paste block:
+After writing the LOG.md entry (i.e. once implement → verify → LOG are done), also **generate the commit message content** for the session and present it to the user in the chat (do not commit/push unless the user asks). The user pushes manually.
 
-- **Subject:** Conventional-Commits style, ≤ 70 chars: `<type>(<scope>): <summary>` — e.g. `fix(frontend): constrain workspace column so editor doesn't cover inspector`. Common types: `feat`, `fix`, `refactor`, `chore`, `ci`, `docs`, `test`.
-- **Body:** 1–3 short bullets on the *why*/root cause and the ISSUE-### addressed (Vietnamese/English, matching LOG tone). Note "frontend-only, no runner-images rebuild" when applicable.
-- Do **not** add the `Co-Authored-By` trailer or any `LOG.md`/`ISSUES.md` mention in the message (both are gitignored — they are not part of the commit).
+- **Single line only.** Conventional-Commits style, ≤ 70 chars: `<type>(<scope>): <summary>` — e.g. `fix(runner): capture C/C++ debug stdout via workspace file (ISSUE-030)`. Common types: `feat`, `fix`, `refactor`, `chore`, `ci`, `docs`, `test`. No body, no bullets.
+- Do **not** add the `Co-Authored-By` trailer or any `LOG.md`/`ISSUES.md` mention (both are gitignored — they are not part of the commit).
 
 When an issue is fixed and verified, also update its status in `ISSUES.md` to `PASSED` (do not create duplicate entries — append `**Additional QC verification (timestamp):**` lines to the existing issue instead).
 

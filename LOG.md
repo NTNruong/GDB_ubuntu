@@ -1,5 +1,32 @@
 # Change Log
 
+## 2026-05-29 — Claude Code (session 24) — Debug stdout fix attempt 2: capture qua file workspace (ISSUE-030)
+
+**Agent:** Claude Code
+**Files Modified:**
+- `docker/runner-cpp/debug-dap-c` + `docker/runner-cpp/debug-dap-cpp` — REVERT attempt 1 (bỏ `echo run:start` + `1>&2` gây nhiễu/lọt marker). exec-wrapper mới redirect stdout+stderr inferior ra file: `exec "$@" </workspace/stdin.txt >/workspace/tmp/program.out 2>&1`.
+- `apps/runner/src/dapDebugSession.ts` — revert `inferiorRunning` (stderrFilter trả về `emitLimitedOutput("stderr",…)` + chỉ marker compile). Thêm capture deterministic: `createWorkspace` pre-create `tmp/program.out` (0666); field `programOutputFlushed`; method `flushProgramOutput()` bounded-read ≤ `MAX_OUTPUT_BYTES` rồi emit `stdout` (guard 1 lần); gọi ở nhánh DAP `exited` (chương trình đã exit ⇒ file flush+close, đọc chắc chắn) và fallback trong `close()`.
+- `tests/e2e/app.spec.ts` — test ISSUE-030 (session 23) giữ nguyên; giờ pass nhờ file capture.
+
+**Summary:** Attempt 1 QC FAIL — marker lọt ra terminal, `1 3 5 7 9` vẫn mất. Root cause thực: gdb dap redirect stdout inferior vào pipe (xác nhận GDB docs), nhưng pipe không phải tty ⇒ libc block-buffer ⇒ `printf("%d ",…)` chỉ flush lúc inferior exit, không kịp tới client trước teardown (`terminated`→close→remove). Marker `echo` flush ngay nên sống sót gây nhiễu. Fix attempt 2 bỏ phụ thuộc timing GDB DAP: cho inferior ghi ra file trên bind-mount, runner đọc file khi `exited` (deterministic, race-free). Đối chiếu MI engine vốn tự forward program output qua `@` records. Giới hạn: output hiện vào cuối phiên (chưa incremental khi step) — enhancement sau bằng `stdbuf -o0` + poll-tail.
+
+**Deploy status:** Tự deploy khi push `main`. **CÓ đụng `docker/runner-cpp/`** (debug-dap-c + debug-dap-cpp) ⇒ **BẮT BUỘC rebuild runner-images** (auto-deploy phát hiện `docker/` đổi, set `REBUILD_RUNNER_IMAGES=1`: `docker compose --profile runner-images build runner-cpp-image` trước `up --build -d`). Cộng `apps/runner/src/dapDebugSession.ts` ⇒ service `runner` rebuild. Deploy tay: `--profile runner-images build` TRƯỚC.
+
+**Verification:** `npm run typecheck` ✓, `npm test` ✓ 42 passed / 10 skipped, `npm run build -w @internal/frontend` ✓ (vite 1770 modules). E2E cần live server — QC verify sau deploy: Debug sample C → terminal hiện `1 3 5 7 9` khớp Run, KHÔNG còn dòng `__RUNNER_PHASE__:run:start`.
+
+## 2026-05-29 — Codex (session 9) — QC verify Claude session 23 ISSUE-030 fix
+
+**Agent:** Codex QC
+**Files Modified:**
+- `ISSUES.md` — kept ISSUE-030 OPEN and appended session 23 QC verification details; expanded suspected files/functions and fix direction for marker leakage plus missing Debug stdout.
+- `LOG.md` — recorded this QC verification session.
+
+**Summary:** Reviewed Claude Code session 23 and verified the code/test changes for ISSUE-030. The intended runner-image and DAP changes are present, but live behavior still fails the requirement. The Debug terminal receives the internal marker `__RUNNER_PHASE__:run:start` as stdout and never receives the C program output `1 3 5 7 9`. Direct `/api/debug` + WebSocket probe `d5fc0fb6-a614-4865-a6e3-521e095eb750` confirmed this at runner-event level: the only stdout payload was the marker; no event contained the program output. User-reported UX confusion is real, but current source/events do not support marking the fix passed or treating auto-switch-to-Output as the primary fix; Debug stdout should first appear in the Debug terminal and markers must be hidden.
+
+**Deploy status:** No deploy — QC/test-only session. No product source changes.
+
+**Verification:** `npm run typecheck` ✓, `npm test` ✓ 42 passed / 10 skipped, live `PLAYWRIGHT_BASE_URL=http://localhost:8080 npm run e2e` ✗ 9/11: the new ISSUE-030 e2e failed exactly on missing `1 3 5 7 9` and visible `__RUNNER_PHASE__:run:start`; one debug-toolbar scaffolding test also reached status `Error` and should be monitored if it repeats. Direct WebSocket probe reproduced the ISSUE-030 event payloads.
+
 ## 2026-05-29 — Claude Code (session 23) — Debug terminal hiện stdout chương trình C/C++ (ISSUE-030)
 
 **Agent:** Claude Code

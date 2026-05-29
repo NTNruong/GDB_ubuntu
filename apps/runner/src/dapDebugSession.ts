@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, open, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
@@ -57,7 +57,7 @@ export class DapDebugSession {
   private stopped = false;
   private autoContinueOnInitialStop = true;
   private outputBytes = 0;
-  private inferiorRunning = false;
+  private programOutputFlushed = false;
   private exitEmitted = false;
   private pendingExitCode: number | null = null;
   private closed = false;
@@ -135,7 +135,7 @@ export class DapDebugSession {
 
     const stderrFilter = new PhaseFilter(
       (data) => {
-        void this.emitLimitedOutput(this.inferiorRunning ? "stdout" : "stderr", data);
+        void this.emitLimitedOutput("stderr", data);
       },
       (marker) => {
         if (marker.phase === "compile") {
@@ -144,8 +144,6 @@ export class DapDebugSession {
             resolveCompileDone?.();
             resolveCompileDone = undefined;
           }
-        } else if (marker.phase === "run" && marker.status === "start") {
-          this.inferiorRunning = true;
         }
       }
     );
@@ -192,6 +190,7 @@ export class DapDebugSession {
     this.onCloseStart();
     clearTimeout(this.idleTimer);
     clearTimeout(this.maxTimer);
+    await this.flushProgramOutput();
     await this.dap?.request("disconnect", { terminateDebuggee: true }).catch(() => undefined);
     this.dap?.close();
     this.dap = undefined;
@@ -419,6 +418,7 @@ export class DapDebugSession {
 
     if (event.event === "exited") {
       this.pendingExitCode = asNumber(body.exitCode) ?? null;
+      await this.flushProgramOutput();
       return;
     }
 
@@ -640,6 +640,7 @@ export class DapDebugSession {
     const workspace = await createWorkspacePaths(this.config, `internal-code-dap-debug-${this.id}-`);
     const root = workspace.containerPath;
     await mkdir(path.join(root, "tmp"), { recursive: true });
+    await writeFile(path.join(root, "tmp", "program.out"), "", { mode: 0o666 });
     await writeFile(path.join(root, sourceFileName(this.request.language)), this.request.source, { mode: 0o600 });
     await writeFile(path.join(root, "stdin.txt"), this.request.stdin, { mode: 0o600 });
     if (this.request.language === "python") {
@@ -661,6 +662,29 @@ export class DapDebugSession {
       this.events.emit({ type: "error", message: "Debug session closed after 5 minutes of inactivity" });
       void this.close(false);
     }, this.config.debugIdleMs);
+  }
+
+  private async flushProgramOutput(): Promise<void> {
+    if (this.programOutputFlushed || !this.workspace) {
+      return;
+    }
+
+    this.programOutputFlushed = true;
+    const file = path.join(this.workspace.containerPath, "tmp", "program.out");
+    try {
+      const handle = await open(file, "r");
+      try {
+        const buffer = Buffer.alloc(MAX_OUTPUT_BYTES);
+        const { bytesRead } = await handle.read(buffer, 0, MAX_OUTPUT_BYTES, 0);
+        if (bytesRead > 0) {
+          await this.emitLimitedOutput("stdout", buffer.subarray(0, bytesRead).toString("utf8"));
+        }
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      // file may not exist (program never launched) — nothing to flush
+    }
   }
 
   private async emitLimitedOutput(type: "stdout" | "stderr" | "console", data: string): Promise<void> {
