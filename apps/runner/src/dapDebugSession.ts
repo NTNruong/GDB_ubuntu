@@ -57,6 +57,7 @@ export class DapDebugSession {
   private stopped = false;
   private autoContinueOnInitialStop = true;
   private outputBytes = 0;
+  private inferiorRunning = false;
   private exitEmitted = false;
   private pendingExitCode: number | null = null;
   private closed = false;
@@ -134,7 +135,7 @@ export class DapDebugSession {
 
     const stderrFilter = new PhaseFilter(
       (data) => {
-        void this.emitLimitedOutput("stderr", data);
+        void this.emitLimitedOutput(this.inferiorRunning ? "stdout" : "stderr", data);
       },
       (marker) => {
         if (marker.phase === "compile") {
@@ -143,6 +144,8 @@ export class DapDebugSession {
             resolveCompileDone?.();
             resolveCompileDone = undefined;
           }
+        } else if (marker.phase === "run" && marker.status === "start") {
+          this.inferiorRunning = true;
         }
       }
     );

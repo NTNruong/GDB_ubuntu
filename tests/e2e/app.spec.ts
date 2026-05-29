@@ -134,6 +134,28 @@ test("debug side panel shows switchable Variables/Call Stack/Watches tabs (ISSUE
   await expect(panel.locator('input[placeholder="debug console"]')).toBeVisible();
 });
 
+// ISSUE-030: C/C++ program stdout must reach the Debug terminal (by end of session).
+// The inferior previously inherited gdb's fd1 (the DAP channel) so printf output was lost.
+test("debug terminal shows C program stdout (ISSUE-030)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("c");
+  await replaceEditorSource(
+    page,
+    `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
+  );
+  await page.getByLabel("breakpoints").fill("5");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  // Continue to completion: the program prints "1 3 5 7 9" then exits.
+  await page.locator('.debug-toolbar button[aria-label="Continue"]').click();
+  await expect(page.locator(".status-pill")).toContainText(/Exited/i, { timeout: 30_000 });
+
+  // Program stdout must be visible in the Debug terminal (not just compile + exit messages).
+  await page.locator(".tabbar button", { hasText: "Debug" }).click();
+  await expect(page.locator(".terminal")).toContainText("1 3 5 7 9", { timeout: 10_000 });
+});
+
 async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
   await page.locator(".monaco-editor").first().click();
   await page.keyboard.press("ControlOrMeta+A");

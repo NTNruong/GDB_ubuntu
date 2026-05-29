@@ -10,6 +10,6 @@ gcc -std=gnu17 -g -O0 -Wall -Wextra /workspace/main.c -o /exec/program -lm
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 cat > /tmp/gdb-stdin.gdb << 'GDBEOF'
-set exec-wrapper sh -c 'exec "$@" </workspace/stdin.txt' --
+set exec-wrapper sh -c 'echo "__RUNNER_PHASE__:run:start" >&2; exec "$@" </workspace/stdin.txt 1>&2' --
 GDBEOF
 exec gdb --interpreter=dap --quiet --init-command=/tmp/gdb-stdin.gdb

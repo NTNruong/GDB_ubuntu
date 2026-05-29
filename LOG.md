@@ -1,5 +1,75 @@
 # Change Log
 
+## 2026-05-29 — Claude Code (session 23) — Debug terminal hiện stdout chương trình C/C++ (ISSUE-030)
+
+**Agent:** Claude Code
+**Files Modified:**
+- `docker/runner-cpp/debug-dap-c` + `docker/runner-cpp/debug-dap-cpp` — root cause ISSUE-030: exec-wrapper cũ chỉ redirect stdin (`</workspace/stdin.txt`), nên stdout của inferior kế thừa fd1 của gdb = **kênh DAP protocol** ⇒ `printf` bị DapClient nuốt, không thành `output` event, Debug terminal trống. Sửa exec-wrapper thành `echo "__RUNNER_PHASE__:run:start" >&2; exec "$@" </workspace/stdin.txt 1>&2`: phát marker `run:start` ngay trước khi exec inferior (PhaseFilter đã hiểu marker này) và đẩy stdout inferior sang fd2 (kênh runner đọc được), giữ fd1/DAP sạch.
+- `apps/runner/src/dapDebugSession.ts` — thêm field `inferiorRunning`; trong `stderrFilter`: `onMarker` set `inferiorRunning=true` khi gặp `run:start`; `onData` gắn nhãn `emitLimitedOutput(inferiorRunning ? "stdout" : "stderr", data)`. Output trước run = compile (stderr, đúng), sau run = chương trình (stdout, đúng). Frontend không đổi (đã render debug stdout/stderr ở `handleDebugEvent`).
+- `tests/e2e/app.spec.ts` — thêm test ISSUE-030: debug sample C in mảng, breakpoint line 5, Continue tới Exited, mở tab Debug, assert `.terminal` chứa `1 3 5 7 9`.
+
+**Summary:** Python không dính (debugpy `redirectOutput:true`); chỉ C/C++ vì gdb dap dùng fd1 cho protocol. PhaseFilter line-buffered nên `printf("%d ",…)` (không newline) gom buffer tới `flush()` lúc container exit — output hiện vào cuối phiên, đúng Expected "during or by the end of the debug session". Sau `run:start`, mọi text fd2 (kể cả stderr chương trình) gắn nhãn stdout — chấp nhận cho 1 debug console gộp.
+
+**Deploy status:** Tự deploy khi push `main`. **CÓ đụng `docker/runner-cpp/`** (debug-dap-c + debug-dap-cpp) ⇒ auto-deploy phát hiện thay đổi dưới `docker/` và **BẮT BUỘC rebuild runner-images** (`docker compose --profile runner-images build runner-cpp-image` trước `up --build -d`) — runner-images **CÓ** rebuild. Cộng `apps/runner/src/dapDebugSession.ts` ⇒ service `runner` rebuild. Nếu deploy tay: `--profile runner-images build` TRƯỚC rồi mới `up --build -d`.
+
+**Verification:** `npm run typecheck` ✓, `npm test` ✓ 42 passed / 10 skipped, `npm run build -w @internal/frontend` ✓ (vite 1770 modules). E2E cần live server — QC verify sau deploy: Debug sample C → terminal hiện `1 3 5 7 9` khớp Run; WS probe có `stdout` event trước `exit`.
+
+## 2026-05-29 — Codex (session 8) — Document closed issue compaction workflow
+
+**Agent:** Codex QC
+**Files Modified:**
+- `AGENTS.md` — added the closed issue compaction workflow for future QC sessions.
+- `LOG.md` — recorded this documentation workflow update.
+
+**Summary:** User approved the compacted issue style and requested the workflow be recorded. Added rules that closed issues should be marked PASSED first, then compacted; OPEN issues remain full-detail; compacted issues must retain core metadata and residual-risk notes; and the archive caveat must clarify that `LOG.md` is session-level narrative, not guaranteed fine-grained evidence storage.
+
+**Deploy status:** No deploy — QC documentation-only session. No product source changes.
+
+**Verification:** Reviewed `AGENTS.md` insertion and kept existing issue format/QC rules intact.
+
+## 2026-05-29 — Codex (session 7) — Apply leader caveats to compact issue archive
+
+**Agent:** Codex QC
+**Files Modified:**
+- `ISSUES.md` — added a compact archive caveat, corrected misleading final-verification wording, restored ISSUE-016 first reported timestamp, restored ISSUE-004 API file reference, and added ISSUE-013 residual-flake monitor note.
+- `LOG.md` — recorded this documentation correction session.
+
+**Summary:** Claude Code leader correctly noted that the compacted PASSED issues overstated evidence retention by saying `LOG.md` contained detailed command output. Codex updated the compact archive wording: `LOG.md` is session-level narrative only, and some fine-grained evidence from closed issue bodies may no longer be retained after compaction. Also fixed the non-blocking metadata drift called out by leader: ISSUE-016 first reported timestamp is now `2026-05-27 18:34:00 +07`, ISSUE-004 again lists `apps/api/src/app.ts`, and ISSUE-013 keeps the residual flaky restart monitor note.
+
+**Deploy status:** No deploy — QC documentation-only session. No product source changes.
+
+**Verification:** Rechecked issue/status counts after rewrite: 31 total issues, 27 PASSED compact archive entries, 4 OPEN full-detail issues.
+
+## 2026-05-29 — Codex (session 6) — Compact closed QC issues
+
+**Agent:** Codex QC
+**Files Modified:**
+- `ISSUES.md` — compacted all PASSED issue blocks while preserving OPEN issues in full detail.
+- `LOG.md` — recorded this QC documentation maintenance session.
+
+**Summary:** User requested closed issues be shortened. Codex rewrote the issue tracker into a compact archive format: 27 PASSED issues now keep title, severity, area, status, suspected files, compact summary, and archive note; 4 OPEN issues (`ISSUE-016`, `ISSUE-017`, `ISSUE-030`, `ISSUE-031`) remain full-detail with reproduction steps, evidence, and suggested fix direction for dev/leader follow-up.
+
+**Deploy status:** No deploy — QC documentation-only session. No product source changes.
+
+**Verification:** Documentation structure checked after rewrite with issue/status counts; no tests were run because this was ISSUES.md/LOG.md maintenance only.
+
+## 2026-05-29 — Codex (session 5) — QC verify Claude session 22 debug layout v3 + new debug runtime findings
+
+**Agent:** Codex QC
+**Files Modified:**
+- `ISSUES.md` — marked ISSUE-028 PASSED after live V3 layout verification; appended ISSUE-030 for missing Debug stdout and ISSUE-031 for stale Watches / non-inspectable C arrays.
+- `LOG.md` — recorded this QC verification summary.
+- `test-results/qc-session22-watch-stale.png` — Playwright evidence for stale `arr[i]` Watch after stepping.
+- `test-results/qc-session22-debug-no-stdout.png` — Playwright evidence for Debug terminal exit without program stdout.
+
+**Summary:** Reviewed Claude Code session 22 and verified the V3 layout root-cause fix in source and live UI. The nested `.workspace` grid now has an explicit `minmax(0,1fr)` column and the left editor/bottom surfaces no longer overflow into the right inspector. Baseline checks passed: `npm run typecheck`, `npm test` with 42 passed / 10 skipped, and `PLAYWRIGHT_BASE_URL=http://localhost:8080 npm run e2e` with 10/10 passed. Targeted layout probe at 1600px showed `clientWidth=1600`, `scrollWidth=1600`, `.workspace.width=1114`, `.editor-panel.width=1114`, `.bottom-panel.width=1114`, `.debug-side-panel.width=480`, so ISSUE-028 is now PASSED.
+
+**Findings:** User-reported runtime/debug issues are valid and separate from the layout fix. A C debug session with `printf` inside a loop exits with code 0 but emits no program stdout to the Debug terminal, while Run prints `1 3 5 7 9` correctly; direct `/api/debug` + WebSocket probing also collected no `stdout` events. Watches are one-shot evaluations: `arr[i]` stays at the value from the manual Eval even after Step Over changes `i`; manual re-evaluate returns the new value. Variables show scalar `i`, `p`, `n`, but C array `arr` is blank/non-expandable because the shared variable model only carries `name`/`value` and drops DAP child references. These are tracked as ISSUE-030 and ISSUE-031.
+
+**Deploy status:** No deploy — QC/test-only session. No product source changes.
+
+**Verification:** `npm run typecheck` ✓, `npm test` ✓ 42 passed / 10 skipped, `PLAYWRIGHT_BASE_URL=http://localhost:8080 npm run e2e` ✓ 10/10, targeted Playwright screenshots captured, direct API/WebSocket debug probe reproduced missing stdout and stale watch refresh.
+
 ## 2026-05-29 — Claude Code (session 22) — Debug layout fix v3: constrain cột `.workspace` để editor/bottom không tràn đè inspector (đóng ISSUE-028)
 
 **Agent:** Claude Code

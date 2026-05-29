@@ -50,6 +50,20 @@ Ask before using new command families that are not listed here, especially comma
 - Low impact UI/UX polish issues should still be recorded with priority `LOW`.
 - Security sandbox issues should be recorded with the priority judged appropriate.
 
+
+## Closed Issue Compaction Workflow
+
+When an issue is fixed and verified:
+
+- First update the issue status to `PASSED` and add the final QC verification note.
+- Keep all `OPEN` issues in full detail. Do not compact open issues.
+- Compact `PASSED` issues after closure to keep `ISSUES.md` readable.
+- A compacted closed issue should retain: title, severity, area, status, reported metadata when known, suspected files, compact summary, final verification summary, and archive note.
+- Add or keep a global `Compact Archive Caveat` in `ISSUES.md`: `LOG.md` is session-level narrative only, and fine-grained historical evidence from old issue bodies may not be retained after compaction.
+- Do not claim that `LOG.md` contains detailed command output unless the exact evidence is actually present there.
+- If a closed issue had important residual risk, keep that risk in the compact summary, for example "monitor if flaky behavior repeats".
+- If an old issue regresses after compaction, create a follow-up issue or append a fresh Additional QC verification note with new evidence.
+
 ## Issue Format
 
 Use this structure for each new issue in `ISSUES.md`:
