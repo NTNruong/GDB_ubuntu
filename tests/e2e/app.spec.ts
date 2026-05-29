@@ -105,6 +105,22 @@ test("debug side panel shows switchable Variables/Call Stack/Watches tabs (ISSUE
   expect(box!.width).toBeGreaterThan(120);
   expect(box!.x + box!.width).toBeLessThanOrEqual((viewport?.width ?? 0) + 2);
 
+  // ISSUE-028 v3 guard: editor + bottom must stay inside the left workspace column,
+  // not blow out to full viewport and cover the inspector (session 21 residual:
+  // .workspace=1114 but .editor-panel/.bottom-panel=1600).
+  const ws = await page.locator(".workspace").boundingBox();
+  const ep = await page.locator(".editor-panel").boundingBox();
+  const bp = await page.locator(".bottom-panel").boundingBox();
+  expect(ep!.width).toBeLessThanOrEqual(ws!.width + 2);
+  expect(bp!.width).toBeLessThanOrEqual(ws!.width + 2);
+  // editor must not overlap the right inspector panel
+  expect(ep!.x + ep!.width).toBeLessThanOrEqual(box!.x + 2);
+  // no document-level horizontal overflow
+  const overflowX = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(overflowX).toBeLessThanOrEqual(2);
+
   // Variables tab is default and selected
   await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Variables");
 

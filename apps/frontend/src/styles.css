@@ -328,9 +328,11 @@ h1.brand {
 
 .workspace {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(340px, 58vh) minmax(280px, 1fr);
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
   --editor-height: 58%;
 }
 
@@ -375,6 +377,7 @@ h1.brand {
 
 .editor-panel {
   min-height: 0;
+  min-width: 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -462,6 +465,7 @@ h1.brand {
   grid-template-columns: minmax(220px, 330px) 1fr;
   gap: 12px;
   min-height: 0;
+  min-width: 0;
   padding: 12px;
 }
 
@@ -527,6 +531,7 @@ h1.brand {
 .result-card {
   display: grid;
   grid-template-rows: auto 1fr;
+  min-width: 0;
   overflow: hidden;
 }
 

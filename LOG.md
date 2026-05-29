@@ -1,5 +1,34 @@
 # Change Log
 
+## 2026-05-29 — Claude Code (session 22) — Debug layout fix v3: constrain cột `.workspace` để editor/bottom không tràn đè inspector (đóng ISSUE-028)
+
+**Agent:** Claude Code
+**Files Modified:**
+- `apps/frontend/src/styles.css` — fix gốc residual ISSUE-028 (QC session 4 phát hiện + chứng minh CSS-injection): `.workspace` thiếu `grid-template-columns` nên cột ngầm = `auto` (=max-content), Monaco phồng ra full viewport ⇒ `.editor-panel`/`.bottom-panel` = 1600px (vượt box `.workspace` 1114px), tràn đè vùng inspector + sinh scrollbar ngang. Thêm `.workspace { grid-template-columns: minmax(0,1fr); overflow: hidden }` (đối xứng pattern đã thắng ở `.content-area` session 21) + `min-width:0` cho `.editor-panel`, `.bottom-panel`, `.result-card` để các grid item co vừa cột (Monaco `automaticLayout` fit theo).
+- `tests/e2e/app.spec.ts` — thêm guard bắt đúng regression này vào test side-panel (test cũ chỉ kiểm panel phải nên lọt lỗi editor/bottom tràn): assert `.editor-panel`/`.bottom-panel` width ≤ `.workspace` width, editor không đè panel phải (`ep.x+ep.width ≤ sidePanel.x`), và `documentElement.scrollWidth ≤ clientWidth` (không overflow ngang).
+
+**Summary:** Đây là cùng lỗi Monaco-blowout như session 21 nhưng sâu hơn 1 cấp: session 21 đã constrain ở `.content-area` (`minmax(0,1fr)` + `.workspace{min-width:0}`) nên `.workspace` đúng = 1114px, nhưng **bên trong** `.workspace` chỉ set `grid-template-rows`, cột ngầm `auto` vẫn để Monaco phồng `.editor-panel`/`.bottom-panel` ra full viewport, đè lên panel phải (nhìn đen/trống) + scrollbar ngang. Fix = áp đúng pattern `minmax(0,1fr)` + `min-width:0` cho `.workspace` và grid item của nó. Verify 3 cách trước khi sửa: đọc code (workspace thiếu grid-template-columns), QC đo live (editor/bottom=1600 trong khi workspace=1114), QC CSS-injection proof.
+
+**Deploy status:** Tự deploy khi push `main` (auto-deploy GitHub Actions). **Frontend-only**: `apps/frontend/src/styles.css` + `tests/e2e/app.spec.ts`. Không đụng `docker/` ⇒ runner-images **KHÔNG** rebuild; chỉ frontend service rebuild + recreate qua `docker compose up --build -d`.
+
+**Verification:** `npm run typecheck` ✓, `npm test` ✓ 42 passed / 10 skipped, `npm run build -w @internal/frontend` ✓ (vite 1770 modules). E2E chưa chạy local (cần live server) — QC verify sau deploy: panel phải hiện nội dung Variables/Call Stack/Watches (không còn đen/trống), không còn scrollbar ngang, `.editor-panel.width ≈ .workspace.width` (không còn =1600), `documentElement.scrollWidth ≤ innerWidth`.
+
+## 2026-05-29 — Codex (session 4) — QC verify Claude session 21 debug layout v2
+
+**Agent:** Codex QC
+**Files Modified:**
+- `ISSUES.md` — updated ISSUE-020/028 and added a residual note to ISSUE-013 after live verification of Claude Code session 21.
+- `LOG.md` — recorded this QC verification summary.
+- `test-results/qc-session21-layout-tailnet.png` — Playwright evidence screenshot for the session 21 layout state on `https://gdb.char-newton.ts.net`.
+
+**Summary:** Reviewed Claude session 21 and verified the new wrapper-based layout exists: `.content-area.debug-active` splits below the 100% topbar into left workspace, horizontal resize handle, and right inspector. Baseline `npm run typecheck` and `npm test` passed. Live e2e against `localhost:8080` passed 9/10; the only failure was the existing ISSUE-013 Stop -> Debug restart test once, while a targeted restart probe immediately afterward passed with both `/api/debug` calls returning 202 and the second session reaching `breakpoint`.
+
+**Findings:** ISSUE-020 resize capability is now verified: vertical editor/bottom resize changed editor height and double-click reset restored it; horizontal inspector resize changed the side-panel width and double-click reset restored 30%. ISSUE-028 remains OPEN: the side panel itself now has real width and is inside the viewport, but `.workspace` still creates an implicit grid column at the old/full viewport width. At 1600px viewport, `.workspace.width=1114`, yet `.editor-panel.width=1600` and `.bottom-panel.width=1600`; after dragging the right inspector, workspace changed to 1044px but editor/bottom stayed 1600px. This matches the user report that the right area appears blank/covered and there can still be a horizontal scrollbar. A CSS-injection proof showed `.workspace { grid-template-columns: minmax(0, 1fr); overflow: hidden }` plus constrained `.editor-panel`/`.bottom-panel` reduces Monaco/editor/bottom to the left column width.
+
+**Deploy status:** No deploy — QC/test-only session. No product source changes.
+
+**Verification:** `npm run typecheck` ✓, `npm test` ✓ 42 passed / 10 skipped, `PLAYWRIGHT_BASE_URL=http://localhost:8080 npm run e2e` ✗ 9/10 due residual ISSUE-013 flake, targeted layout probes reproduced remaining ISSUE-028, targeted Stop -> Debug restart probe passed.
+
 ## 2026-05-29 — Claude Code (session 21) — Debug layout fix v2: cột inspector full-height + kéo được (ISSUE-028, đóng ISSUE-020)
 
 **Agent:** Claude Code
