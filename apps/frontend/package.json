@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@internal/shared": "0.1.0",
+    "@internal/shared": "1.0.0",
     "@monaco-editor/react": "^4.7.0",
     "lucide-react": "^0.548.0",
     "monaco-editor": "^0.54.0",
