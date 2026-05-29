@@ -9,6 +9,7 @@ test-results/
 tmp/
 LOG.md
 ISSUES.md
+AGENTS.md
 *.md~
 update-*.md
 .claude/
