@@ -97,6 +97,14 @@ test("debug side panel shows switchable Variables/Call Stack/Watches tabs (ISSUE
   const panel = page.locator(".debug-side-panel");
   await expect(panel).toBeVisible();
 
+  // ISSUE-028 regression guard: panel must have real width and sit inside the
+  // viewport (session 20 bug pushed it to width=0 / off-screen).
+  const box = await panel.boundingBox();
+  const viewport = page.viewportSize();
+  expect(box).not.toBeNull();
+  expect(box!.width).toBeGreaterThan(120);
+  expect(box!.x + box!.width).toBeLessThanOrEqual((viewport?.width ?? 0) + 2);
+
   // Variables tab is default and selected
   await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Variables");
 

@@ -315,10 +315,22 @@ h1.brand {
   background: var(--color-warning-bg);
 }
 
+.content-area {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 0;
+  min-width: 0;
+}
+
+.content-area.debug-active {
+  grid-template-columns: minmax(0, 1fr) 6px var(--inspector-width, 30%);
+}
+
 .workspace {
   display: grid;
   grid-template-rows: minmax(340px, 58vh) minmax(280px, 1fr);
   min-height: 0;
+  min-width: 0;
   --editor-height: 58%;
 }
 
@@ -366,11 +378,37 @@ h1.brand {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.editor-panel.debug-split {
-  display: grid;
-  grid-template-columns: 7fr 3fr;
-  gap: 1px;
+.resize-handle-x {
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
   background: var(--border-subtle);
+  transition: background var(--transition-fast);
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resize-handle-x:hover,
+.resize-handle-x.dragging {
+  background: var(--border-active);
+}
+
+.resize-handle-x::after {
+  content: "";
+  width: 3px;
+  height: 40px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.resize-handle-x:hover::after,
+.resize-handle-x.dragging::after {
+  opacity: 1;
 }
 
 .debug-side-panel {
@@ -379,6 +417,7 @@ h1.brand {
   min-width: 0;
   min-height: 0;
   background: var(--bg-layer-1);
+  border-left: 1px solid var(--border-subtle);
 }
 
 .debug-side-tabs {
@@ -808,7 +847,11 @@ h1.brand {
     grid-template-columns: 1fr;
   }
 
-  .editor-panel.debug-split {
+  .content-area.debug-active {
     grid-template-columns: 1fr;
+  }
+
+  .resize-handle-x {
+    display: none;
   }
 }

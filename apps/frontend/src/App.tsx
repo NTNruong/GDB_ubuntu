@@ -70,9 +70,12 @@ export function App() {
   const [debugPanelTab, setDebugPanelTab] = useState<"variables" | "stack" | "watches">("variables");
   const [editorHeight, setEditorHeight] = useState(58);
   const [isDragging, setIsDragging] = useState(false);
+  const [inspectorWidth, setInspectorWidth] = useState(30);
+  const [isDraggingX, setIsDraggingX] = useState(false);
 
   const clientIdRef = useRef(createClientId());
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const contentAreaRef = useRef<HTMLDivElement | null>(null);
   const runSocket = useRef<WebSocket | null>(null);
   const runEvents = useRef<EventSource | null>(null);
   const runPhaseRef = useRef<RunPhase>("idle");
@@ -162,6 +165,32 @@ export function App() {
 
     const onMouseUp = () => {
       setIsDragging(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      setTimeout(() => editorRef.current?.layout(), 50);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
+
+  const startResizeX = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setIsDraggingX(true);
+    let lastRun = 0;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastRun < 16) return;
+      lastRun = now;
+      const rect = contentAreaRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pct = ((rect.right - moveEvent.clientX) / rect.width) * 100;
+      setInspectorWidth(Math.min(55, Math.max(15, pct)));
+    };
+
+    const onMouseUp = () => {
+      setIsDraggingX(false);
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       setTimeout(() => editorRef.current?.layout(), 50);
@@ -619,12 +648,17 @@ export function App() {
         </span>
       </header>
 
-      <main
-        className="workspace"
-        ref={workspaceRef}
-        style={{ "--editor-height": `${editorHeight}%` } as CSSProperties}
+      <div
+        className={`content-area ${isDebugActive ? "debug-active" : ""}`}
+        ref={contentAreaRef}
+        style={{ "--inspector-width": `${inspectorWidth}%` } as CSSProperties}
       >
-        <section className={`editor-panel ${isDebugActive ? "debug-split" : ""}`}>
+        <main
+          className="workspace"
+          ref={workspaceRef}
+          style={{ "--editor-height": `${editorHeight}%` } as CSSProperties}
+        >
+          <section className="editor-panel">
           <Editor
             height="100%"
             language={language === "cpp" ? "cpp" : language}
@@ -643,84 +677,13 @@ export function App() {
             }}
           />
 
-          {isDebugActive && (
-            <aside className="debug-side-panel">
-              <div className="debug-side-tabs">
-                <button className={debugPanelTab === "variables" ? "selected" : ""} onClick={() => setDebugPanelTab("variables")}>
-                  <Variable size={14} />
-                  <span>Variables</span>
-                </button>
-                <button className={debugPanelTab === "stack" ? "selected" : ""} onClick={() => setDebugPanelTab("stack")}>
-                  <ListTree size={14} />
-                  <span>Call Stack</span>
-                </button>
-                <button className={debugPanelTab === "watches" ? "selected" : ""} onClick={() => setDebugPanelTab("watches")}>
-                  <Eye size={14} />
-                  <span>Watches</span>
-                </button>
-              </div>
+          </section>
 
-              <div className="debug-side-body">
-                {debugPanelTab === "variables" && (
-                  <Inspector title="Variables" empty="No variables" rows={variables.map((item) => [item.name, item.value ?? ""])} />
-                )}
-                {debugPanelTab === "stack" && (
-                  <Inspector
-                    title="Call Stack"
-                    empty="No frames"
-                    rows={frames.map((frame) => [
-                      `#${frame.level}`,
-                      `${frame.func}${frame.line ? `:${frame.line}` : ""}`
-                    ])}
-                  />
-                )}
-                {debugPanelTab === "watches" && (
-                  <>
-                    <Inspector
-                      title="Watches"
-                      empty="No watches"
-                      rows={watches.map((watch) => [watch.expression, watch.error ?? watch.value ?? ""])}
-                    />
-                    <form
-                      className="debug-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        if (!watchInput.trim()) {
-                          return;
-                        }
-                        sendDebug({ type: "evaluate", expression: watchInput.trim() });
-                        setWatchInput("");
-                      }}
-                    >
-                      <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
-                      <button type="submit">Eval</button>
-                    </form>
-                    <form
-                      className="debug-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        if (!rawCommand.trim()) {
-                          return;
-                        }
-                        sendDebug({ type: "raw", command: rawCommand.trim() });
-                        setRawCommand("");
-                      }}
-                    >
-                      <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
-                      <button type="submit">Send</button>
-                    </form>
-                  </>
-                )}
-              </div>
-            </aside>
-          )}
-        </section>
-
-        <div
-          className={`resize-handle ${isDragging ? "dragging" : ""}`}
-          onMouseDown={startResize}
-          onDoubleClick={() => setEditorHeight(58)}
-        />
+          <div
+            className={`resize-handle ${isDragging ? "dragging" : ""}`}
+            onMouseDown={startResize}
+            onDoubleClick={() => setEditorHeight(58)}
+          />
 
         <section className="bottom-panel">
           <div className="input-card">
@@ -775,7 +738,88 @@ export function App() {
             )}
           </div>
         </section>
-      </main>
+        </main>
+
+        {isDebugActive && (
+          <div
+            className={`resize-handle-x ${isDraggingX ? "dragging" : ""}`}
+            onMouseDown={startResizeX}
+            onDoubleClick={() => setInspectorWidth(30)}
+          />
+        )}
+
+        {isDebugActive && (
+          <aside className="debug-side-panel">
+            <div className="debug-side-tabs">
+              <button className={debugPanelTab === "variables" ? "selected" : ""} onClick={() => setDebugPanelTab("variables")}>
+                <Variable size={14} />
+                <span>Variables</span>
+              </button>
+              <button className={debugPanelTab === "stack" ? "selected" : ""} onClick={() => setDebugPanelTab("stack")}>
+                <ListTree size={14} />
+                <span>Call Stack</span>
+              </button>
+              <button className={debugPanelTab === "watches" ? "selected" : ""} onClick={() => setDebugPanelTab("watches")}>
+                <Eye size={14} />
+                <span>Watches</span>
+              </button>
+            </div>
+
+            <div className="debug-side-body">
+              {debugPanelTab === "variables" && (
+                <Inspector title="Variables" empty="No variables" rows={variables.map((item) => [item.name, item.value ?? ""])} />
+              )}
+              {debugPanelTab === "stack" && (
+                <Inspector
+                  title="Call Stack"
+                  empty="No frames"
+                  rows={frames.map((frame) => [
+                    `#${frame.level}`,
+                    `${frame.func}${frame.line ? `:${frame.line}` : ""}`
+                  ])}
+                />
+              )}
+              {debugPanelTab === "watches" && (
+                <>
+                  <Inspector
+                    title="Watches"
+                    empty="No watches"
+                    rows={watches.map((watch) => [watch.expression, watch.error ?? watch.value ?? ""])}
+                  />
+                  <form
+                    className="debug-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!watchInput.trim()) {
+                        return;
+                      }
+                      sendDebug({ type: "evaluate", expression: watchInput.trim() });
+                      setWatchInput("");
+                    }}
+                  >
+                    <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
+                    <button type="submit">Eval</button>
+                  </form>
+                  <form
+                    className="debug-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!rawCommand.trim()) {
+                        return;
+                      }
+                      sendDebug({ type: "raw", command: rawCommand.trim() });
+                      setRawCommand("");
+                    }}
+                  >
+                    <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
+                    <button type="submit">Send</button>
+                  </form>
+                </>
+              )}
+            </div>
+          </aside>
+        )}
+      </div>
     </div>
   );
 }
