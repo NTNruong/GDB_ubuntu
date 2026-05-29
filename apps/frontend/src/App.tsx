@@ -3,6 +3,8 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Bug,
+  ChevronDown,
+  ChevronUp,
   CircleX,
   ListTree,
   MoreHorizontal,
@@ -15,7 +17,7 @@ import {
   TriangleAlert,
   Variable
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   LANGUAGE_CAPABILITIES,
   parseArgv,
@@ -68,8 +70,12 @@ export function App() {
   const [isDebugActive, setIsDebugActive] = useState(false);
   const [runElapsed, setRunElapsed] = useState(0);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [editorHeight, setEditorHeight] = useState(58);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isBottomCollapsed, setIsBottomCollapsed] = useState(false);
 
   const clientIdRef = useRef(createClientId());
+  const workspaceRef = useRef<HTMLElement | null>(null);
   const runSocket = useRef<WebSocket | null>(null);
   const runEvents = useRef<EventSource | null>(null);
   const runPhaseRef = useRef<RunPhase>("idle");
@@ -88,6 +94,20 @@ export function App() {
 
   const isDebugRunning = isDebugActive && debugStatus === "Running";
   const isDebugStopped = isDebugActive && debugStatus !== "Running" && debugStatus !== "Starting";
+
+  const statusClass = useMemo(() => {
+    const status = activeTab === "debug" ? debugStatus : runStatus;
+    if (status === "Idle") return "";
+    if (status === "Starting") return "status-starting";
+    if (status === "Running" || status.startsWith("Running ")) return "status-running";
+    if (status.startsWith("Exited 0")) return "status-success";
+    if (status.startsWith("Exited ")) return "status-error";
+    if (status === "Error" || status === "Failed") return "status-error";
+    if (status === "Timed out") return "status-warning";
+    if (status === "Stopped") return "status-stopped";
+    if (/breakpoint|Stopped/i.test(status)) return "status-breakpoint";
+    return "";
+  }, [activeTab, debugStatus, runStatus]);
 
   const appendOutput = useCallback((stream: TerminalLine["stream"], text: string) => {
     setOutput((current) => [...current, { stream, text }]);
@@ -128,6 +148,32 @@ export function App() {
       appendDebug("system", "\nStopped by user\n");
     }
   }, [appendDebug, appendOutput, stopSockets]);
+
+  const startResize = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setIsDragging(true);
+    let lastRun = 0;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastRun < 16) return;
+      lastRun = now;
+      const rect = workspaceRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pct = ((moveEvent.clientY - rect.top) / rect.height) * 100;
+      setEditorHeight(Math.min(85, Math.max(20, pct)));
+    };
+
+    const onMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      setTimeout(() => editorRef.current?.layout(), 50);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
 
   const sendDebug = useCallback((command: DebugCommand) => {
     if (debugSocket.current?.readyState === WebSocket.OPEN) {
@@ -501,10 +547,12 @@ export function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="brand">
-          <Terminal size={20} />
-          <span>Internal Code Runner</span>
-        </div>
+        <h1 className="brand">
+          <div className="brand-icon">
+            <Terminal size={18} />
+          </div>
+          <span className="brand-text">Internal Code Runner</span>
+        </h1>
         <select
           aria-label="Language"
           value={language}
@@ -536,10 +584,10 @@ export function App() {
           <Bug size={16} />
           <span>Debug</span>
         </button>
-        <button type="button" data-testid="btn-topbar-stop" onClick={handleStop} title="Stop">
+        <button type="button" data-testid="btn-topbar-stop" onClick={handleStop} disabled={!isRunActive && !isDebugActive} title="Stop">
           <Square size={16} fill="currentColor" />
         </button>
-        <span className={`status-pill${isRunActive && runElapsed >= 3 ? " running-long" : ""}`}>
+        <span className={`status-pill ${statusClass}${isRunActive && runElapsed >= 3 ? " running-long" : ""}`}>
           {activeTab === "debug"
             ? debugStatus
             : isRunActive && runElapsed >= 3
@@ -548,7 +596,11 @@ export function App() {
         </span>
       </header>
 
-      <main className="workspace">
+      <main
+        className={`workspace ${isBottomCollapsed ? "bottom-collapsed" : ""}`}
+        ref={workspaceRef}
+        style={{ "--editor-height": `${editorHeight}%` } as CSSProperties}
+      >
         <section className="editor-panel">
           <Editor
             height="100%"
@@ -569,29 +621,61 @@ export function App() {
           />
         </section>
 
+        <div
+          className={`resize-handle ${isDragging ? "dragging" : ""}`}
+          onMouseDown={startResize}
+          onDoubleClick={() => setEditorHeight(58)}
+        >
+          <button
+            type="button"
+            className="collapse-toggle"
+            onClick={() => setIsBottomCollapsed((prev) => !prev)}
+            aria-label={isBottomCollapsed ? "Expand panel" : "Collapse panel"}
+            title={isBottomCollapsed ? "Expand panel" : "Collapse panel"}
+          >
+            {isBottomCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+
         <section className="bottom-panel">
           <div className="input-card">
             <label htmlFor="stdin">stdin</label>
             <textarea id="stdin" value={stdin} onChange={(event) => setStdin(event.target.value)} spellCheck={false} />
-            <label htmlFor="breakpoints">breakpoints</label>
-            <input
-              id="breakpoints"
-              value={breakpointText}
-              onChange={(event) => setBreakpointText(event.target.value)}
-              placeholder="e.g. 6, 12"
-            />
+            <label>breakpoints</label>
+            <div className="breakpoint-info">
+              <input
+                id="breakpoints"
+                type="text"
+                className="sr-only"
+                aria-label="breakpoints"
+                value={breakpointText}
+                onChange={(event) => setBreakpointText(event.target.value)}
+              />
+              <span className="breakpoint-count">
+                {breakpoints.length} breakpoint{breakpoints.length !== 1 ? "s" : ""} set — click the gutter to toggle
+              </span>
+              {breakpoints.length > 0 && (
+                <button type="button" className="breakpoint-clear" onClick={() => setBreakpointText("")} title="Clear all breakpoints">
+                  Clear all
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="result-card">
             <div className="tabbar">
               <button className={activeTab === "output" ? "selected" : ""} onClick={() => setActiveTab("output")}>
-                Output
+                <Terminal size={14} />
+                <span>Output</span>
               </button>
               <button className={activeTab === "errors" ? "selected" : ""} onClick={() => setActiveTab("errors")}>
-                Error List
+                <CircleX size={14} />
+                <span>Error List</span>
+                {diagnostics.length > 0 && <span className="tab-badge">{diagnostics.length}</span>}
               </button>
               <button className={activeTab === "debug" ? "selected" : ""} onClick={() => setActiveTab("debug")}>
-                Debug
+                <Bug size={14} />
+                <span>Debug</span>
               </button>
             </div>
 

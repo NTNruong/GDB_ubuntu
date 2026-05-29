@@ -38,6 +38,7 @@ services:
       DEBUG_MAX_MS: "900000"
       DEBUG_IDLE_MS: "300000"
       DEBUG_ENGINE: "dap"
+      DEBUG_VERBOSE: "0"
       WORKSPACE_CONTAINER_ROOT: "/runner-workspaces"
       WORKSPACE_HOST_ROOT: "/tmp/gdb-ubuntu-runner-workspaces"
     volumes:

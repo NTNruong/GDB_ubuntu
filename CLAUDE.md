@@ -32,22 +32,23 @@ Dev ports: frontend `5173` (Vite, proxies `/api` → `4000`), api `4000`, runner
 
 Server deploy helper (on an Ubuntu host with the repo at `/opt/apps/GDB_ubuntu`): `bash bin/pull-latest.sh`. Flags: `RESTART_APP=1`, `REBUILD_RUNNER_IMAGES=1`.
 
-### WinSCP deploy workflow (preferred for the maintainer)
+### Deploy workflow (GitHub Actions auto-deploy)
 
-The maintainer deploys to an Ubuntu 24.04 LTS host (`/opt/apps/GDB_ubuntu`) by copying only the changed files via **WinSCP** rather than `git pull` on the server. After making changes, the workflow is:
+Deployment is automated. A **GitHub Actions self-hosted runner** on the Ubuntu 24.04 LTS host (`/opt/apps/GDB_ubuntu`) watches `main`; every push to `main` triggers [.github/workflows/deploy.yml](.github/workflows/deploy.yml), which runs `bash bin/pull-latest.sh` on the server. So the normal deploy is simply: **commit and push to `main`** — the runner does `git pull --ff-only`, then `docker compose up --build -d` for the app services. The workflow auto-detects changes under `docker/` (via `git diff HEAD origin/main`) and sets `REBUILD_RUNNER_IMAGES=1` so the compiler base images get rebuilt before the app services restart.
 
-1. **Identify the changed files.** Source files only — do not copy test files (`*.test.ts`), `LOG.md`, plan files, or anything under `.claude/`. The repository keeps the server tree mirroring the workspace structure, so the destination path is just `/opt/apps/GDB_ubuntu/<same/relative/path>`.
-2. **Copy via WinSCP** (Windows → server) preserving the path layout.
-3. **SSH in and rebuild only the services that changed.** Pick the narrowest command:
-   - TypeScript / shared schema changes in `apps/runner/src/**` → `docker compose up --build -d runner`
-   - TypeScript changes in `apps/api/src/**` → `docker compose up --build -d api`
-   - Frontend (`apps/frontend/src/**`, `apps/frontend/index.html`, Vite config) → `docker compose up --build -d frontend`
-   - Multiple of the above → `docker compose up --build -d` (rebuilds all app services; safe default when unsure)
-   - Anything under `docker/runner-cpp/` or `docker/runner-python/` (Dockerfile, run-*, debug-*, debug-dap-*) → **must also** run `docker compose --profile runner-images build runner-cpp-image runner-python-image` *before* `docker compose up --build -d` so child containers pick up the new image. Skipping this is the most common deploy mistake.
+**WinSCP is used only for `LOG.md` and `ISSUES.md`.** Both are gitignored and never tracked, so copying them straight into `/opt/apps/GDB_ubuntu/` does not interfere with `git pull --ff-only`. Do **not** deploy source code via WinSCP — push to `main` instead, otherwise the server tree diverges from git and the next auto-deploy `pull --ff-only` may fail.
+
+For understanding what the auto-deploy does (and for any rare manual SSH deploy), the rebuild rules are:
+   - TypeScript / shared schema changes in `apps/runner/src/**` → rebuild `runner`
+   - TypeScript changes in `apps/api/src/**` → rebuild `api`
+   - Frontend (`apps/frontend/src/**`, `apps/frontend/index.html`, Vite config) → rebuild `frontend`
+   - Multiple of the above → `docker compose up --build -d` rebuilds all app services (this is what the auto-deploy always does via `RESTART_APP=1`)
+   - Anything under `docker/runner-cpp/` or `docker/runner-python/` (Dockerfile, run-*, debug-*, debug-dap-*) → **must also** run `docker compose --profile runner-images build runner-cpp-image runner-python-image` *before* `docker compose up --build -d` so child containers pick up the new image. The auto-deploy handles this automatically when it detects `docker/` changes; if deploying by hand, skipping it is the most common mistake.
    - `docker-compose.yml` env-var changes → `docker compose up -d` (no `--build` needed unless code also changed).
-4. **Verify.** `docker compose logs --tail=50 <service>` to confirm clean start, then manual UI smoke for the specific behavior the change targets, and hard-reload (Ctrl+Shift+R) the browser if the frontend was rebuilt.
 
-When writing the LOG.md entry for the session, the **Deploy status** block must list the exact files to copy and the exact `docker compose` command(s) — match the rules above. Past entries in LOG.md are the canonical examples of the expected format.
+**Verify after a deploy:** check the Actions run is green, then `docker compose logs --tail=50 <service>` on the server to confirm a clean start, manual UI smoke for the specific behavior the change targets, and hard-reload (Ctrl+Shift+R) the browser if the frontend was rebuilt.
+
+When writing the LOG.md entry for the session, the **Deploy status** block should note that the change deploys automatically on push to `main`, and call out explicitly whether the runner-images rebuild is triggered (i.e. whether anything under `docker/runner-cpp/` or `docker/runner-python/` changed). Past entries in LOG.md are the canonical examples of the expected format.
 
 ## Architecture
 

@@ -1,34 +1,33 @@
 name: Auto Deploy
 
-# Kích hoạt workflow mỗi khi có thao tác push lên nhánh main
 on:
   push:
     branches:
-      - main  # Nếu nhánh chính của bạn tên là master, hãy sửa thành master
+      - main
+
+# --- THÊM: Tránh chạy song song các job deploy ---
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    runs-on: self-hosted # Chỉ định chạy trên Runner bạn vừa cài đặt ở server
+    runs-on: self-hosted
+    # --- THÊM: Giới hạn thời gian chạy tối đa ---
+    timeout-minutes: 30
 
     steps:
       - name: Execute Deploy Script
         run: |
           cd /opt/apps/GDB_ubuntu
-          
-          # 1. Tải thông tin các commit mới nhất từ GitHub về (nhưng chưa gộp vào code hiện tại)
           git fetch origin main
           
-          # 2. So sánh sự khác biệt giữa code hiện tại trên server (HEAD) và code mới trên GitHub (origin/main)
-          # Nếu có file trong thư mục docker/ thay đổi thì tự động kích hoạt rebuild compiler images
           if git diff --name-only HEAD origin/main | grep -q "^docker/"; then
-            echo "Phát hiện thay đổi trong thư mục docker/. Sẽ build lại base images."
+            echo "Detected changes in docker/ directory. Setting REBUILD_RUNNER_IMAGES=1"
             export REBUILD_RUNNER_IMAGES=1
           else
             export REBUILD_RUNNER_IMAGES=0
           fi
           
-          # 3. Yêu cầu restart lại các service (frontend, api, runner)
           export RESTART_APP=1
-          
-          # 4. Chạy script deploy để tự động git pull và docker compose up --build
           bash bin/pull-latest.sh

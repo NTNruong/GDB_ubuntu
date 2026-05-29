@@ -60,6 +60,7 @@ export class DapDebugSession {
   private exitEmitted = false;
   private pendingExitCode: number | null = null;
   private closed = false;
+  private readonly verbose = process.env.DEBUG_VERBOSE === "1";
 
   constructor(
     private readonly docker: Docker,
@@ -445,7 +446,7 @@ export class DapDebugSession {
 
     const topFrame = frames[0];
     this.currentFrameId = topFrame?.id;
-    if (!topFrame) {
+    if (!topFrame && this.verbose) {
       this.events.emit({ type: "console", data: "[stack] No frames in stackTrace response\n" });
     }
     this.events.emit({
@@ -485,7 +486,7 @@ export class DapDebugSession {
       this.events.emit({ type: "console", data: `[variables] scopes frame=${frameId} error="${msg}"\n` });
     }
 
-    if (scopes.length === 0 && this.request.language !== "python") {
+    if (scopes.length === 0 && this.request.language !== "python" && this.verbose) {
       this.events.emit({ type: "console", data: `[variables] no scopes for frame ${frameId}\n` });
     }
 

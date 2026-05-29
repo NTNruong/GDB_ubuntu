@@ -85,3 +85,27 @@ test("debug toolbar matches VS Code Insiders layout (ISSUE-010)", async ({ page 
   await expect(page.locator('.debug-more-menu')).toContainText("Variables");
   await expect(page.locator('.debug-more-menu')).toContainText("Call Stack");
 });
+
+async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
+  await page.locator(".monaco-editor").first().click();
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.press("Delete");
+  await page.keyboard.insertText(source);
+}
+
+test("Error List tab shows badge with diagnostic count on compile error (ISSUE-023)", async ({ page }) => {
+  await page.goto("/");
+  await replaceEditorSource(page, "int main() { this is not valid c++ }\n");
+  await page.getByRole("button", { name: "Run" }).click();
+  // Compile error auto-switches to Error List tab and populates diagnostics
+  await expect(page.locator(".tab-badge")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".tab-badge")).not.toHaveText("0");
+});
+
+test("non-zero exit colors status pill red (ISSUE-024)", async ({ page }) => {
+  await page.goto("/");
+  await replaceEditorSource(page, "int main() { return 3; }\n");
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.locator(".status-pill")).toContainText("Exited 3", { timeout: 30_000 });
+  await expect(page.locator(".status-pill")).toHaveClass(/status-error/);
+});
