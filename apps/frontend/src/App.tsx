@@ -3,11 +3,9 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Bug,
-  ChevronDown,
-  ChevronUp,
   CircleX,
+  Eye,
   ListTree,
-  MoreHorizontal,
   Pause,
   Play,
   RotateCcw,
@@ -69,10 +67,9 @@ export function App() {
   const [isRunActive, setIsRunActive] = useState(false);
   const [isDebugActive, setIsDebugActive] = useState(false);
   const [runElapsed, setRunElapsed] = useState(0);
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [debugPanelTab, setDebugPanelTab] = useState<"variables" | "stack" | "watches">("variables");
   const [editorHeight, setEditorHeight] = useState(58);
   const [isDragging, setIsDragging] = useState(false);
-  const [isBottomCollapsed, setIsBottomCollapsed] = useState(false);
 
   const clientIdRef = useRef(createClientId());
   const workspaceRef = useRef<HTMLElement | null>(null);
@@ -84,7 +81,6 @@ export function App() {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const decorationIds = useRef<string[]>([]);
-  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   const capability = useMemo(
     () => LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage,
@@ -185,7 +181,6 @@ export function App() {
 
   const handleRestart = useCallback(async () => {
     if (!isDebugActive) return;
-    setIsMoreMenuOpen(false);
     handleStop();
     await new Promise((resolve) => setTimeout(resolve, 200));
     await startDebugRef.current();
@@ -363,15 +358,9 @@ export function App() {
   }, [startDebug]);
 
   useEffect(() => {
-    if (!isMoreMenuOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
-        setIsMoreMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isMoreMenuOpen]);
+    const timer = setTimeout(() => editorRef.current?.layout(), 50);
+    return () => clearTimeout(timer);
+  }, [isDebugActive]);
 
   const handleRunEvent = useCallback(
     (event: RunEvent) => {
@@ -587,6 +576,40 @@ export function App() {
         <button type="button" data-testid="btn-topbar-stop" onClick={handleStop} disabled={!isRunActive && !isDebugActive} title="Stop">
           <Square size={16} fill="currentColor" />
         </button>
+        {isDebugActive && (
+          <div className="debug-toolbar">
+            <div className="debug-group">
+              {isDebugRunning ? (
+                <button aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
+                  <Pause size={15} fill="currentColor" />
+                </button>
+              ) : (
+                <button aria-label="Continue" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "continue" })} title="Continue">
+                  <Play size={15} fill="currentColor" />
+                </button>
+              )}
+            </div>
+            <div className="debug-group">
+              <button aria-label="Step over" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
+                <SkipForward size={15} fill="currentColor" />
+              </button>
+              <button aria-label="Step into" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
+                <ArrowDownToLine size={15} />
+              </button>
+              <button aria-label="Step out" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
+                <ArrowUpFromLine size={15} />
+              </button>
+            </div>
+            <div className="debug-group">
+              <button aria-label="Restart" disabled={!isDebugActive} onClick={handleRestart} title="Restart">
+                <RotateCcw size={15} />
+              </button>
+              <button aria-label="Stop" disabled={!isDebugActive} onClick={() => sendDebug({ type: "stop" })} title="Stop">
+                <Square size={15} fill="currentColor" className="icon-stop" />
+              </button>
+            </div>
+          </div>
+        )}
         <span className={`status-pill ${statusClass}${isRunActive && runElapsed >= 3 ? " running-long" : ""}`}>
           {activeTab === "debug"
             ? debugStatus
@@ -597,11 +620,11 @@ export function App() {
       </header>
 
       <main
-        className={`workspace ${isBottomCollapsed ? "bottom-collapsed" : ""}`}
+        className="workspace"
         ref={workspaceRef}
         style={{ "--editor-height": `${editorHeight}%` } as CSSProperties}
       >
-        <section className="editor-panel">
+        <section className={`editor-panel ${isDebugActive ? "debug-split" : ""}`}>
           <Editor
             height="100%"
             language={language === "cpp" ? "cpp" : language}
@@ -619,23 +642,85 @@ export function App() {
               tabSize: 4
             }}
           />
+
+          {isDebugActive && (
+            <aside className="debug-side-panel">
+              <div className="debug-side-tabs">
+                <button className={debugPanelTab === "variables" ? "selected" : ""} onClick={() => setDebugPanelTab("variables")}>
+                  <Variable size={14} />
+                  <span>Variables</span>
+                </button>
+                <button className={debugPanelTab === "stack" ? "selected" : ""} onClick={() => setDebugPanelTab("stack")}>
+                  <ListTree size={14} />
+                  <span>Call Stack</span>
+                </button>
+                <button className={debugPanelTab === "watches" ? "selected" : ""} onClick={() => setDebugPanelTab("watches")}>
+                  <Eye size={14} />
+                  <span>Watches</span>
+                </button>
+              </div>
+
+              <div className="debug-side-body">
+                {debugPanelTab === "variables" && (
+                  <Inspector title="Variables" empty="No variables" rows={variables.map((item) => [item.name, item.value ?? ""])} />
+                )}
+                {debugPanelTab === "stack" && (
+                  <Inspector
+                    title="Call Stack"
+                    empty="No frames"
+                    rows={frames.map((frame) => [
+                      `#${frame.level}`,
+                      `${frame.func}${frame.line ? `:${frame.line}` : ""}`
+                    ])}
+                  />
+                )}
+                {debugPanelTab === "watches" && (
+                  <>
+                    <Inspector
+                      title="Watches"
+                      empty="No watches"
+                      rows={watches.map((watch) => [watch.expression, watch.error ?? watch.value ?? ""])}
+                    />
+                    <form
+                      className="debug-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!watchInput.trim()) {
+                          return;
+                        }
+                        sendDebug({ type: "evaluate", expression: watchInput.trim() });
+                        setWatchInput("");
+                      }}
+                    >
+                      <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
+                      <button type="submit">Eval</button>
+                    </form>
+                    <form
+                      className="debug-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!rawCommand.trim()) {
+                          return;
+                        }
+                        sendDebug({ type: "raw", command: rawCommand.trim() });
+                        setRawCommand("");
+                      }}
+                    >
+                      <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
+                      <button type="submit">Send</button>
+                    </form>
+                  </>
+                )}
+              </div>
+            </aside>
+          )}
         </section>
 
         <div
           className={`resize-handle ${isDragging ? "dragging" : ""}`}
           onMouseDown={startResize}
           onDoubleClick={() => setEditorHeight(58)}
-        >
-          <button
-            type="button"
-            className="collapse-toggle"
-            onClick={() => setIsBottomCollapsed((prev) => !prev)}
-            aria-label={isBottomCollapsed ? "Expand panel" : "Collapse panel"}
-            title={isBottomCollapsed ? "Expand panel" : "Collapse panel"}
-          >
-            {isBottomCollapsed ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-        </div>
+        />
 
         <section className="bottom-panel">
           <div className="input-card">
@@ -686,127 +771,7 @@ export function App() {
               <DiagnosticsPanel diagnostics={diagnostics} onSelect={jumpToDiagnostic} />
             )}
             {activeTab === "debug" && (
-              <div className="debug-grid">
-                <div className="debug-toolbar">
-                  <div className="debug-group">
-                    {isDebugRunning ? (
-                      <button aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
-                        <Pause size={15} fill="currentColor" />
-                      </button>
-                    ) : (
-                      <button aria-label="Continue" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "continue" })} title="Continue">
-                        <Play size={15} fill="currentColor" />
-                      </button>
-                    )}
-                  </div>
-                  <div className="debug-group">
-                    <button aria-label="Step over" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
-                      <SkipForward size={15} fill="currentColor" />
-                    </button>
-                    <button aria-label="Step into" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
-                      <ArrowDownToLine size={15} />
-                    </button>
-                    <button aria-label="Step out" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
-                      <ArrowUpFromLine size={15} />
-                    </button>
-                  </div>
-                  <div className="debug-group">
-                    <button aria-label="Restart" disabled={!isDebugActive} onClick={handleRestart} title="Restart">
-                      <RotateCcw size={15} />
-                    </button>
-                    <button aria-label="Stop" disabled={!isDebugActive} onClick={() => sendDebug({ type: "stop" })} title="Stop">
-                      <Square size={15} fill="currentColor" className="icon-stop" />
-                    </button>
-                  </div>
-                  <div className="debug-group debug-more" ref={moreMenuRef}>
-                    <button
-                      aria-label="More"
-                      aria-haspopup="menu"
-                      aria-expanded={isMoreMenuOpen}
-                      disabled={!isDebugActive}
-                      onClick={() => setIsMoreMenuOpen((open) => !open)}
-                      title="More"
-                    >
-                      <MoreHorizontal size={15} />
-                    </button>
-                    {isMoreMenuOpen && (
-                      <div className="debug-more-menu" role="menu">
-                        <button
-                          role="menuitem"
-                          disabled={!isDebugStopped}
-                          onClick={() => {
-                            sendDebug({ type: "variables" });
-                            setIsMoreMenuOpen(false);
-                          }}
-                        >
-                          <Variable size={14} />
-                          <span>Variables</span>
-                        </button>
-                        <button
-                          role="menuitem"
-                          disabled={!isDebugStopped}
-                          onClick={() => {
-                            sendDebug({ type: "stack" });
-                            setIsMoreMenuOpen(false);
-                          }}
-                        >
-                          <ListTree size={14} />
-                          <span>Call Stack</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <TerminalView lines={debugConsole} compact />
-
-                <div className="inspectors">
-                  <Inspector title="Variables" empty="No variables" rows={variables.map((item) => [item.name, item.value ?? ""])} />
-                  <Inspector
-                    title="Call Stack"
-                    empty="No frames"
-                    rows={frames.map((frame) => [
-                      `#${frame.level}`,
-                      `${frame.func}${frame.line ? `:${frame.line}` : ""}`
-                    ])}
-                  />
-                  <Inspector
-                    title="Watches"
-                    empty="No watches"
-                    rows={watches.map((watch) => [watch.expression, watch.error ?? watch.value ?? ""])}
-                  />
-                </div>
-
-                <form
-                  className="debug-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (!watchInput.trim()) {
-                      return;
-                    }
-                    sendDebug({ type: "evaluate", expression: watchInput.trim() });
-                    setWatchInput("");
-                  }}
-                >
-                  <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
-                  <button type="submit">Eval</button>
-                </form>
-
-                <form
-                  className="debug-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    if (!rawCommand.trim()) {
-                      return;
-                    }
-                    sendDebug({ type: "raw", command: rawCommand.trim() });
-                    setRawCommand("");
-                  }}
-                >
-                  <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
-                  <button type="submit">Send</button>
-                </form>
-              </div>
+              <TerminalView lines={debugConsole} />
             )}
           </div>
         </section>

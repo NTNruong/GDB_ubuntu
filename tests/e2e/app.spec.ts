@@ -52,38 +52,62 @@ test("debug toolbar disables step controls when not stopped (ISSUE-010 scaffoldi
   await expect(page.locator('.debug-toolbar button[aria-label="Step over"]')).toBeEnabled();
   await expect(page.locator('.debug-toolbar button[aria-label="Restart"]')).toBeEnabled();
   await expect(page.locator('.debug-toolbar button[aria-label="Stop"]')).toBeEnabled();
-  await expect(page.locator('.debug-toolbar button[aria-label="More"]')).toBeEnabled();
   // Pause button should not be rendered while stopped (toggle pattern)
   await expect(page.locator('.debug-toolbar button[aria-label="Pause"]')).toHaveCount(0);
 });
 
-// ISSUE-010 visual: VS Code Insiders-style 7-button layout with More (⋯) dropdown
-// containing Variables and Call Stack actions. Icon-only with aria-label/title.
-test("debug toolbar matches VS Code Insiders layout (ISSUE-010)", async ({ page }) => {
+// ISSUE-028: the debug control toolbar lives in the topbar (only while debugging),
+// icon-only, 6 buttons (no More dropdown — Variables/Call Stack are now right-panel tabs).
+test("debug toolbar lives in the topbar with 6 icon buttons (ISSUE-028)", async ({ page }) => {
   await page.goto("/");
+  // Not visible before a debug session starts
+  await expect(page.locator(".debug-toolbar")).toHaveCount(0);
+
   await page.getByLabel("breakpoints").fill("6");
   await page.getByTestId("btn-debug").click();
   await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
 
-  // 7 visible toolbar buttons: Continue (toggle slot), Step Over, Step Into, Step Out, Restart, Stop, More
-  await expect(page.locator(".debug-toolbar > .debug-group > button")).toHaveCount(7);
+  // Toolbar appears inside the topbar header
+  await expect(page.locator("header .debug-toolbar")).toBeVisible();
 
-  // Each visible button is icon-only (no inline text in main toolbar)
+  // 6 buttons: Continue (toggle slot), Step Over, Step Into, Step Out, Restart, Stop
+  await expect(page.locator(".debug-toolbar > .debug-group > button")).toHaveCount(6);
+
+  // Each button is icon-only (no inline text)
   const toolbarButtonText = await page.locator(".debug-toolbar > .debug-group > button").allInnerTexts();
   for (const text of toolbarButtonText) {
     expect(text.trim()).toBe("");
   }
 
-  // Accessibility: each button has aria-label
-  for (const label of ["Continue", "Step over", "Step into", "Step out", "Restart", "Stop", "More"]) {
+  // Accessibility: each button has aria-label; no More button
+  for (const label of ["Continue", "Step over", "Step into", "Step out", "Restart", "Stop"]) {
     await expect(page.locator(`.debug-toolbar button[aria-label="${label}"]`)).toBeVisible();
   }
+  await expect(page.locator('.debug-toolbar button[aria-label="More"]')).toHaveCount(0);
+});
 
-  // More menu opens and reveals Variables / Call Stack items
-  await page.locator('.debug-toolbar button[aria-label="More"]').click();
-  await expect(page.locator('.debug-more-menu')).toBeVisible();
-  await expect(page.locator('.debug-more-menu')).toContainText("Variables");
-  await expect(page.locator('.debug-more-menu')).toContainText("Call Stack");
+// ISSUE-028: Variables / Call Stack / Watches are switchable tabs in a right-side
+// panel beside the editor, populated automatically on stop.
+test("debug side panel shows switchable Variables/Call Stack/Watches tabs (ISSUE-028)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("breakpoints").fill("6");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  const panel = page.locator(".debug-side-panel");
+  await expect(panel).toBeVisible();
+
+  // Variables tab is default and selected
+  await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Variables");
+
+  // Switch to Call Stack
+  await panel.getByRole("button", { name: "Call Stack" }).click();
+  await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Call Stack");
+
+  // Switch to Watches — the watch + debug console inputs moved up here
+  await panel.getByRole("button", { name: "Watches" }).click();
+  await expect(panel.locator('input[placeholder="watch"]')).toBeVisible();
+  await expect(panel.locator('input[placeholder="debug console"]')).toBeVisible();
 });
 
 async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
