@@ -411,8 +411,19 @@ export class DapDebugSession {
       }
 
       this.autoContinueOnInitialStop = false;
+
+      const frames = await this.fetchFrames(threadId);
+      if (reason !== "pause" && reason !== "breakpoint" && !this.hasUserFrame(frames)) {
+        // Stepped out of all user code (e.g. past main's return) — running to exit
+        // routes into the proven exited→flush→terminated path instead of hanging.
+        this.stopped = false;
+        await this.dap?.request("continue", { threadId }).catch((error) => this.emitError(error));
+        this.events.emit({ type: "running" });
+        return;
+      }
+
       this.stopped = true;
-      await this.refreshStackAndVariables(threadId, reason);
+      await this.refreshStackAndVariables(threadId, reason, frames);
       return;
     }
 
@@ -428,9 +439,9 @@ export class DapDebugSession {
     }
   }
 
-  private async refreshStackAndVariables(threadId: number, reason: string | undefined): Promise<void> {
+  private async fetchFrames(threadId: number): Promise<DapStackFrame[]> {
     if (!this.dap) {
-      return;
+      return [];
     }
 
     const response = await this.dap.request("stackTrace", {
@@ -438,7 +449,7 @@ export class DapDebugSession {
       startFrame: 0,
       levels: 20
     });
-    const frames = asArray(asRecord(response.body).stackFrames)
+    return asArray(asRecord(response.body).stackFrames)
       .map(toStackFrame)
       .filter((frame): frame is DapStackFrame => {
         if (!frame) return false;
@@ -446,6 +457,25 @@ export class DapDebugSession {
         const src = frame.source?.path ?? frame.source?.name ?? "";
         return src.startsWith("/workspace/") && !src.endsWith("__debugpy_runner.py");
       });
+  }
+
+  private hasUserFrame(frames: DapStackFrame[]): boolean {
+    return frames.some((frame) => {
+      const src = frame.source?.path ?? frame.source?.name ?? "";
+      return src.startsWith("/workspace/") && !src.endsWith("__debugpy_runner.py");
+    });
+  }
+
+  private async refreshStackAndVariables(
+    threadId: number,
+    reason: string | undefined,
+    prefetchedFrames?: DapStackFrame[]
+  ): Promise<void> {
+    if (!this.dap) {
+      return;
+    }
+
+    const frames = prefetchedFrames ?? (await this.fetchFrames(threadId));
 
     const topFrame = frames[0];
     this.currentFrameId = topFrame?.id;
