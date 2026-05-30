@@ -785,6 +785,7 @@ export class DapDebugSession {
     if (process.env.DEBUG_TEST_OPEN_WORKSPACE === "1") {
       await chmod(root, 0o777);
       await chmod(path.join(root, "tmp"), 0o777);
+      await chmod(path.join(root, "tmp", "program.out"), 0o666);
       await chmod(path.join(root, sourceFileName(this.request.language)), 0o644);
       await chmod(path.join(root, "stdin.txt"), 0o644);
       if (this.request.language === "python") {
