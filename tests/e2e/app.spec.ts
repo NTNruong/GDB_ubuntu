@@ -86,9 +86,10 @@ test("debug toolbar lives in the topbar with 6 icon buttons (ISSUE-028)", async 
   await expect(page.locator('.debug-toolbar button[aria-label="More"]')).toHaveCount(0);
 });
 
-// ISSUE-028: Variables / Call Stack / Watches are switchable tabs in a right-side
+// ISSUE-028: Variables / Call Stack are switchable tabs in a right-side
 // panel beside the editor, populated automatically on stop.
-test("debug side panel shows switchable Variables/Call Stack/Watches tabs (ISSUE-028)", async ({ page }) => {
+// Watches are stacked below Variables in the same tab.
+test("debug side panel shows switchable Variables/Call Stack tabs with stacked Watches (ISSUE-028)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
   await page.getByTestId("btn-debug").click();
@@ -121,17 +122,19 @@ test("debug side panel shows switchable Variables/Call Stack/Watches tabs (ISSUE
   );
   expect(overflowX).toBeLessThanOrEqual(2);
 
+  // Tab bar has exactly 2 buttons (Variables, Call Stack) — no Watches tab
+  await expect(panel.locator(".debug-side-tabs button")).toHaveCount(2);
+
   // Variables tab is default and selected
   await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Variables");
+
+  // Watch + debug console inputs are reachable from the Variables tab (stacked below)
+  await expect(panel.locator('input[placeholder="watch"]')).toBeVisible();
+  await expect(panel.locator('input[placeholder="debug console"]')).toBeVisible();
 
   // Switch to Call Stack
   await panel.getByRole("button", { name: "Call Stack" }).click();
   await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Call Stack");
-
-  // Switch to Watches — the watch + debug console inputs moved up here
-  await panel.getByRole("button", { name: "Watches" }).click();
-  await expect(panel.locator('input[placeholder="watch"]')).toBeVisible();
-  await expect(panel.locator('input[placeholder="debug console"]')).toBeVisible();
 });
 
 // ISSUE-030: C/C++ program stdout must reach the Debug terminal (by end of session).
@@ -225,7 +228,7 @@ test("watches refresh on step and can be removed (ISSUE-031)", async ({ page }) 
   await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
 
   const panel = page.locator(".debug-side-panel");
-  await panel.getByRole("button", { name: "Watches" }).click();
+  // Watches are now visible under the Variables tab (stacked layout) — no tab click needed
   await panel.locator('input[placeholder="watch"]').fill("i");
   await panel.locator('input[placeholder="watch"]').press("Enter");
 
@@ -260,6 +263,28 @@ async function replaceEditorSource(page: import("@playwright/test").Page, source
     editor?.setValue(src);
   }, source);
 }
+
+// Stacked layout regression: Variables and Watches visible simultaneously under the Variables tab,
+// with a vertical resize handle between them.
+test("Variables and Watches are stacked with a resize handle under the Variables tab", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("breakpoints").fill("6");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  const panel = page.locator(".debug-side-panel");
+  await expect(panel).toBeVisible();
+
+  // Both sections visible at the same time under the Variables tab
+  await expect(panel.locator(".debug-variables-section")).toBeVisible();
+  await expect(panel.locator(".debug-watches-section")).toBeVisible();
+
+  // The resize handle is present between them
+  await expect(panel.locator(".debug-vsplit")).toBeVisible();
+
+  // Tab bar shows only 2 buttons
+  await expect(panel.locator(".debug-side-tabs button")).toHaveCount(2);
+});
 
 test("Error List tab shows badge with diagnostic count on compile error (ISSUE-023)", async ({ page }) => {
   await page.goto("/");

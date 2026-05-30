@@ -4,7 +4,6 @@ import {
   ArrowUpFromLine,
   Bug,
   CircleX,
-  Eye,
   ListTree,
   Pause,
   Play,
@@ -69,11 +68,13 @@ export function App() {
   const [isRunActive, setIsRunActive] = useState(false);
   const [isDebugActive, setIsDebugActive] = useState(false);
   const [runElapsed, setRunElapsed] = useState(0);
-  const [debugPanelTab, setDebugPanelTab] = useState<"variables" | "stack" | "watches">("variables");
+  const [debugPanelTab, setDebugPanelTab] = useState<"variables" | "stack">("variables");
   const [editorHeight, setEditorHeight] = useState(58);
   const [isDragging, setIsDragging] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(30);
   const [isDraggingX, setIsDraggingX] = useState(false);
+  const [variablesHeight, setVariablesHeight] = useState<number | undefined>(undefined);
+  const [isDraggingVSplit, setIsDraggingVSplit] = useState(false);
 
   const clientIdRef = useRef(createClientId());
   const workspaceRef = useRef<HTMLElement | null>(null);
@@ -198,6 +199,34 @@ export function App() {
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
       setTimeout(() => editorRef.current?.layout(), 50);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
+
+  const startResizeVSplit = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    setIsDraggingVSplit(true);
+    let lastRun = 0;
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const now = Date.now();
+      if (now - lastRun < 16) return;
+      lastRun = now;
+      const stack = (event.target as HTMLElement).closest(".debug-stack");
+      if (!stack) return;
+      const rect = stack.getBoundingClientRect();
+      const y = moveEvent.clientY - rect.top;
+      const minH = 40;
+      const maxH = rect.height - 80;
+      setVariablesHeight(Math.min(maxH, Math.max(minH, y)));
+    };
+
+    const onMouseUp = () => {
+      setIsDraggingVSplit(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
     };
 
     document.addEventListener("mousemove", onMouseMove);
@@ -826,20 +855,52 @@ export function App() {
                 <ListTree size={14} />
                 <span>Call Stack</span>
               </button>
-              <button className={debugPanelTab === "watches" ? "selected" : ""} onClick={() => setDebugPanelTab("watches")}>
-                <Eye size={14} />
-                <span>Watches</span>
-              </button>
             </div>
 
             <div className="debug-side-body">
               {debugPanelTab === "variables" && (
-                <VariablesTree
-                  variables={variables}
-                  childrenByRef={childrenByRef}
-                  expandedRefs={expandedRefs}
-                  onToggle={toggleVariable}
-                />
+                <div className="debug-stack">
+                  <section className="debug-variables-section" style={variablesHeight !== undefined ? { height: variablesHeight, flex: "0 0 auto" } : { flex: "0 0 auto" }}>
+                    <VariablesTree
+                      variables={variables}
+                      childrenByRef={childrenByRef}
+                      expandedRefs={expandedRefs}
+                      onToggle={toggleVariable}
+                    />
+                  </section>
+                  <div className={`debug-vsplit ${isDraggingVSplit ? "dragging" : ""}`} onMouseDown={startResizeVSplit} />
+                  <section className="debug-watches-section">
+                    <WatchList watches={watches} onRemove={removeWatch} />
+                    <form
+                      className="debug-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!watchInput.trim()) {
+                          return;
+                        }
+                        sendDebug({ type: "evaluate", expression: watchInput.trim() });
+                        setWatchInput("");
+                      }}
+                    >
+                      <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
+                      <button type="submit">Eval</button>
+                    </form>
+                    <form
+                      className="debug-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!rawCommand.trim()) {
+                          return;
+                        }
+                        sendDebug({ type: "raw", command: rawCommand.trim() });
+                        setRawCommand("");
+                      }}
+                    >
+                      <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
+                      <button type="submit">Send</button>
+                    </form>
+                  </section>
+                </div>
               )}
               {debugPanelTab === "stack" && (
                 <Inspector
@@ -850,39 +911,6 @@ export function App() {
                     `${frame.func}${frame.line ? `:${frame.line}` : ""}`
                   ])}
                 />
-              )}
-              {debugPanelTab === "watches" && (
-                <>
-                  <WatchList watches={watches} onRemove={removeWatch} />
-                  <form
-                    className="debug-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (!watchInput.trim()) {
-                        return;
-                      }
-                      sendDebug({ type: "evaluate", expression: watchInput.trim() });
-                      setWatchInput("");
-                    }}
-                  >
-                    <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
-                    <button type="submit">Eval</button>
-                  </form>
-                  <form
-                    className="debug-form"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      if (!rawCommand.trim()) {
-                        return;
-                      }
-                      sendDebug({ type: "raw", command: rawCommand.trim() });
-                      setRawCommand("");
-                    }}
-                  >
-                    <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
-                    <button type="submit">Send</button>
-                  </form>
-                </>
               )}
             </div>
           </aside>

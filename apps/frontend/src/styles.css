@@ -460,6 +460,57 @@ h1.brand {
   padding: 10px;
 }
 
+.debug-stack {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.debug-variables-section,
+.debug-watches-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.debug-watches-section {
+  flex: 1 1 auto;
+}
+
+.debug-vsplit {
+  height: 6px;
+  cursor: row-resize;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+  transition: background var(--transition-fast);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.debug-vsplit:hover,
+.debug-vsplit.dragging {
+  background: var(--accent);
+}
+
+.debug-vsplit::after {
+  content: "";
+  width: 30px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.debug-vsplit:hover::after,
+.debug-vsplit.dragging::after {
+  opacity: 1;
+}
+
 .bottom-panel {
   display: grid;
   grid-template-columns: minmax(220px, 330px) 1fr;
