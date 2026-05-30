@@ -251,10 +251,14 @@ test("watches refresh on step and can be removed (ISSUE-031)", async ({ page }) 
 });
 
 async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
-  await page.locator(".monaco-editor").first().click();
-  await page.keyboard.press("ControlOrMeta+A");
-  await page.keyboard.press("Delete");
-  await page.keyboard.insertText(source);
+  // Use Monaco's setValue via the window hook installed in onEditorMount — keystroke
+  // replacement is unreliable (auto-bracket pairing on insertText leaves stale `}` chars).
+  await page.locator(".monaco-editor").first().waitFor();
+  await page.waitForFunction(() => Boolean((window as unknown as { __monacoEditor?: unknown }).__monacoEditor));
+  await page.evaluate((src) => {
+    const editor = (window as unknown as { __monacoEditor?: { setValue: (value: string) => void } }).__monacoEditor;
+    editor?.setValue(src);
+  }, source);
 }
 
 test("Error List tab shows badge with diagnostic count on compile error (ISSUE-023)", async ({ page }) => {

@@ -562,6 +562,7 @@ export function App() {
   const onEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    (window as unknown as { __monacoEditor?: typeof editor }).__monacoEditor = editor;
 
     editor.onMouseDown((event) => {
       if (event.target.type !== monaco.editor.MouseTargetType.GUTTER_LINE_NUMBERS || !event.target.position) {

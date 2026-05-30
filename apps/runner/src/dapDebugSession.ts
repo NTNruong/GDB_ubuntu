@@ -595,9 +595,11 @@ export class DapDebugSession {
         start: 0,
         count: VAR_SUMMARY_MAX_ITEMS + 1
       });
-      const children = asArray(asRecord(response.body).variables)
-        .map(toVariable)
-        .filter((variable): variable is DapVariable => variable !== null);
+      const children = normalizeChildNames(
+        asArray(asRecord(response.body).variables)
+          .map(toVariable)
+          .filter((variable): variable is DapVariable => variable !== null)
+      );
       const hasMore = children.length > VAR_SUMMARY_MAX_ITEMS;
       const shown = children
         .slice(0, VAR_SUMMARY_MAX_ITEMS)
@@ -620,12 +622,14 @@ export class DapDebugSession {
         start: 0,
         count: VAR_EXPAND_MAX_CHILDREN + 1
       });
-      const raw = asArray(asRecord(response.body).variables)
-        .map(toVariable)
-        .filter((variable): variable is DapVariable =>
-          variable !== null &&
-          !/^(special variables|function variables|class variables)$/i.test(variable.name)
-        );
+      const raw = normalizeChildNames(
+        asArray(asRecord(response.body).variables)
+          .map(toVariable)
+          .filter((variable): variable is DapVariable =>
+            variable !== null &&
+            !/^(special variables|function variables|class variables)$/i.test(variable.name)
+          )
+      );
       const truncated = raw.length > VAR_EXPAND_MAX_CHILDREN;
       const variables = raw.slice(0, VAR_EXPAND_MAX_CHILDREN).map(mapVariable);
       if (truncated) {
@@ -959,6 +963,16 @@ function mapVariable(variable: DapVariable): DebugVariable {
     value: boundSummary(variable.value ?? ""),
     variablesReference: ref
   };
+}
+
+export function normalizeChildNames<T extends { name: string }>(children: T[]): T[] {
+  if (children.length === 0) {
+    return children;
+  }
+  if (!children.every((child) => /^\d+$/.test(child.name))) {
+    return children;
+  }
+  return children.map((child) => ({ ...child, name: `[${child.name}]` }));
 }
 
 export function summarizeChildren(children: { name: string; value: string }[], hasMore: boolean): string {

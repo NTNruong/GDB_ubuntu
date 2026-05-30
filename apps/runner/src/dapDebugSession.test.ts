@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundSummary, parseInfoLocals, summarizeChildren } from "./dapDebugSession.js";
+import { boundSummary, normalizeChildNames, parseInfoLocals, summarizeChildren } from "./dapDebugSession.js";
 
 describe("parseInfoLocals", () => {
   it("parses simple name = value pairs", () => {
@@ -78,6 +78,37 @@ describe("summarizeChildren", () => {
 
   it("returns empty braces for no children", () => {
     expect(summarizeChildren([], false)).toBe("{}");
+  });
+});
+
+describe("normalizeChildNames", () => {
+  it("rewrites all-numeric child names to bracketed array indices", () => {
+    const result = normalizeChildNames([
+      { name: "0", value: "1" },
+      { name: "1", value: "3" },
+      { name: "2", value: "5" }
+    ]);
+    expect(result.map((c) => c.name)).toEqual(["[0]", "[1]", "[2]"]);
+  });
+
+  it("leaves named (struct) children untouched", () => {
+    const children = [
+      { name: "x", value: "1" },
+      { name: "y", value: "2" }
+    ];
+    expect(normalizeChildNames(children)).toEqual(children);
+  });
+
+  it("leaves mixed children untouched", () => {
+    const children = [
+      { name: "0", value: "1" },
+      { name: "len", value: "5" }
+    ];
+    expect(normalizeChildNames(children)).toEqual(children);
+  });
+
+  it("returns empty input unchanged", () => {
+    expect(normalizeChildNames([])).toEqual([]);
   });
 });
 

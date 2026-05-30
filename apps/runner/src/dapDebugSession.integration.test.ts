@@ -122,7 +122,10 @@ maybeDescribe("DapDebugSession integration", () => {
         }
         if (event.type === "error") {
           clearTimeout(timeout);
-          reject(new Error(`Session emitted error: ${event.message}`));
+          const summary = collected.length === 0
+            ? "(no events)"
+            : collected.map(summarizeEvent).join(" | ");
+          reject(new Error(`Session emitted error: ${event.message}. Collected events: ${summary}`));
         }
       });
     });
