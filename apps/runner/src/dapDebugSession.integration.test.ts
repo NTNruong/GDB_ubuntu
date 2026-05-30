@@ -135,6 +135,15 @@ maybeDescribe("DapDebugSession integration", () => {
       await session.start();
       await stopped;
       return collected;
+    } catch (error) {
+      // The real C/C++ failure paths surface as session.start() rejections from
+      // dap.close() / failAll() (not session-emitted "error" events), so attach the
+      // collected events here too — otherwise QC sees only the bare "DAP session closed".
+      const summary = collected.length === 0
+        ? "(no events)"
+        : collected.map(summarizeEvent).join(" | ");
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`${message}. Collected events: ${summary}`);
     } finally {
       // Race close with a hard cap so a hung close() never leaves vitest holding the worker.
       await Promise.race([
@@ -155,8 +164,11 @@ maybeDescribe("DapDebugSession integration", () => {
       return `variables(${event.variables.length})`;
     }
     if (event.type === "stdout" || event.type === "stderr" || event.type === "console") {
-      const data = event.data.length > 40 ? `${event.data.slice(0, 40)}…` : event.data;
+      const data = event.data.length > 300 ? `${event.data.slice(0, 300)}…` : event.data;
       return `${event.type}:${JSON.stringify(data)}`;
+    }
+    if (event.type === "exit") {
+      return `exit:code=${event.code ?? "?"}${event.timedOut ? ":timedOut" : ""}`;
     }
     if (event.type === "error") {
       return `error:${event.message}`;
