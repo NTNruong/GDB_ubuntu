@@ -883,7 +883,6 @@ export function App() {
                       }}
                     >
                       <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
-                      <button type="submit">Eval</button>
                     </form>
                     <form
                       className="debug-form"
@@ -897,7 +896,6 @@ export function App() {
                       }}
                     >
                       <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
-                      <button type="submit">Send</button>
                     </form>
                   </section>
                 </div>

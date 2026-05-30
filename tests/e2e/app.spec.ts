@@ -253,6 +253,23 @@ test("watches refresh on step and can be removed (ISSUE-031)", async ({ page }) 
   await expect(panel.locator(".watch-row", { hasText: "i" })).toHaveCount(0);
 });
 
+// ISSUE-035: the watch + debug console submit buttons were removed; Enter-to-submit
+// must still work, and no visible submit buttons should remain.
+test("watch + debug console inputs submit via Enter with no visible buttons (ISSUE-035)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("breakpoints").fill("6");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  const panel = page.locator(".debug-side-panel");
+  await expect(panel.locator('.debug-form button[type="submit"]')).toHaveCount(0);
+
+  // Enter on the watch input must still register a watch.
+  await panel.locator('input[placeholder="watch"]').fill("42");
+  await panel.locator('input[placeholder="watch"]').press("Enter");
+  await expect(panel.locator(".watch-row", { hasText: "42" })).toBeVisible({ timeout: 10_000 });
+});
+
 async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
   // Use Monaco's setValue via the window hook installed in onEditorMount — keystroke
   // replacement is unreliable (auto-bracket pairing on insertText leaves stale `}` chars).

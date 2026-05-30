@@ -921,9 +921,11 @@ h1.brand {
 }
 
 .debug-form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  display: block;
+}
+
+.debug-form + .debug-form {
+  margin-top: 8px;
 }
 
 .breakpoint-glyph {
