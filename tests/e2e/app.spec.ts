@@ -1,5 +1,22 @@
 import { expect, test } from "@playwright/test";
 
+test.afterEach(async ({ page }) => {
+  if (page.isClosed()) return;
+  const stop = page.getByTestId("btn-topbar-stop");
+  const visible = await stop.isVisible({ timeout: 500 }).catch(() => false);
+  if (!visible) return;
+  await stop.click().catch(() => undefined);
+  await page
+    .waitForFunction(
+      () => {
+        const pill = document.querySelector(".status-pill")?.textContent ?? "";
+        return /Stopped|Exited|Idle|Ready|Timed out|Error/i.test(pill);
+      },
+      { timeout: 5_000 }
+    )
+    .catch(() => undefined);
+});
+
 test("runs a C++ hello world snippet", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Run" }).click();

@@ -99,9 +99,8 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
       const session = new createDebugSession(dockerRunner.docker, config, parsed.data, events, () => {
         state.debugSessions.delete(session.id);
         state.debugByClient.delete(parsed.data.clientId);
-      }, () => {
         releaseJobSlot(state);
-      });
+      }, () => undefined);
 
       state.debugSessions.set(session.id, session);
       state.debugByClient.set(parsed.data.clientId, session.id);
