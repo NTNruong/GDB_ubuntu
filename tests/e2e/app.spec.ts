@@ -264,9 +264,25 @@ test("watch + debug console inputs submit via Enter with no visible buttons (ISS
   const panel = page.locator(".debug-side-panel");
   await expect(panel.locator('.debug-form button[type="submit"]')).toHaveCount(0);
 
+  // The watch input must fill its form (no leftover ~200px intrinsic width gap),
+  // and focusing it must not push horizontal overflow at the panel or document level.
+  const watchInput = panel.locator('input[placeholder="watch"]');
+  await watchInput.focus();
+  const inputBox = await watchInput.boundingBox();
+  const formBox = await panel.locator(".debug-form").first().boundingBox();
+  expect(inputBox).not.toBeNull();
+  expect(formBox).not.toBeNull();
+  expect(inputBox!.width).toBeGreaterThanOrEqual(formBox!.width - 2);
+  const panelOverflow = await panel.evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(panelOverflow).toBeLessThanOrEqual(2);
+  const docOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(docOverflow).toBeLessThanOrEqual(2);
+
   // Enter on the watch input must still register a watch.
-  await panel.locator('input[placeholder="watch"]').fill("42");
-  await panel.locator('input[placeholder="watch"]').press("Enter");
+  await watchInput.fill("42");
+  await watchInput.press("Enter");
   await expect(panel.locator(".watch-row", { hasText: "42" })).toBeVisible({ timeout: 10_000 });
 });
 

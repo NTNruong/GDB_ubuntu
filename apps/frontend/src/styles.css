@@ -924,6 +924,11 @@ h1.brand {
   display: block;
 }
 
+.debug-form input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .debug-form + .debug-form {
   margin-top: 8px;
 }
