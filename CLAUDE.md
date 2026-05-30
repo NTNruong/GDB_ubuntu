@@ -89,6 +89,36 @@ API: `RUNNER_BASE_URL` (HTTP) and `RUNNER_WS_URL` (WebSocket) must point at the 
 
 Dev on Windows uses Docker Desktop with the WSL2 backend. Run all commands (`npm install`, `npm run dev`, etc.) from a WSL2 terminal — not PowerShell or CMD. No config changes needed; paths like `/var/run/docker.sock` and `/tmp/...` work normally inside WSL2.
 
+## Multi-Agent Dev Relay Workflow
+
+How the human operator, Claude Code, Antigravity IDE, and Codex QC collaborate on this repo. Engage this workflow when the user relays QC/Antigravity feedback, asks to "review / verify / check lại kết quả của QC", or asks to plan/implement an OPEN issue. Codex's mirror of this lives in the (gitignored) `AGENTS.md`.
+
+### Roles
+
+- **Human user** — operator/deployer. Relays reports between agents, pushes to `main`, runs deploys, and reports real manual-test observations. **The user always pushes; I never push to the remote.**
+- **Claude Code (me)** — leader/developer. I implement product fixes, write the plan, record the `LOG.md` entry, and generate the commit message. I am the one that edits product source.
+- **Antigravity IDE** — designer / UI-UX planner. Proposes or implements UI-UX-focused changes and records them in `LOG.md`.
+- **Codex** — QC/tester. Reviews, verifies, tests, owns `ISSUES.md`, and writes QC entries in `LOG.md`. Codex does not implement product changes unless the user explicitly changes its role.
+
+### Per-round cadence
+
+When the user relays QC feedback (or an Antigravity summary / manual bug report):
+
+1. **Verify, don't trust.** Read the actual source behind every QC diagnosis and confirm the root cause in code *before* planning a fix — never plan off the report alone. (After the ISSUE-030 wrong-fix, the user values verification/determinism highly.)
+2. **Plan first.** In plan mode, write the plan to the plan file and reach alignment before editing. Handle **one issue at a time, highest priority first**.
+3. **User approves** (e.g. "bạn hãy implement plan này nhé") → implement the change.
+4. **Verify locally:** `npm run typecheck && npm test && npm run build -w @internal/frontend` must be green. (E2E needs a live server → QC verifies after deploy.)
+5. **Record:** add the top `LOG.md` entry and generate the commit message (see **Session workflow** for both formats).
+6. **User pushes `main` manually** → GitHub Actions auto-deploys → QC verifies on the server and flips the issue to `PASSED` in `ISSUES.md`.
+
+### Guardrails (mechanics live in the referenced sections)
+
+- **Never push** the remote — the user always pushes manually. Never commit unless asked.
+- **Deploy & rebuild rules:** push to `main` triggers the self-hosted runner (`bin/pull-latest.sh`). Runner-images rebuild **only** when something under [docker/runner-cpp/](docker/runner-cpp/) or [docker/runner-python/](docker/runner-python/) changed — see **Deploy workflow (GitHub Actions auto-deploy)** under Commands. State this explicitly in every `LOG.md` "Deploy status".
+- **Commit message:** single line, Conventional-Commits, ≤ 70 chars, no body, no `Co-Authored-By`, no `LOG.md`/`ISSUES.md` mention — see **Session workflow**.
+- `LOG.md`, `ISSUES.md`, and `AGENTS.md` are **gitignored**; QC edits them via WinSCP on the server, so local copies may lag (line numbers differ) — **re-read before editing**.
+- Preserve the Fastify log redaction of `req.body.source` / `stdin` / `argv`.
+
 ## Session workflow
 
 After making code changes in any session, append a new entry at the **top** of `LOG.md` (newest first) before ending the session. The file is gitignored; it is the running record QC and human reviewers read to understand what changed between sessions.

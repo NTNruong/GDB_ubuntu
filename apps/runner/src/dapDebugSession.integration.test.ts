@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import type { DebugEvent, DebugRequest } from "@internal/shared";
 import { readConfig } from "./config.js";
 import { DapDebugSession } from "./dapDebugSession.js";
@@ -12,6 +12,14 @@ const INTERNAL_WAIT_MS = 25_000;
 const CLEANUP_TIMEOUT_MS = 10_000;
 
 maybeDescribe("DapDebugSession integration", () => {
+  // This suite runs on the host (uid 1000); child debug containers drop ALL caps, so make
+  // the per-session workspace world-accessible (createWorkspace honours this flag). Without
+  // it, the capability-stripped container root cannot read main.* / stdin.txt and the
+  // compile / adapter-start steps time out (ISSUE-016).
+  beforeAll(() => {
+    process.env.DEBUG_TEST_OPEN_WORKSPACE = "1";
+  });
+
   const config = {
     ...readConfig(),
     debugMaxMs: 30_000,

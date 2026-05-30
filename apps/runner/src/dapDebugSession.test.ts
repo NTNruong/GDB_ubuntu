@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseInfoLocals } from "./dapDebugSession.js";
+import { boundSummary, parseInfoLocals, summarizeChildren } from "./dapDebugSession.js";
 
 describe("parseInfoLocals", () => {
   it("parses simple name = value pairs", () => {
@@ -44,5 +44,51 @@ describe("parseInfoLocals", () => {
       { name: "n", value: "6" },
       { name: "result", value: "36" }
     ]);
+  });
+});
+
+describe("summarizeChildren", () => {
+  it("renders array children as a brace-wrapped value list", () => {
+    const result = summarizeChildren(
+      [
+        { name: "[0]", value: "1" },
+        { name: "[1]", value: "3" },
+        { name: "[2]", value: "5" }
+      ],
+      false
+    );
+    expect(result).toBe("{1, 3, 5}");
+  });
+
+  it("renders struct children as name = value pairs", () => {
+    const result = summarizeChildren(
+      [
+        { name: "x", value: "1" },
+        { name: "y", value: "2" }
+      ],
+      false
+    );
+    expect(result).toBe("{x = 1, y = 2}");
+  });
+
+  it("appends an ellipsis item when more children exist", () => {
+    const result = summarizeChildren([{ name: "[0]", value: "1" }], true);
+    expect(result).toBe("{1, …}");
+  });
+
+  it("returns empty braces for no children", () => {
+    expect(summarizeChildren([], false)).toBe("{}");
+  });
+});
+
+describe("boundSummary", () => {
+  it("returns short values unchanged", () => {
+    expect(boundSummary("{1, 2, 3}")).toBe("{1, 2, 3}");
+  });
+
+  it("truncates over-long values to the char cap with an ellipsis", () => {
+    const result = boundSummary("x".repeat(250));
+    expect(result.length).toBe(200);
+    expect(result.endsWith("…")).toBe(true);
   });
 });

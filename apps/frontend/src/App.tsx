@@ -15,7 +15,7 @@ import {
   TriangleAlert,
   Variable
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   LANGUAGE_CAPABILITIES,
   parseArgv,
@@ -59,6 +59,8 @@ export function App() {
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [debugConsole, setDebugConsole] = useState<TerminalLine[]>([]);
   const [variables, setVariables] = useState<DebugVariable[]>([]);
+  const [expandedRefs, setExpandedRefs] = useState<Set<number>>(() => new Set());
+  const [childrenByRef, setChildrenByRef] = useState<Record<number, DebugVariable[]>>({});
   const [frames, setFrames] = useState<DebugFrame[]>([]);
   const [watches, setWatches] = useState<WatchValue[]>([]);
   const [watchInput, setWatchInput] = useState("");
@@ -80,6 +82,8 @@ export function App() {
   const runEvents = useRef<EventSource | null>(null);
   const runPhaseRef = useRef<RunPhase>("idle");
   const runLanguageRef = useRef<Language>(initialLanguage.id);
+  const compileWarningsRef = useRef(0);
+  const compileErrorsRef = useRef(0);
   const debugSocket = useRef<WebSocket | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
@@ -206,6 +210,33 @@ export function App() {
     }
   }, []);
 
+  const toggleVariable = useCallback(
+    (reference: number) => {
+      const willExpand = !expandedRefs.has(reference);
+      setExpandedRefs((current) => {
+        const next = new Set(current);
+        if (next.has(reference)) {
+          next.delete(reference);
+        } else {
+          next.add(reference);
+        }
+        return next;
+      });
+      if (willExpand && !childrenByRef[reference]) {
+        sendDebug({ type: "expand", variablesReference: reference });
+      }
+    },
+    [expandedRefs, childrenByRef, sendDebug]
+  );
+
+  const removeWatch = useCallback(
+    (expression: string) => {
+      sendDebug({ type: "removeWatch", expression });
+      setWatches((current) => current.filter((watch) => watch.expression !== expression));
+    },
+    [sendDebug]
+  );
+
   const startDebugRef = useRef<() => Promise<void>>(async () => {});
 
   const handleRestart = useCallback(async () => {
@@ -242,7 +273,14 @@ export function App() {
       const parsed = parseCompilerDiagnostics(data);
       if (parsed.length > 0) {
         setDiagnostics((current) => [...current, ...parsed]);
-        setActiveTab("errors");
+        const errors = parsed.filter((diagnostic) => diagnostic.severity === "error").length;
+        compileErrorsRef.current += errors;
+        compileWarningsRef.current += parsed.length - errors;
+        // Only steal focus to the Error List for real compile errors; warning-only
+        // compiles stay on Output (ISSUE-017).
+        if (errors > 0) {
+          setActiveTab("errors");
+        }
         return;
       }
 
@@ -264,6 +302,8 @@ export function App() {
     setStoppedLine(undefined);
     runPhaseRef.current = "idle";
     runLanguageRef.current = language;
+    compileWarningsRef.current = 0;
+    compileErrorsRef.current = 0;
 
     let argv: string[];
     try {
@@ -319,6 +359,8 @@ export function App() {
     setActiveTab("debug");
     setDebugConsole([]);
     setVariables([]);
+    setExpandedRefs(new Set());
+    setChildrenByRef({});
     setFrames([]);
     setWatches([]);
     setStoppedLine(undefined);
@@ -426,10 +468,12 @@ export function App() {
         setIsRunActive(false);
         setRunStatus(event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
         const truncatedSuffix = event.outputTruncated ? " (output truncated)" : "";
+        const warnings = compileWarningsRef.current;
+        const warningSuffix = warnings > 0 ? `, ${warnings} Warning${warnings === 1 ? "" : "s"}` : "";
         if (event.timedOut) {
           appendOutput("system", `\n⚠ Timed out${truncatedSuffix}\n`);
         } else if (event.code === 0) {
-          appendOutput("system", `\n✓ Finished${truncatedSuffix}\n`);
+          appendOutput("system", `\n✓ Finished${warningSuffix}${truncatedSuffix}\n`);
         } else {
           appendOutput("system", `\n✗ Exited with code ${event.code ?? "unknown"}${truncatedSuffix}\n`);
         }
@@ -475,6 +519,12 @@ export function App() {
       }
       if (event.type === "variables") {
         setVariables(event.variables);
+        setExpandedRefs(new Set());
+        setChildrenByRef({});
+        return;
+      }
+      if (event.type === "variableChildren") {
+        setChildrenByRef((current) => ({ ...current, [event.variablesReference]: event.variables }));
         return;
       }
       if (event.type === "stack") {
@@ -482,10 +532,16 @@ export function App() {
         return;
       }
       if (event.type === "watch") {
-        setWatches((current) => [
-          ...current.filter((watch) => watch.expression !== event.expression),
-          { expression: event.expression, value: event.value, error: event.error }
-        ]);
+        setWatches((current) => {
+          const index = current.findIndex((watch) => watch.expression === event.expression);
+          const updated = { expression: event.expression, value: event.value, error: event.error };
+          if (index === -1) {
+            return [...current, updated];
+          }
+          const next = [...current];
+          next[index] = updated;
+          return next;
+        });
         return;
       }
       if (event.type === "exit") {
@@ -719,7 +775,17 @@ export function App() {
               <button className={activeTab === "errors" ? "selected" : ""} onClick={() => setActiveTab("errors")}>
                 <CircleX size={14} />
                 <span>Error List</span>
-                {diagnostics.length > 0 && <span className="tab-badge">{diagnostics.length}</span>}
+                {diagnostics.length > 0 && (
+                  <span
+                    className={`tab-badge ${
+                      diagnostics.some((diagnostic) => diagnostic.severity === "error")
+                        ? "tab-badge-error"
+                        : "tab-badge-warning"
+                    }`}
+                  >
+                    {diagnostics.length > 9 ? "9+" : diagnostics.length}
+                  </span>
+                )}
               </button>
               <button className={activeTab === "debug" ? "selected" : ""} onClick={() => setActiveTab("debug")}>
                 <Bug size={14} />
@@ -767,7 +833,12 @@ export function App() {
 
             <div className="debug-side-body">
               {debugPanelTab === "variables" && (
-                <Inspector title="Variables" empty="No variables" rows={variables.map((item) => [item.name, item.value ?? ""])} />
+                <VariablesTree
+                  variables={variables}
+                  childrenByRef={childrenByRef}
+                  expandedRefs={expandedRefs}
+                  onToggle={toggleVariable}
+                />
               )}
               {debugPanelTab === "stack" && (
                 <Inspector
@@ -781,11 +852,7 @@ export function App() {
               )}
               {debugPanelTab === "watches" && (
                 <>
-                  <Inspector
-                    title="Watches"
-                    empty="No watches"
-                    rows={watches.map((watch) => [watch.expression, watch.error ?? watch.value ?? ""])}
-                  />
+                  <WatchList watches={watches} onRemove={removeWatch} />
                   <form
                     className="debug-form"
                     onSubmit={(event) => {
@@ -898,6 +965,122 @@ function TerminalView({ lines, compact = false }: { lines: TerminalLine[]; compa
         </span>
       ))}
     </pre>
+  );
+}
+
+function VariablesTree({
+  variables,
+  childrenByRef,
+  expandedRefs,
+  onToggle
+}: {
+  variables: DebugVariable[];
+  childrenByRef: Record<number, DebugVariable[]>;
+  expandedRefs: Set<number>;
+  onToggle: (reference: number) => void;
+}) {
+  return (
+    <section className="inspector">
+      <h2>Variables</h2>
+      {variables.length === 0 ? (
+        <p>No variables</p>
+      ) : (
+        <VariableRows
+          variables={variables}
+          depth={0}
+          childrenByRef={childrenByRef}
+          expandedRefs={expandedRefs}
+          onToggle={onToggle}
+        />
+      )}
+    </section>
+  );
+}
+
+function VariableRows({
+  variables,
+  depth,
+  childrenByRef,
+  expandedRefs,
+  onToggle
+}: {
+  variables: DebugVariable[];
+  depth: number;
+  childrenByRef: Record<number, DebugVariable[]>;
+  expandedRefs: Set<number>;
+  onToggle: (reference: number) => void;
+}) {
+  return (
+    <>
+      {variables.map((variable, index) => {
+        const reference = variable.variablesReference;
+        const expandable = reference !== undefined && reference > 0;
+        const expanded = expandable && expandedRefs.has(reference);
+        const loadedChildren = expanded ? childrenByRef[reference] : undefined;
+        const indent: CSSProperties = { paddingLeft: `${depth * 14}px` };
+        return (
+          <Fragment key={`${depth}-${variable.name}-${index}`}>
+            <div className="kv-row var-row" style={indent}>
+              {expandable ? (
+                <button
+                  type="button"
+                  className="var-caret"
+                  aria-label={expanded ? "Collapse" : "Expand"}
+                  onClick={() => onToggle(reference)}
+                >
+                  {expanded ? "▾" : "▸"}
+                </button>
+              ) : (
+                <span className="var-caret-spacer" />
+              )}
+              <span>{variable.name}</span>
+              <code>{variable.value ?? ""}</code>
+            </div>
+            {expanded && loadedChildren && (
+              <VariableRows
+                variables={loadedChildren}
+                depth={depth + 1}
+                childrenByRef={childrenByRef}
+                expandedRefs={expandedRefs}
+                onToggle={onToggle}
+              />
+            )}
+            {expanded && !loadedChildren && (
+              <div className="kv-row var-row" style={{ paddingLeft: `${(depth + 1) * 14}px` }}>
+                <span className="var-caret-spacer" />
+                <span className="var-loading">loading…</span>
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+function WatchList({ watches, onRemove }: { watches: WatchValue[]; onRemove: (expression: string) => void }) {
+  return (
+    <section className="inspector">
+      <h2>Watches</h2>
+      {watches.length === 0 ? (
+        <p>No watches</p>
+      ) : (
+        watches.map((watch) => (
+          <div className="kv-row watch-row" key={`watch-${watch.expression}`}>
+            <span>{watch.expression}</span>
+            <code className={watch.error ? "watch-error" : ""}>{watch.error ?? watch.value ?? ""}</code>
+            <button
+              type="button"
+              className="watch-remove"
+              aria-label="Remove watch"
+              onClick={() => onRemove(watch.expression)}
+            >
+              ×
+            </button>
+          </div>
+        ))
+      )}
+    </section>
   );
 }
 

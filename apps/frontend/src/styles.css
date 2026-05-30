@@ -581,6 +581,16 @@ h1.brand {
   font-weight: 700;
 }
 
+.tab-badge-error {
+  background: var(--color-error);
+  color: white;
+}
+
+.tab-badge-warning {
+  background: var(--color-warning);
+  color: hsl(40, 30%, 12%);
+}
+
 .tabbar button:focus-visible {
   outline-offset: -2px;
 }
@@ -806,6 +816,57 @@ h1.brand {
 
 .kv-row code {
   color: var(--color-warning);
+}
+
+.var-row {
+  grid-template-columns: 16px minmax(48px, 0.7fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.var-caret {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.var-caret:hover {
+  color: var(--text-primary);
+}
+
+.var-caret-spacer {
+  display: inline-block;
+}
+
+.var-loading {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.watch-row {
+  grid-template-columns: minmax(48px, 0.7fr) minmax(0, 1fr) 18px;
+  align-items: start;
+}
+
+.watch-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.watch-remove:hover {
+  color: var(--color-error);
+}
+
+.kv-row code.watch-error {
+  color: var(--color-error);
 }
 
 .debug-form {

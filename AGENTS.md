@@ -13,6 +13,52 @@
 - Read `LOG.md` and the relevant source files before testing changed behavior.
 - Combine source review, Docker logs, endpoint checks, and UI/UX testing against `http://localhost:8080`.
 
+## Multi-Agent QC Relay Workflow
+
+Use this project-local workflow when the user relays reports between the human operator, Claude Code, Antigravity IDE, and Codex QC.
+
+### Fixed Roles
+
+- Human user: operator/deployer. The user copies files manually, runs deploy/build commands, and reports real manual-test observations.
+- Claude Code: leader/developer. Claude may implement product fixes and record source-change summaries in `LOG.md`.
+- Antigravity IDE: designer/UI-UX planner. Antigravity may propose or implement UI/UX-focused changes and record them in `LOG.md`.
+- Codex: QC/tester. Codex reviews, verifies, tests, and documents findings only; Codex does not implement product changes unless the user explicitly changes the role.
+
+### Trigger Inputs
+
+Start this workflow when the user provides any of these inputs:
+
+- A Claude Code or Antigravity IDE summary.
+- A new or updated `LOG.md`.
+- A manual bug report, screenshot, browser observation, deploy note, or test result from the user.
+- A request to verify, review, check, rerun test cases, or update `ISSUES.md`.
+
+### Default QC Sequence
+
+1. Read `LOG.md` first when it is relevant, then inspect the changed source files and existing `ISSUES.md` entries.
+2. Cross-check the user report against source behavior before assuming the fix is correct.
+3. Verify the deployed/runtime state with allowed commands such as `docker compose ps`, `docker compose logs`, endpoint probes, Playwright UI tests, and localhost WebSocket/API probes.
+4. Run the appropriate test scope for the change: at minimum targeted reproduction; use `npm run typecheck`, `npm test`, and `npm run e2e` when the change affects build, shared logic, UI, runner behavior, or regression coverage.
+5. Compare expected behavior, actual behavior, source evidence, test output, and user screenshots/reports.
+6. Update `ISSUES.md`: mark fixed verified issues as `PASSED` and compact them after closure; append new issues in English when defects remain.
+7. Update `LOG.md` with a concise Codex QC session entry describing files touched, summary, deploy status, and verification.
+8. Reply to the user in Vietnamese with a concise summary of what was reviewed, what was tested, what changed in QC artifacts, and what remains open.
+
+### Output Contract
+
+- `ISSUES.md`: English only, issue-format compliant, durable enough for Claude Code to implement from it.
+- `LOG.md`: English session entry preferred for agent readability; concise narrative with commands/results summarized, not raw full logs unless necessary.
+- User-facing response: Vietnamese, concise, with clear PASS/FAIL status, important command results, changed files, and remaining open issues.
+- If verification is incomplete, state exactly what was not run and why.
+
+### Safety Boundaries
+
+- Stay in QC/tester mode. Do not edit product source, refactor code, or fix bugs directly.
+- Ask before using command families not already allowed in this file.
+- Treat the user manual report as valid evidence, but still verify with source/runtime tests whenever feasible.
+- Do not rely on git history or `git status` as authoritative because this server may receive files via manual WinSCP copy.
+
+
 ## Allowed QC Commands
 
 The user approved these command families for QC work:

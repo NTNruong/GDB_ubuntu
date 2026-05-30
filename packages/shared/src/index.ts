@@ -42,6 +42,14 @@ export const DebugCommandSchema = z.discriminatedUnion("type", [
     expression: z.string().min(1).max(512)
   }),
   z.object({
+    type: z.literal("removeWatch"),
+    expression: z.string().min(1).max(512)
+  }),
+  z.object({
+    type: z.literal("expand"),
+    variablesReference: z.number().int().positive()
+  }),
+  z.object({
     type: z.literal("raw"),
     command: z.string().min(1).max(1_000)
   })
@@ -88,6 +96,7 @@ export type DebugFrame = {
 export type DebugVariable = {
   name: string;
   value?: string;
+  variablesReference?: number;
 };
 
 export type DebugEvent =
@@ -100,6 +109,7 @@ export type DebugEvent =
   | { type: "stopped"; reason?: string; file?: string; line?: number; func?: string }
   | { type: "running" }
   | { type: "variables"; variables: DebugVariable[] }
+  | { type: "variableChildren"; variablesReference: number; variables: DebugVariable[] }
   | { type: "stack"; frames: DebugFrame[] }
   | { type: "watch"; expression: string; value?: string; error?: string }
   | { type: "exit"; code: number | null; signal?: string | null; timedOut: boolean }

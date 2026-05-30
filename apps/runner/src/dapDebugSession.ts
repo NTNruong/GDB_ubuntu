@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
@@ -42,6 +42,11 @@ type DapVariable = {
   variablesReference?: number;
 };
 
+const VAR_SUMMARY_MAX_ITEMS = 10;
+const VAR_SUMMARY_MAX_CHARS = 200;
+const VAR_SUMMARY_MAX_AGGREGATES = 50;
+const VAR_EXPAND_MAX_CHILDREN = 200;
+
 export class DapDebugSession {
   readonly id = randomUUID();
   readonly events: EventBuffer<DebugEvent>;
@@ -61,6 +66,8 @@ export class DapDebugSession {
   private exitEmitted = false;
   private pendingExitCode: number | null = null;
   private closed = false;
+  private readonly watchExpressions = new Set<string>();
+  private watchRefreshSeq = 0;
   private readonly verbose = process.env.DEBUG_VERBOSE === "1";
 
   constructor(
@@ -363,7 +370,18 @@ export class DapDebugSession {
     }
 
     if (command.type === "evaluate") {
+      this.watchExpressions.add(command.expression);
       await this.evaluateWatch(command.expression);
+      return;
+    }
+
+    if (command.type === "removeWatch") {
+      this.watchExpressions.delete(command.expression);
+      return;
+    }
+
+    if (command.type === "expand") {
+      await this.expandVariable(command.variablesReference);
       return;
     }
 
@@ -491,6 +509,7 @@ export class DapDebugSession {
     });
     this.events.emit({ type: "stack", frames: frames.map(toDebugFrame) });
     await this.refreshVariables();
+    await this.refreshWatches();
   }
 
   private async refreshVariables(): Promise<void> {
@@ -523,22 +542,31 @@ export class DapDebugSession {
       this.events.emit({ type: "console", data: `[variables] no scopes for frame ${frameId}\n` });
     }
 
+    let summaryBudget = VAR_SUMMARY_MAX_AGGREGATES;
     for (const scope of scopes) {
       try {
         const response = await this.dap.request("variables", {
           variablesReference: scope.variablesReference
         });
-        const scopedVariables = asArray(asRecord(response.body).variables)
+        const scopedRaw = asArray(asRecord(response.body).variables)
           .map(toVariable)
           .filter((variable): variable is DapVariable =>
             variable !== null &&
             !/^(special variables|function variables|class variables)$/i.test(variable.name)
-          )
-          .map((variable) => ({
-            name: variable.name,
-            value: variable.value
-          }));
-        variables.push(...scopedVariables);
+          );
+        for (const raw of scopedRaw) {
+          const mapped = mapVariable(raw);
+          if (
+            this.request.language !== "python" &&
+            mapped.variablesReference !== undefined &&
+            (mapped.value ?? "").trim().length === 0 &&
+            summaryBudget > 0
+          ) {
+            summaryBudget--;
+            mapped.value = await this.fetchBoundedSummary(mapped.variablesReference);
+          }
+          variables.push(mapped);
+        }
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         this.events.emit({
@@ -554,6 +582,74 @@ export class DapDebugSession {
     }
 
     this.events.emit({ type: "variables", variables });
+  }
+
+  private async fetchBoundedSummary(variablesReference: number): Promise<string> {
+    if (!this.dap) {
+      return "";
+    }
+
+    try {
+      const response = await this.dap.request("variables", {
+        variablesReference,
+        start: 0,
+        count: VAR_SUMMARY_MAX_ITEMS + 1
+      });
+      const children = asArray(asRecord(response.body).variables)
+        .map(toVariable)
+        .filter((variable): variable is DapVariable => variable !== null);
+      const hasMore = children.length > VAR_SUMMARY_MAX_ITEMS;
+      const shown = children
+        .slice(0, VAR_SUMMARY_MAX_ITEMS)
+        .map((child) => ({ name: child.name, value: child.value ?? "" }));
+      return summarizeChildren(shown, hasMore);
+    } catch {
+      return "";
+    }
+  }
+
+  private async expandVariable(variablesReference: number): Promise<void> {
+    if (!this.dap || !this.stopped) {
+      this.events.emit({ type: "variableChildren", variablesReference, variables: [] });
+      return;
+    }
+
+    try {
+      const response = await this.dap.request("variables", {
+        variablesReference,
+        start: 0,
+        count: VAR_EXPAND_MAX_CHILDREN + 1
+      });
+      const raw = asArray(asRecord(response.body).variables)
+        .map(toVariable)
+        .filter((variable): variable is DapVariable =>
+          variable !== null &&
+          !/^(special variables|function variables|class variables)$/i.test(variable.name)
+        );
+      const truncated = raw.length > VAR_EXPAND_MAX_CHILDREN;
+      const variables = raw.slice(0, VAR_EXPAND_MAX_CHILDREN).map(mapVariable);
+      if (truncated) {
+        variables.push({ name: "…", value: `(only first ${VAR_EXPAND_MAX_CHILDREN} shown)` });
+      }
+      this.events.emit({ type: "variableChildren", variablesReference, variables });
+    } catch (error) {
+      this.emitError(error);
+      this.events.emit({ type: "variableChildren", variablesReference, variables: [] });
+    }
+  }
+
+  private async refreshWatches(): Promise<void> {
+    if (this.watchExpressions.size === 0) {
+      return;
+    }
+
+    const seq = ++this.watchRefreshSeq;
+    for (const expression of this.watchExpressions) {
+      if (seq !== this.watchRefreshSeq || !this.stopped || !this.dap) {
+        return;
+      }
+      await this.evaluateWatch(expression);
+    }
   }
 
   private async fetchVariablesViaInfoLocals(frameId: number): Promise<DebugVariable[]> {
@@ -676,6 +772,22 @@ export class DapDebugSession {
     if (this.request.language === "python") {
       await writeFile(path.join(root, "__debugpy_runner.py"), pythonDebugRunnerSource(), { mode: 0o600 });
     }
+
+    // Docker-gated integration tests run this code on the host (uid 1000) while child
+    // debug containers drop ALL caps — so their root has no DAC_OVERRIDE and can only use
+    // "other" perms. A 0700/0600 host workspace is therefore unreadable to them. Open the
+    // perms only when the test harness asks; production never sets this flag, so the
+    // default tight modes above are unchanged.
+    if (process.env.DEBUG_TEST_OPEN_WORKSPACE === "1") {
+      await chmod(root, 0o777);
+      await chmod(path.join(root, "tmp"), 0o777);
+      await chmod(path.join(root, sourceFileName(this.request.language)), 0o644);
+      await chmod(path.join(root, "stdin.txt"), 0o644);
+      if (this.request.language === "python") {
+        await chmod(path.join(root, "__debugpy_runner.py"), 0o644);
+      }
+    }
+
     return workspace;
   }
 
@@ -835,6 +947,34 @@ export function parseInfoLocals(output: string): DebugVariable[] {
   }
   flush();
   return variables;
+}
+
+function mapVariable(variable: DapVariable): DebugVariable {
+  const ref =
+    variable.variablesReference !== undefined && variable.variablesReference > 0
+      ? variable.variablesReference
+      : undefined;
+  return {
+    name: variable.name,
+    value: boundSummary(variable.value ?? ""),
+    variablesReference: ref
+  };
+}
+
+export function summarizeChildren(children: { name: string; value: string }[], hasMore: boolean): string {
+  const isArray = children.length > 0 && children.every((child) => /^\[\d+\]$/.test(child.name));
+  const parts = children.map((child) => (isArray ? child.value : `${child.name} = ${child.value}`));
+  if (hasMore) {
+    parts.push("…");
+  }
+  return boundSummary(`{${parts.join(", ")}}`);
+}
+
+export function boundSummary(value: string): string {
+  if (value.length <= VAR_SUMMARY_MAX_CHARS) {
+    return value;
+  }
+  return `${value.slice(0, VAR_SUMMARY_MAX_CHARS - 1)}…`;
 }
 
 function toStackFrame(value: unknown): DapStackFrame | null {

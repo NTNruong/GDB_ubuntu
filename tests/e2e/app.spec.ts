@@ -187,6 +187,69 @@ test("step over past end of main exits cleanly (ISSUE-032)", async ({ page }) =>
   await expect(page.locator(".terminal")).toContainText("1 3 5 7 9", { timeout: 10_000 });
 });
 
+// ISSUE-031: C arrays must be inspectable — the collapsed row shows a bounded summary
+// and clicking the caret lazily reveals the elements.
+test("C array variable shows a summary and expands to elements (ISSUE-031)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("c");
+  await replaceEditorSource(
+    page,
+    `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
+  );
+  await page.getByLabel("breakpoints").fill("8");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  const panel = page.locator(".debug-side-panel");
+  // Variables tab is the default; the arr row shows a bounded summary value.
+  const arrRow = panel.locator(".var-row", { hasText: "arr" }).first();
+  await expect(arrRow).toBeVisible({ timeout: 10_000 });
+  await expect(arrRow.locator("code")).toContainText("1");
+
+  // Expanding reveals the array elements lazily.
+  await arrRow.locator(".var-caret").click();
+  await expect(panel.locator(".var-row", { hasText: "[0]" })).toBeVisible({ timeout: 10_000 });
+});
+
+// ISSUE-031: watches must re-evaluate on every stop (not keep the Eval-time value)
+// and be removable via the per-row × button.
+test("watches refresh on step and can be removed (ISSUE-031)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("c");
+  await replaceEditorSource(
+    page,
+    `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
+  );
+  await page.getByLabel("breakpoints").fill("8");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  const panel = page.locator(".debug-side-panel");
+  await panel.getByRole("button", { name: "Watches" }).click();
+  await panel.locator('input[placeholder="watch"]').fill("i");
+  await panel.locator('input[placeholder="watch"]').press("Enter");
+
+  const watchValue = panel.locator(".watch-row", { hasText: "i" }).locator("code");
+  await expect(watchValue).toHaveText("0", { timeout: 10_000 });
+
+  // Step over within the loop: i goes 0 -> 1; the watch must update automatically.
+  const stepOver = page.locator('.debug-toolbar button[aria-label="Step over"]');
+  for (let n = 0; n < 6; n++) {
+    if (await watchValue.innerText().then((text) => text.trim() === "1").catch(() => false)) {
+      break;
+    }
+    if (await stepOver.isEnabled()) {
+      await stepOver.click();
+    }
+    await page.waitForTimeout(500);
+  }
+  await expect(watchValue).toHaveText("1", { timeout: 10_000 });
+
+  // The × button removes the watch row.
+  await panel.locator(".watch-row", { hasText: "i" }).locator(".watch-remove").click();
+  await expect(panel.locator(".watch-row", { hasText: "i" })).toHaveCount(0);
+});
+
 async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
   await page.locator(".monaco-editor").first().click();
   await page.keyboard.press("ControlOrMeta+A");
@@ -209,4 +272,20 @@ test("non-zero exit colors status pill red (ISSUE-024)", async ({ page }) => {
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.locator(".status-pill")).toContainText("Exited 3", { timeout: 30_000 });
   await expect(page.locator(".status-pill")).toHaveClass(/status-error/);
+});
+
+// ISSUE-017: a warning-only compile must NOT steal focus to the Error List; it stays on
+// Output, finishes with a warning count, and the badge is yellow (warning), not red.
+test("warning-only compile stays on Output with a warning count (ISSUE-017)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("c");
+  await replaceEditorSource(page, "int main() {\n  int unused;\n  return 0;\n}\n");
+  await page.getByRole("button", { name: "Run" }).click();
+
+  await expect(page.locator(".status-pill")).toContainText("Exited 0", { timeout: 30_000 });
+  // Output tab keeps focus (no auto-switch on warnings) and shows the warning count.
+  await expect(page.locator(".tabbar button", { hasText: "Output" })).toHaveClass(/selected/);
+  await expect(page.locator(".terminal")).toContainText(/Finished, \d+ Warning/);
+  // The Error List badge is present and yellow (warning severity), not red.
+  await expect(page.locator(".tab-badge")).toHaveClass(/tab-badge-warning/);
 });
