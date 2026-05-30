@@ -6,7 +6,7 @@ This file provides Antigravity IDE (Gemini) with the operating rules, workflow, 
 
 Tailnet-only online code runner (C `gnu17`, C++ `gnu++20`, Python 3.12) with DAP-based debugging. No login, no DB, no server-side source persistence. Exposed only inside a tailnet via Tailscale Funnel on port `8080`.
 
-For full architecture, see [CLAUDE.md](../CLAUDE.md).
+For full architecture, see [CLAUDE.md](CLAUDE.md).
 
 ## Role
 
@@ -16,7 +16,7 @@ For full architecture, see [CLAUDE.md](../CLAUDE.md).
   - `ISSUES.md` — append new issues (`Reported By: Antigravity IDE`) and full-edit own issues; append QC notes to other agents' issues only.
   - `LOG.md` — append session entries at the top (newest first).
   - `tmp/antigravity-proposals/` — create HTML/CSS demo files for UI/UX proposals.
-  - `.gemini/GEMINI.md` — self-update when the user approves rule changes.
+  - `GEMINI.md` — self-update when the user approves rule changes.
 - The project is copied manually to this server through WinSCP. Do not rely on `git status` or git history being available.
 
 ## Multi-Agent Relay Workflow
@@ -51,9 +51,28 @@ Test the deployed UI/UX using `/browser` against the production site.
 
 ### Test Sources
 
-- Claude Code (leader/developer) writes and maintains test cases. Refer to [QC_TEST_CASES.md](../QC_TEST_CASES.md) for the current test suite.
-- When leader-dev updates test cases, re-read the file before running.
-- Focus on UI/UX-relevant test cases (visual rendering, button states, tooltips, error messages, layout, accessibility).
+Claude Code (leader/developer) writes and maintains test cases across two locations:
+
+1. **Legacy manual checklist:** [QC_TEST_CASES.md](QC_TEST_CASES.md) — 20 manual test cases (TC-001..TC-020), UI-focused.
+2. **Comprehensive capability checklist:** [tests/qc/](tests/qc/) — 192+ scenarios organized by scope:
+
+| File | Scope | Scenarios | Prefixes |
+|------|-------|-----------|----------|
+| [INDEX.md](tests/qc/INDEX.md) | Master index, convention, feature matrix | — | — |
+| [runner.md](tests/qc/runner.md) | Runner capabilities: Run, Debug, Limits, Abuse, Observability | 57 | TC-RUN, TC-DBG, TC-LIM, TC-ABS, TC-OBS |
+| [c-embedded.md](tests/qc/c-embedded.md) | C firmware/embedded: Register/MMIO, RTOS, DS+Math+Protocol | 90+ | TC-C-REG, TC-C-RTOS, TC-C-DS |
+| [cpp.md](tests/qc/cpp.md) | C++ STL, gnu++20, Threading, Firmware-adjacent | 60 | TC-CPP |
+| [python.md](tests/qc/python.md) | Python 3.12 smoke, asyncio, typing, stdlib | 15 | TC-PY |
+
+**For UI/UX testing**, focus on:
+- `QC_TEST_CASES.md` — all 20 cases are directly UI/UX testable via browser.
+- `runner.md` § RUN (TC-RUN-001..015) — verify output rendering, pill status, error display.
+- `runner.md` § DEBUG (TC-DBG-001..015) — verify Variables panel, Watch panel, Call Stack, debug toolbar.
+- `runner.md` § LIMITS (TC-LIM-001..010) — verify timeout/error UI states.
+
+**Not directly UI-testable** (require server-side access / Docker): TC-OBS-*, TC-ABS-008..011, TC-LIM-002/003/006..010.
+
+When leader-dev updates test cases, re-read the relevant files before running.
 
 ### Test Sequence
 
@@ -121,20 +140,17 @@ When proposing UI/UX improvements, follow these principles:
 
 ## Allowed Commands
 
-Antigravity IDE may run these commands without asking:
+Antigravity IDE runs on a **Windows dev environment**. No `npm` or `docker` commands are available or needed — Codex QC handles all testing (`npm test`, `npm run typecheck`, `npm run e2e`, Docker) on the Ubuntu server.
 
-- `npm run typecheck`
-- `npm test`
-- `npm run e2e`
-- `npm install` (read-only dependency resolution check only)
+Antigravity IDE tests UI/UX exclusively via `/browser` against the production URL.
 
-**NOT allowed** (Windows dev environment, Docker not available):
+**NOT allowed:**
 
+- Any `npm` command (`npm test`, `npm run typecheck`, `npm run e2e`, `npm install`, etc.)
 - Any `docker` or `docker compose` command
-- `docker compose ps`, `docker compose logs`, `docker compose up`, etc.
-- Any command that modifies deployment state
+- Any command that modifies deployment state, installs packages, removes files, or stops services
 
-Ask before using command families not listed here, especially commands that install packages, remove files, stop services, or modify deployment state.
+Ask before using any command families not explicitly approved by the user.
 
 ---
 
@@ -177,7 +193,7 @@ Ask before using command families not listed here, especially commands that inst
 
 ### Closed Issue Compaction
 
-Follow the same compaction workflow as Codex QC (see [AGENTS.md](../AGENTS.md) § Closed Issue Compaction Workflow).
+Follow the same compaction workflow as Codex QC (see [AGENTS.md](AGENTS.md) § Closed Issue Compaction Workflow).
 
 ---
 
@@ -235,9 +251,9 @@ Increment the session number from the previous Antigravity IDE entry. If a sessi
 
 ## Architecture Reference
 
-For detailed architecture, environment variables, deploy workflow, and coding conventions, refer to [CLAUDE.md](../CLAUDE.md). Key points for UI/UX work:
+For detailed architecture, environment variables, deploy workflow, and coding conventions, refer to [CLAUDE.md](CLAUDE.md). Key points for UI/UX work:
 
-- Frontend: [apps/frontend/src/App.tsx](../apps/frontend/src/App.tsx) — single-component Monaco-based UI with `@monaco-editor/react` + lucide icons.
-- Breakpoints: [apps/frontend/src/breakpoints.ts](../apps/frontend/src/breakpoints.ts)
+- Frontend: [apps/frontend/src/App.tsx](apps/frontend/src/App.tsx) — single-component Monaco-based UI with `@monaco-editor/react` + lucide icons.
+- Breakpoints: [apps/frontend/src/breakpoints.ts](apps/frontend/src/breakpoints.ts)
 - Dev ports: frontend `5173` (Vite), production `8080` (via Docker compose).
-- Wire protocol (shared types): [packages/shared/src/index.ts](../packages/shared/src/index.ts)
+- Wire protocol (shared types): [packages/shared/src/index.ts](packages/shared/src/index.ts)

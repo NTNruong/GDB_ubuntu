@@ -5,13 +5,16 @@ test.afterEach(async ({ page }) => {
   const stop = page.getByTestId("btn-topbar-stop");
   const visible = await stop.isVisible({ timeout: 500 }).catch(() => false);
   if (!visible) return;
-  await stop.click().catch(() => undefined);
+  const enabled = await stop.isEnabled().catch(() => false);
+  if (!enabled) return;
+  await stop.click({ timeout: 500 }).catch(() => undefined);
   await page
     .waitForFunction(
       () => {
         const pill = document.querySelector(".status-pill")?.textContent ?? "";
         return /Stopped|Exited|Idle|Ready|Timed out|Error/i.test(pill);
       },
+      undefined,
       { timeout: 5_000 }
     )
     .catch(() => undefined);
