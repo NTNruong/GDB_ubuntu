@@ -1,7 +1,7 @@
 # ⚡ Internal Online Code Runner MVP
 
 <p align="center">
-  <strong>🇬🇧 English</strong> &nbsp;·&nbsp; <a href="README.vi.md">🇻🇳 Tiếng Việt</a>
+  <strong><img src="https://flagcdn.com/24x18/gb.png" width="20" alt="EN"> English</strong> &nbsp;·&nbsp; <a href="README.vi.md"><img src="https://flagcdn.com/24x18/vn.png" width="20" alt="VI"> Tiếng Việt</a>
 </p>
 
 A high-performance internal code runner with visual debugging for C, C++, and Python — built on the Debug Adapter Protocol (DAP) and isolated inside a secure Tailnet.
