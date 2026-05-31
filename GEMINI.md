@@ -105,7 +105,7 @@ Every proposal — whether user-requested, discovered, or proactive — MUST fol
 1. **Analyze:** Read the relevant source files and [DESIGN.md](DESIGN.md) to understand the current implementation and styling rules.
 2. **Design:** Create a standalone HTML/CSS demo file in `tmp/antigravity-proposals/`.
    - File naming: `YYYY-MM-DD_<short-description>.html` (e.g. `2026-05-30_debug-toolbar-redesign.html`)
-   - The demo must be self-contained (inline CSS, no external dependencies except CDN fonts/icons).
+   - The demo must be self-contained (inline CSS, no external dependencies or external CDN fonts/icons due to CSP restrictions in tailnet environments; use local system fonts and inline/SVG icons).
    - Align all colors, spacing, borders, and typography with [DESIGN.md](DESIGN.md) tokens.
    - Include a before/after comparison when feasible (side-by-side or toggle).
    - Include design rationale as HTML comments at the top of the file.
@@ -124,6 +124,7 @@ Antigravity may propose changes to the entire frontend UI/UX, including:
 - HTML structure: element additions/modifications, accessibility improvements
 - JS interactions: hover effects, micro-animations, tooltips, transitions (no business logic)
 - Component restructure: reorganizing UI components for better UX flow
+- **Responsive design:** Though testing is desktop-focused, ensure changes respect the `@media (max-width: 860px)` breakpoint behavior documented in [DESIGN.md](DESIGN.md).
 - **Boundary:** do NOT propose or touch backend logic, API endpoints, runner behavior, Docker configuration, or build tooling.
 
 ### Design Principles
@@ -132,7 +133,7 @@ When proposing UI/UX improvements, follow these principles:
 
 - **Design System Alignment:** Consult [DESIGN.md](DESIGN.md) to reuse existing HSL color palettes, spacing, and radius variables. Do not introduce ad-hoc styles unless explicitly justified.
 - **Modern aesthetics:** Dark mode, glassmorphism, subtle gradients, curated color palettes (not generic red/blue/green).
-- **Typography:** Use modern web fonts (Inter, Roboto, JetBrains Mono/Cascadia Code for code).
+- **Typography:** Use local system fonts. Sans font: `Inter`. Monospace font: `Cascadia Code`, `SFMono-Regular`, or `Consolas`. Do not load fonts from external networks.
 - **Micro-animations:** Smooth transitions, hover effects, loading states.
 - **Consistency:** Follow existing design patterns unless proposing a deliberate improvement.
 - **Accessibility:** Maintain or improve aria-labels, keyboard navigation, contrast ratios.
