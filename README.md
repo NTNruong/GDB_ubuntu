@@ -1,112 +1,127 @@
-# Internal Online Code Runner MVP
+# ⚡ Internal Online Code Runner MVP
 
-Tailnet-only code runner for C, C++, and Python with DAP-based debugging.
+Một nền tảng chạy code nội bộ hiệu năng cao và gỡ lỗi trực quan dành cho C, C++ và Python tích hợp giao thức DAP chuyên nghiệp trong môi trường bảo mật Tailnet.
 
-## Features
+<p align="center">
+  <img src="https://img.shields.io/badge/Tailnet-Isolated-10b981?style=for-the-badge&logo=tailscale&logoColor=white" alt="Tailnet Isolated" />
+  <img src="https://img.shields.io/badge/DAP-Debugging-3b82f6?style=for-the-badge&logo=visual-studio-code&logoColor=white" alt="DAP Debugging" />
+  <img src="https://img.shields.io/badge/Docker-Sandboxed-f59e0b?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Sandboxed" />
+</p>
 
-- No login, no database, no server-side code persistence.
-- C `gnu17`, C++ `gnu++20`, Python 3.12.
-- C/C++ debugging through GDB and Python debugging through debugpy, bridged to the editor via the Debug Adapter Protocol (DAP). C/C++ also has a GDB/MI engine as a fallback (`DEBUG_ENGINE=mi`).
-- Docker-isolated execution with no network, CPU/RAM/time/output limits.
-- Metadata-only logging. Source, stdin, and output are not logged.
+<p align="center">
+  <img src="https://img.shields.io/badge/C-gnu17-blue?style=flat-square" alt="C gnu17" />
+  <img src="https://img.shields.io/badge/C%2B%2B-gnu%2B%2B20-blue?style=flat-square" alt="C++ gnu++20" />
+  <img src="https://img.shields.io/badge/Python-3.12-blue?style=flat-square" alt="Python 3.12" />
+</p>
 
-## Local Development
+---
+
+## 🛠️ Feature Matrix & Security Boundary
+
+Giao diện chạy code và gỡ lỗi của chúng tôi được thiết kế dựa trên các nguyên tắc bảo mật và hiệu năng nghiêm ngặt:
+
+| Tính năng | Mô tả chi tiết | Chỉ số bảo mật |
+|---|---|---|
+| 🔒 **Zero Server Persistence** | Không database, không đăng nhập, không lưu mã nguồn lâu dài phía server. Source/stdin/argv chỉ tồn tại tạm trong workspace của mỗi job và được dọn dẹp sau khi job kết thúc; chúng cũng bị redact khỏi log. | **No DB · No login** |
+| 🚀 **Multi-Language Runner** | Hỗ trợ biên dịch và thực thi C `gnu17`, C++ `gnu++20`, Python 3.12. | **GCC / Python 3.12** |
+| 🔍 **DAP-Bridged Debugging** | Gỡ lỗi tương tác thời gian thực thông qua GDB (C/C++) và debugpy (Python) được bắc cầu trực tiếp vào trình soạn thảo Monaco qua giao thức DAP. | **GDB / debugpy / GDB-MI** |
+| 🛡️ **Docker Sandbox Isolation** | Môi trường thực thi cô lập hoàn toàn: không có quyền truy cập mạng ngoài, giới hạn nghiêm ngặt về CPU, dung lượng RAM, thời gian chạy và đầu ra. | **CapDrop / PidsLimit** |
+| 👁️ **Metadata-Only Logging** | Quyền riêng tư tuyệt đối: Chỉ lưu các siêu dữ liệu hiệu năng (metadata). Toàn bộ mã nguồn, dữ liệu đầu vào (stdin) và kết quả đầu ra đều được bỏ qua. | **Không lưu code/stdout** |
+
+---
+
+## 📐 System Architecture
+
+Dưới đây là sơ đồ luồng tương tác thực thi của hệ thống:
+
+```mermaid
+graph TD
+    Client[Web Browser - Monaco Editor] <-->|HTTP / WebSockets| API[API Gateway :4000]
+    API <-->|DAP / Exec Requests| Runner[Runner Service :4001]
+    Runner <-->|Create / Manage| HostFS[(Host Shared Workspaces)]
+    Runner <-->|Spawn Containers| Container[Docker Sandbox Container]
+    Container <-->|Read / Write| HostFS
+```
+
+---
+
+## 🚀 Local Development
+
+Chạy các lệnh sau ở máy cục bộ để khởi động toàn bộ môi trường lập trình:
 
 ```bash
 npm install
 npm run dev
 ```
 
-The frontend runs on `http://localhost:5173`, API on `http://localhost:4000`, and runner on `http://localhost:4001`.
+* **Frontend:** `http://localhost:5173`
+* **API:** `http://localhost:4000`
+* **Runner:** `http://localhost:4001`
 
-The runner requires Docker and the local execution images:
+> [!IMPORTANT]
+> Yêu cầu Docker để build các runner-images dùng làm sandbox cô lập:
+> ```bash
+> docker compose --profile runner-images build runner-cpp-image runner-python-image
+> ```
 
-```bash
-docker compose --profile runner-images build runner-cpp-image runner-python-image
-```
+---
 
-## Ubuntu/Tailscale Deployment
+## 📦 Ubuntu / Tailscale Deployment
 
-Build runner images first, then start the app:
+Quy trình triển khai môi trường sản xuất trên máy chủ Ubuntu có cài đặt Tailscale:
 
-```bash
-docker compose --profile runner-images build runner-cpp-image runner-python-image
-docker compose up --build -d frontend api runner
-```
+| Bước thực hiện | Lệnh thực thi | Mô tả chi tiết |
+|---|---|---|
+| **1. Build Images** | `docker compose --profile runner-images build runner-cpp-image runner-python-image` | Tạo các image sandbox chứa GCC/Python cô lập. |
+| **2. Run Services** | `docker compose up --build -d frontend api runner` | Khởi động các dịch vụ nền ở chế độ detached. |
+| **3. Tailnet Access** | Expose `http://<tailscale-ip>:8080` | Chỉ mở trong Tailnet. Không expose public internet nếu thiếu auth. |
+| **4. Shared Space** | Mounts `/tmp/gdb-ubuntu-runner-workspaces` | Vùng đệm trao đổi file tạm thời cho các container con. |
 
-Expose `http://<tailscale-ip>:8080` inside the tailnet. Do not publish this service to the public internet without adding authentication and rate limiting.
+---
 
-The runner uses `/tmp/gdb-ubuntu-runner-workspaces` on the Ubuntu host as a temporary shared workspace for Docker child containers. The compose file creates and mounts this path automatically.
+## 🤖 Server Update Helper
 
-## Server Update Helper
+Hệ thống tự động đồng bộ khi push lên nhánh `main` qua self-hosted GitHub Actions runner. Dưới đây là các lệnh chạy script bổ trợ thủ công:
 
-Deployment is automated: every push to `main` triggers a GitHub Actions
-self-hosted runner on the Ubuntu host (`/opt/apps/GDB_ubuntu`), which runs
-`bin/pull-latest.sh` to pull, rebuild, and restart the app services. The
-commands below are that same helper, for a manual run.
+| Tình huống cập nhật | Lệnh thực thi | Phạm vi tác động |
+|---|---|---|
+| **Chỉ cập nhật mã nguồn** | `bash bin/pull-latest.sh` | Kéo code mới về host. |
+| **Khởi động lại ứng dụng** | `RESTART_APP=1 bash bin/pull-latest.sh` | Khởi động lại các container. |
+| **Đổi Dockerfile sandbox** | `REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh` | Rebuild toàn bộ sandbox + ứng dụng. |
 
-After cloning the repo to `/opt/apps/GDB_ubuntu`, update code with:
+---
 
-```bash
-bash bin/pull-latest.sh
-```
+## 📊 Logs & Observability
 
-To pull, rebuild, and restart app containers:
+Xem nhật ký hoạt động của các dịch vụ để gỡ lỗi và giám sát:
 
-```bash
-RESTART_APP=1 bash bin/pull-latest.sh
-```
-
-If runner image scripts or Dockerfiles changed:
-
-```bash
-REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh
-```
-
-## Logs
-
-View logs for all running app services:
-
+### Toàn bộ dịch vụ (Theo dõi liên tục)
 ```bash
 docker compose logs -f frontend api runner
 ```
 
-View logs for a single service:
-
+### Một dịch vụ cụ thể
 ```bash
-docker compose logs -f runner
-docker compose logs -f api
-docker compose logs -f frontend
+docker compose logs -f runner  # Hoặc api / frontend
 ```
 
-Show recent logs without following:
+### Giám sát lưu lượng HTTP (Nginx access logs)
+Dịch vụ `frontend` là Nginx; access log được ghi ra stdout của container nên hiển thị qua `docker compose logs`. Dùng các bộ lọc sau để xem riêng các request HTTP truy cập thực tế:
 
-```bash
-docker compose logs --tail=200 runner
-```
+* **Tất cả các truy cập HTTP:**
+  ```bash
+  docker compose logs -f frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
+  ```
+* **Giới hạn 200 dòng gần nhất:**
+  ```bash
+  docker compose logs --tail=200 frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
+  ```
 
-### Nginx access log
+---
 
-The `frontend` service is Nginx, and its access log is written to the
-container's stdout, so it appears in the service logs:
+## 🧪 Verification Suite
 
-```bash
-docker compose logs -f frontend
-```
-
-To show only HTTP access lines (filtering out Nginx startup/config output):
-
-```bash
-docker compose logs frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
-```
-
-Combine with `--since` / `--tail` to scope the window, e.g. last 200 lines:
-
-```bash
-docker compose logs --tail=200 frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
-```
-
-## Verification
+Chạy bộ test kiểm thử tích hợp để đảm bảo hệ thống hoạt động ổn định trước khi bàn giao:
 
 ```bash
 npm run typecheck
