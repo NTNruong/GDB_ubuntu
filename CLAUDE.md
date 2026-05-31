@@ -111,6 +111,16 @@ When the user relays QC feedback (or an Antigravity summary / manual bug report)
 5. **Record:** add the top `LOG.md` entry and generate the commit message (see **Session workflow** for both formats).
 6. **User pushes `main` manually** → GitHub Actions auto-deploys → QC verifies on the server and flips the issue to `PASSED` in `ISSUES.md`.
 
+### Verifying a relayed plan or proposal
+
+When the user relays something to implement — an Antigravity implementation plan, a QC diagnosis, a design proposal/screenshot, a doc rewrite — do not implement it on faith. Run this loop (the user explicitly endorsed it):
+
+1. **Cross-check against the real code first.** Read the actual files, tokens, and selectors the plan touches; treat the plan as a hypothesis and the codebase as ground truth.
+2. **Report a structured assessment before editing:** lead with a one-line verdict (phù hợp / cần sửa / không nên làm), then what matches ✓ vs what is stale/wrong ⚠❌, each with a `file:line` citation.
+3. **Implement by correcting, not copying.** If the plan carries a factual error (wrong mechanism, stale value, broken selector, an overclaim), fix it to match reality and call the deviation out explicitly — never propagate a known-wrong statement just because the plan said so.
+4. **Verify after implementing, with evidence matched to the change:** code → `npm run typecheck && npm test && npm run build -w @internal/frontend`; Markdown/docs → fenced blocks balance, every original command preserved, links/anchors resolve. Re-check any e2e selectors the change might touch (`.debug-toolbar`/`.debug-group`, `.var-row`/`.var-caret`, input placeholders / `data-testid`) so QC's post-deploy run stays green.
+5. **Close concisely:** verified ✓ + what was corrected and why + the verification output + the exact next-step git commands for the user. Offer to commit; never commit/push unless asked.
+
 ### Guardrails (mechanics live in the referenced sections)
 
 - **Never push** the remote — the user always pushes manually. Never commit unless asked.
