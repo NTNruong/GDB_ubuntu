@@ -6,6 +6,7 @@ playwright-report/
 test-results/
 .env
 *.log
+*.pdf
 tmp/
 LOG.md
 ISSUES.md
