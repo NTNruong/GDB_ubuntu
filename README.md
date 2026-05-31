@@ -1,6 +1,10 @@
 # ⚡ Internal Online Code Runner MVP
 
-Một nền tảng chạy code nội bộ hiệu năng cao và gỡ lỗi trực quan dành cho C, C++ và Python tích hợp giao thức DAP chuyên nghiệp trong môi trường bảo mật Tailnet.
+<p align="center">
+  <strong>🌐 English</strong> &nbsp;·&nbsp; <a href="README.vi.md">Tiếng Việt</a>
+</p>
+
+A high-performance internal code runner with visual debugging for C, C++, and Python — built on the Debug Adapter Protocol (DAP) and isolated inside a secure Tailnet.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Tailnet-Isolated-10b981?style=for-the-badge&logo=tailscale&logoColor=white" alt="Tailnet Isolated" />
@@ -18,33 +22,33 @@ Một nền tảng chạy code nội bộ hiệu năng cao và gỡ lỗi trực
 
 ## 🛠️ Feature Matrix & Security Boundary
 
-Giao diện chạy code và gỡ lỗi của chúng tôi được thiết kế dựa trên các nguyên tắc bảo mật và hiệu năng nghiêm ngặt:
+The run-and-debug experience is built on strict security and performance principles:
 
-| Tính năng | Mô tả chi tiết | Chỉ số bảo mật |
+| Feature | Description | Security marker |
 |---|---|---|
-| 🔒 **Zero Server Persistence** | Không database, không đăng nhập, không lưu mã nguồn lâu dài phía server. Source/stdin/argv chỉ tồn tại tạm trong workspace của mỗi job và được dọn dẹp sau khi job kết thúc; chúng cũng bị redact khỏi log. | **No DB · No login** |
-| 🚀 **Multi-Language Runner** | Hỗ trợ biên dịch và thực thi C `gnu17`, C++ `gnu++20`, Python 3.12. | **GCC / Python 3.12** |
-| 🔍 **DAP-Bridged Debugging** | Gỡ lỗi tương tác thời gian thực thông qua GDB (C/C++) và debugpy (Python) được bắc cầu trực tiếp vào trình soạn thảo Monaco qua giao thức DAP. | **GDB / debugpy / GDB-MI** |
-| 🛡️ **Docker Sandbox Isolation** | Môi trường thực thi cô lập hoàn toàn: không có quyền truy cập mạng ngoài, giới hạn nghiêm ngặt về CPU, dung lượng RAM, thời gian chạy và đầu ra. | **CapDrop / PidsLimit** |
-| 👁️ **Metadata-Only Logging** | Quyền riêng tư tuyệt đối: Chỉ lưu các siêu dữ liệu hiệu năng (metadata). Toàn bộ mã nguồn, dữ liệu đầu vào (stdin) và kết quả đầu ra đều được bỏ qua. | **Không lưu code/stdout** |
+| 🔒 **Zero Server Persistence** | No database, no login, no long-lived server-side source. Source/stdin/argv exist only transiently in each job's workspace and are cleaned up after the job ends; they are also redacted from logs. | **No DB · No login** |
+| 🚀 **Multi-Language Runner** | Compiles and runs C `gnu17`, C++ `gnu++20`, and Python 3.12. | **GCC / Python 3.12** |
+| 🔍 **DAP-Bridged Debugging** | Real-time interactive debugging via GDB (C/C++) and debugpy (Python), bridged straight into the Monaco editor over the Debug Adapter Protocol. | **GDB / debugpy / GDB-MI** |
+| 🛡️ **Docker Sandbox Isolation** | Fully isolated execution: no outbound network access, with strict CPU, memory, run-time, and output limits. | **CapDrop / PidsLimit** |
+| 👁️ **Metadata-Only Logging** | Privacy by default: only performance metadata is stored. Source, stdin, and output are dropped. | **No code/stdout stored** |
 
 ---
 
 ## 🔐 Security Model & Disclaimer
 
 > [!WARNING]
-> Đây là công cụ **thực thi code tùy ý** (C/C++/Python). Mỗi job chạy trong Docker sandbox bị siết chặt (`NetworkDisabled`, `CapDrop: ALL`, `ReadonlyRootfs`, `no-new-privileges`, giới hạn CPU/RAM/PID/thời gian/output), nhưng sandbox chỉ **giảm thiểu** rủi ro chứ không loại bỏ tuyệt đối.
+> This tool **executes arbitrary code** (C/C++/Python). Each job runs in a hardened Docker sandbox (`NetworkDisabled`, `CapDrop: ALL`, `ReadonlyRootfs`, `no-new-privileges`, CPU/RAM/PID/time/output limits), but a sandbox only **mitigates** risk — it does not eliminate it.
 
-* **Không xác thực, không rate limit.** Hệ thống không có đăng nhập và không giới hạn tần suất — bất kỳ ai truy cập được endpoint đều có thể chạy code.
-* **Dành cho môi trường tin cậy.** Được thiết kế để chạy **trong tailnet nội bộ**. **KHÔNG** đặt trực tiếp sau public internet nếu chưa tự bổ sung lớp xác thực + rate limit (reverse proxy / API gateway / Tailscale identity).
-* **Tự host = tự chịu rủi ro.** Nếu bạn fork hoặc triển khai, bạn chịu trách nhiệm về bảo mật hạ tầng của mình. Phần mềm cung cấp "AS IS", không bảo hành — xem [LICENSE](LICENSE).
-* **Quyền riêng tư log.** Source / stdin / argv bị redact khỏi log; chỉ lưu metadata hiệu năng.
+* **No authentication, no rate limiting.** There is no login and no throttling — anyone who can reach the endpoint can run code.
+* **For trusted environments.** Designed to run **inside a private tailnet**. Do **not** place it directly on the public internet without adding your own authentication + rate limiting (reverse proxy / API gateway / Tailscale identity).
+* **Self-host at your own risk.** If you fork or deploy this, you are responsible for your own infrastructure security. The software is provided "AS IS", without warranty — see [LICENSE](LICENSE).
+* **Log privacy.** Source / stdin / argv are redacted from logs; only performance metadata is kept.
 
 ---
 
 ## 📐 System Architecture
 
-Dưới đây là sơ đồ luồng tương tác thực thi của hệ thống:
+The execution flow of the system:
 
 ```mermaid
 graph TD
@@ -59,7 +63,7 @@ graph TD
 
 ## 🚀 Local Development
 
-Chạy các lệnh sau ở máy cục bộ để khởi động toàn bộ môi trường lập trình:
+Run the following on your local machine to start the full development environment:
 
 ```bash
 npm install
@@ -71,7 +75,7 @@ npm run dev
 * **Runner:** `http://localhost:4001`
 
 > [!IMPORTANT]
-> Yêu cầu Docker để build các runner-images dùng làm sandbox cô lập:
+> Docker is required to build the runner images used as isolated sandboxes:
 > ```bash
 > docker compose --profile runner-images build runner-cpp-image runner-python-image
 > ```
@@ -80,51 +84,51 @@ npm run dev
 
 ## 📦 Ubuntu / Tailscale Deployment
 
-Quy trình triển khai môi trường sản xuất trên máy chủ Ubuntu có cài đặt Tailscale:
+Production deployment on an Ubuntu host with Tailscale installed:
 
-| Bước thực hiện | Lệnh thực thi | Mô tả chi tiết |
+| Step | Command | Description |
 |---|---|---|
-| **1. Build Images** | `docker compose --profile runner-images build runner-cpp-image runner-python-image` | Tạo các image sandbox chứa GCC/Python cô lập. |
-| **2. Run Services** | `docker compose up --build -d frontend api runner` | Khởi động các dịch vụ nền ở chế độ detached. |
-| **3. Tailnet Access** | Expose `http://<tailscale-ip>:8080` | Chỉ mở trong Tailnet. Không expose public internet nếu thiếu auth. |
-| **4. Shared Space** | Mounts `/tmp/gdb-ubuntu-runner-workspaces` | Vùng đệm trao đổi file tạm thời cho các container con. |
+| **1. Build Images** | `docker compose --profile runner-images build runner-cpp-image runner-python-image` | Build the isolated GCC/Python sandbox images. |
+| **2. Run Services** | `docker compose up --build -d frontend api runner` | Start the app services in detached mode. |
+| **3. Tailnet Access** | Expose `http://<tailscale-ip>:8080` | Tailnet only. Do not expose to the public internet without auth. |
+| **4. Shared Space** | Mounts `/tmp/gdb-ubuntu-runner-workspaces` | Temporary file-exchange area for child containers. |
 
 ---
 
 ## 🤖 Server Update Helper
 
-Hệ thống tự động đồng bộ khi push lên nhánh `main` qua self-hosted GitHub Actions runner. Dưới đây là các lệnh chạy script bổ trợ thủ công:
+Deployment auto-syncs on every push to `main` via a self-hosted GitHub Actions runner. The helper script can also be run manually:
 
-| Tình huống cập nhật | Lệnh thực thi | Phạm vi tác động |
+| Update scenario | Command | Scope |
 |---|---|---|
-| **Chỉ cập nhật mã nguồn** | `bash bin/pull-latest.sh` | Kéo code mới về host. |
-| **Khởi động lại ứng dụng** | `RESTART_APP=1 bash bin/pull-latest.sh` | Khởi động lại các container. |
-| **Đổi Dockerfile sandbox** | `REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh` | Rebuild toàn bộ sandbox + ứng dụng. |
+| **Code only** | `bash bin/pull-latest.sh` | Pull the latest code onto the host. |
+| **Restart the app** | `RESTART_APP=1 bash bin/pull-latest.sh` | Rebuild & restart the app containers. |
+| **Sandbox Dockerfile changed** | `REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh` | Rebuild the sandbox images + app. |
 
 ---
 
 ## 📊 Logs & Observability
 
-Xem nhật ký hoạt động của các dịch vụ để gỡ lỗi và giám sát:
+Inspect service logs for debugging and monitoring:
 
-### Toàn bộ dịch vụ (Theo dõi liên tục)
+### All services (follow)
 ```bash
 docker compose logs -f frontend api runner
 ```
 
-### Một dịch vụ cụ thể
+### A single service
 ```bash
-docker compose logs -f runner  # Hoặc api / frontend
+docker compose logs -f runner  # or api / frontend
 ```
 
-### Giám sát lưu lượng HTTP (Nginx access logs)
-Dịch vụ `frontend` là Nginx; access log được ghi ra stdout của container nên hiển thị qua `docker compose logs`. Dùng các bộ lọc sau để xem riêng các request HTTP truy cập thực tế:
+### HTTP traffic (Nginx access logs)
+The `frontend` service is Nginx; its access log is written to the container's stdout, so it shows up in `docker compose logs`. Use these filters to view only real HTTP requests:
 
-* **Tất cả các truy cập HTTP:**
+* **All HTTP access:**
   ```bash
   docker compose logs -f frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
   ```
-* **Giới hạn 200 dòng gần nhất:**
+* **Last 200 lines:**
   ```bash
   docker compose logs --tail=200 frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
   ```
@@ -133,7 +137,7 @@ Dịch vụ `frontend` là Nginx; access log được ghi ra stdout của contai
 
 ## 🧪 Verification Suite
 
-Chạy bộ test kiểm thử tích hợp để đảm bảo hệ thống hoạt động ổn định trước khi bàn giao:
+Run the integration test suite to confirm the system is stable before shipping:
 
 ```bash
 npm run typecheck
