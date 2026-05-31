@@ -12,6 +12,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Chỉ chạy trên repo gốc — fork (khi repo public) sẽ không chạy job này trên self-hosted runner.
+    if: github.repository == 'NTNruong/GDB_ubuntu'
     runs-on: self-hosted
     # --- THÊM: Giới hạn thời gian chạy tối đa ---
     timeout-minutes: 30
