@@ -6,7 +6,7 @@ Tailnet-only code runner for C, C++, and Python with DAP-based debugging.
 
 - No login, no database, no server-side code persistence.
 - C `gnu17`, C++ `gnu++20`, Python 3.12.
-- C/C++ debugging through GDB/gdbserver and Python debugging through debugpy, bridged by DAP.
+- C/C++ debugging through GDB and Python debugging through debugpy, bridged to the editor via the Debug Adapter Protocol (DAP). C/C++ also has a GDB/MI engine as a fallback (`DEBUG_ENGINE=mi`).
 - Docker-isolated execution with no network, CPU/RAM/time/output limits.
 - Metadata-only logging. Source, stdin, and output are not logged.
 
@@ -39,6 +39,11 @@ Expose `http://<tailscale-ip>:8080` inside the tailnet. Do not publish this serv
 The runner uses `/tmp/gdb-ubuntu-runner-workspaces` on the Ubuntu host as a temporary shared workspace for Docker child containers. The compose file creates and mounts this path automatically.
 
 ## Server Update Helper
+
+Deployment is automated: every push to `main` triggers a GitHub Actions
+self-hosted runner on the Ubuntu host (`/opt/apps/GDB_ubuntu`), which runs
+`bin/pull-latest.sh` to pull, rebuild, and restart the app services. The
+commands below are that same helper, for a manual run.
 
 After cloning the repo to `/opt/apps/GDB_ubuntu`, update code with:
 
@@ -78,6 +83,27 @@ Show recent logs without following:
 
 ```bash
 docker compose logs --tail=200 runner
+```
+
+### Nginx access log
+
+The `frontend` service is Nginx, and its access log is written to the
+container's stdout, so it appears in the service logs:
+
+```bash
+docker compose logs -f frontend
+```
+
+To show only HTTP access lines (filtering out Nginx startup/config output):
+
+```bash
+docker compose logs frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
+```
+
+Combine with `--since` / `--tail` to scope the window, e.g. last 200 lines:
+
+```bash
+docker compose logs --tail=200 frontend | grep -E '"(GET|POST|PUT|DELETE|HEAD) '
 ```
 
 ## Verification
