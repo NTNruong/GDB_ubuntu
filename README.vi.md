@@ -1,7 +1,7 @@
 # ⚡ Internal Online Code Runner MVP
 
 <p align="center">
-  🌐 <a href="README.md">English</a> &nbsp;·&nbsp; <strong>Tiếng Việt</strong>
+  <a href="README.md">🇬🇧 English</a> &nbsp;·&nbsp; <strong>🇻🇳 Tiếng Việt</strong>
 </p>
 
 Một nền tảng chạy code nội bộ hiệu năng cao và gỡ lỗi trực quan dành cho C, C++ và Python tích hợp giao thức DAP chuyên nghiệp trong môi trường bảo mật Tailnet.
