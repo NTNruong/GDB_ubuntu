@@ -30,6 +30,18 @@ Giao diện chạy code và gỡ lỗi của chúng tôi được thiết kế d
 
 ---
 
+## 🔐 Security Model & Disclaimer
+
+> [!WARNING]
+> Đây là công cụ **thực thi code tùy ý** (C/C++/Python). Mỗi job chạy trong Docker sandbox bị siết chặt (`NetworkDisabled`, `CapDrop: ALL`, `ReadonlyRootfs`, `no-new-privileges`, giới hạn CPU/RAM/PID/thời gian/output), nhưng sandbox chỉ **giảm thiểu** rủi ro chứ không loại bỏ tuyệt đối.
+
+* **Không xác thực, không rate limit.** Hệ thống không có đăng nhập và không giới hạn tần suất — bất kỳ ai truy cập được endpoint đều có thể chạy code.
+* **Dành cho môi trường tin cậy.** Được thiết kế để chạy **trong tailnet nội bộ**. **KHÔNG** đặt trực tiếp sau public internet nếu chưa tự bổ sung lớp xác thực + rate limit (reverse proxy / API gateway / Tailscale identity).
+* **Tự host = tự chịu rủi ro.** Nếu bạn fork hoặc triển khai, bạn chịu trách nhiệm về bảo mật hạ tầng của mình. Phần mềm cung cấp "AS IS", không bảo hành — xem [LICENSE](LICENSE).
+* **Quyền riêng tư log.** Source / stdin / argv bị redact khỏi log; chỉ lưu metadata hiệu năng.
+
+---
+
 ## 📐 System Architecture
 
 Dưới đây là sơ đồ luồng tương tác thực thi của hệ thống:
