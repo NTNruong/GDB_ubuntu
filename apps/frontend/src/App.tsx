@@ -3,6 +3,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Bug,
+  ChevronRight,
   CircleX,
   ListTree,
   Pause,
@@ -695,34 +696,37 @@ export function App() {
           <div className="debug-toolbar">
             <div className="debug-group">
               {isDebugRunning ? (
-                <button aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
+                <button className="btn-continue" aria-label="Pause" onClick={() => sendDebug({ type: "pause" })} title="Pause">
                   <Pause size={15} fill="currentColor" />
                 </button>
               ) : (
-                <button aria-label="Continue" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "continue" })} title="Continue">
+                <button className="btn-continue" aria-label="Continue" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "continue" })} title="Continue">
                   <Play size={15} fill="currentColor" />
                 </button>
               )}
             </div>
+            <div className="toolbar-separator" aria-hidden="true" />
             <div className="debug-group">
-              <button aria-label="Step over" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
+              <button className="btn-step" aria-label="Step over" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOver" })} title="Step over">
                 <SkipForward size={15} fill="currentColor" />
               </button>
-              <button aria-label="Step into" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
+              <button className="btn-step" aria-label="Step into" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepInto" })} title="Step into">
                 <ArrowDownToLine size={15} />
               </button>
-              <button aria-label="Step out" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
+              <button className="btn-step" aria-label="Step out" disabled={!isDebugStopped} onClick={() => sendDebug({ type: "stepOut" })} title="Step out">
                 <ArrowUpFromLine size={15} />
               </button>
             </div>
+            <div className="toolbar-separator" aria-hidden="true" />
             <div className="debug-group">
-              <button aria-label="Restart" disabled={!isDebugActive} onClick={handleRestart} title="Restart">
+              <button className="btn-restart" aria-label="Restart" disabled={!isDebugActive} onClick={handleRestart} title="Restart">
                 <RotateCcw size={15} />
               </button>
-              <button aria-label="Stop" disabled={!isDebugActive} onClick={() => sendDebug({ type: "stop" })} title="Stop">
-                <Square size={15} fill="currentColor" className="icon-stop" />
+              <button className="btn-stop" aria-label="Stop" disabled={!isDebugActive} onClick={() => sendDebug({ type: "stop" })} title="Stop">
+                <Square size={15} fill="currentColor" />
               </button>
             </div>
+            {isDebugStopped && <div className="active-indicator" aria-hidden="true" title="Stopped at breakpoint" />}
           </div>
         )}
         <span className={`status-pill ${statusClass}${isRunActive && runElapsed >= 3 ? " running-long" : ""}`}>
@@ -830,7 +834,31 @@ export function App() {
               <DiagnosticsPanel diagnostics={diagnostics} onSelect={jumpToDiagnostic} />
             )}
             {activeTab === "debug" && (
-              <TerminalView lines={debugConsole} />
+              <div className="debug-tab-container">
+                <TerminalView lines={debugConsole} />
+                {isDebugActive && (
+                  <form
+                    className="debug-console-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (!rawCommand.trim()) {
+                        return;
+                      }
+                      sendDebug({ type: "raw", command: rawCommand.trim() });
+                      setRawCommand("");
+                    }}
+                  >
+                    <span className="debug-console-prompt" aria-hidden="true">&gt;</span>
+                    <input
+                      data-testid="debug-console-input"
+                      aria-label="debug console"
+                      value={rawCommand}
+                      onChange={(event) => setRawCommand(event.target.value)}
+                      placeholder="Type a debug command or expression (e.g. print x)"
+                    />
+                  </form>
+                )}
+              </div>
             )}
           </div>
         </section>
@@ -883,19 +911,6 @@ export function App() {
                       }}
                     >
                       <input value={watchInput} onChange={(event) => setWatchInput(event.target.value)} placeholder="watch" />
-                    </form>
-                    <form
-                      className="debug-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        if (!rawCommand.trim()) {
-                          return;
-                        }
-                        sendDebug({ type: "raw", command: rawCommand.trim() });
-                        setRawCommand("");
-                      }}
-                    >
-                      <input value={rawCommand} onChange={(event) => setRawCommand(event.target.value)} placeholder="debug console" />
                     </form>
                   </section>
                 </div>
@@ -1044,24 +1059,25 @@ function VariableRows({
         const expandable = reference !== undefined && reference > 0;
         const expanded = expandable && expandedRefs.has(reference);
         const loadedChildren = expanded ? childrenByRef[reference] : undefined;
-        const indent: CSSProperties = { paddingLeft: `${depth * 14}px` };
         return (
           <Fragment key={`${depth}-${variable.name}-${index}`}>
-            <div className="kv-row var-row" style={indent}>
+            <div className="tree-row var-row">
+              <TreeIndent depth={depth} />
               {expandable ? (
                 <button
                   type="button"
-                  className="var-caret"
+                  className={`var-caret${expanded ? " expanded" : ""}`}
                   aria-label={expanded ? "Collapse" : "Expand"}
                   onClick={() => onToggle(reference)}
                 >
-                  {expanded ? "▾" : "▸"}
+                  <ChevronRight size={14} />
                 </button>
               ) : (
                 <span className="var-caret-spacer" />
               )}
-              <span>{variable.name}</span>
-              <code>{variable.value ?? ""}</code>
+              <span className="var-name-after">{variable.name}</span>
+              <span className="var-type-equals">:</span>
+              <code className={`tree-value ${classifyValue(variable.value)}`}>{variable.value ?? ""}</code>
             </div>
             {expanded && loadedChildren && (
               <VariableRows
@@ -1073,7 +1089,8 @@ function VariableRows({
               />
             )}
             {expanded && !loadedChildren && (
-              <div className="kv-row var-row" style={{ paddingLeft: `${(depth + 1) * 14}px` }}>
+              <div className="tree-row var-row">
+                <TreeIndent depth={depth + 1} />
                 <span className="var-caret-spacer" />
                 <span className="var-loading">loading…</span>
               </div>
@@ -1083,6 +1100,41 @@ function VariableRows({
       })}
     </>
   );
+}
+
+function TreeIndent({ depth }: { depth: number }) {
+  if (depth <= 0) {
+    return null;
+  }
+
+  return (
+    <span className="tree-indent" aria-hidden="true">
+      {Array.from({ length: depth }, (_, level) => (
+        <span key={level} className="indent-guide" />
+      ))}
+    </span>
+  );
+}
+
+// Classify a debug value for semantic coloring (ISSUE-037). Scheme confirmed by
+// the design owner: quoted → string, plain number/bool → number, anything with
+// braces/brackets or a hex pointer → object/complex; otherwise fall back to the
+// default text color.
+function classifyValue(raw: string | undefined): string {
+  const value = (raw ?? "").trim();
+  if (value === "") {
+    return "";
+  }
+  if (/^".*"$/.test(value) || /^'.*'$/.test(value)) {
+    return "val-string";
+  }
+  if (/^-?\d+(\.\d+)?$/.test(value) || /^(true|false)$/.test(value)) {
+    return "val-number";
+  }
+  if (/[{[]/.test(value) || /0x[0-9a-fA-F]+/.test(value)) {
+    return "val-object";
+  }
+  return "";
 }
 
 function WatchList({ watches, onRemove }: { watches: WatchValue[]; onRemove: (expression: string) => void }) {

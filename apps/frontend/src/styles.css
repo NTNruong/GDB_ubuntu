@@ -67,6 +67,17 @@
   --transition-normal: 250ms ease;
   --transition-slow: 400ms ease;
 
+  /* --- Typography families --- */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+
+  /* --- Debug toolbar semantic accents (ISSUE-036 screenshot match) --- */
+  --ss-green: #10b981;
+  --ss-green-light: #34d399;
+  --ss-blue: #3b82f6;
+  --ss-gold: #f59e0b;
+  --ss-red: #ef4444;
+
   color: var(--text-primary);
   background: var(--bg-base);
   font-family:
@@ -188,6 +199,8 @@ textarea {
   border-bottom: none;
   background: linear-gradient(180deg, var(--bg-layer-2), var(--bg-layer-1));
   box-shadow: 0 1px 0 var(--border-subtle), inset 0 -1px 0 var(--border-subtle);
+  position: relative;
+  z-index: 10;
 }
 
 .brand {
@@ -357,7 +370,7 @@ h1.brand {
 
 .resize-handle:hover,
 .resize-handle.dragging {
-  background: var(--border-active);
+  background: var(--accent);
 }
 
 .resize-handle::after {
@@ -367,12 +380,15 @@ h1.brand {
   border-radius: 2px;
   background: var(--text-muted);
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-fast), width var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .resize-handle:hover::after,
 .resize-handle.dragging::after {
-  opacity: 1;
+  width: 48px;
+  opacity: 0.85;
+  background: white;
+  box-shadow: 0 0 4px hsla(0, 0%, 100%, 0.6);
 }
 
 .editor-panel {
@@ -396,7 +412,7 @@ h1.brand {
 
 .resize-handle-x:hover,
 .resize-handle-x.dragging {
-  background: var(--border-active);
+  background: var(--accent);
 }
 
 .resize-handle-x::after {
@@ -406,12 +422,15 @@ h1.brand {
   border-radius: 2px;
   background: var(--text-muted);
   opacity: 0;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-fast), height var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .resize-handle-x:hover::after,
 .resize-handle-x.dragging::after {
-  opacity: 1;
+  height: 48px;
+  opacity: 0.85;
+  background: white;
+  box-shadow: 0 0 4px hsla(0, 0%, 100%, 0.6);
 }
 
 .debug-side-panel {
@@ -597,25 +616,32 @@ h1.brand {
   position: relative;
   min-width: 86px;
   min-height: 32px;
-  border-color: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  color: var(--text-secondary);
+  transition: color var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.tabbar button:hover:not(:disabled) {
+  transform: none;
+  border-color: transparent;
+  background: hsla(0, 0%, 100%, 0.03);
+  box-shadow: none;
+  color: var(--text-primary);
 }
 
 .tabbar button.selected {
-  background: var(--bg-elevated);
-  border-color: var(--border-active);
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  color: var(--text-accent);
+  box-shadow: var(--shadow-md), inset 0 1px 0 hsla(0, 0%, 100%, 0.05);
 }
 
-.tabbar button.selected::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  left: 20%;
-  right: 20%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--border-active), transparent);
-  border-radius: 2px 2px 0 0;
+.tabbar button.selected:hover:not(:disabled) {
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+  color: var(--text-accent);
 }
 
 .tab-badge {
@@ -630,11 +656,13 @@ h1.brand {
   color: white;
   font-size: 11px;
   font-weight: 700;
+  animation: badge-pop 300ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
 .tab-badge-error {
   background: var(--color-error);
   color: white;
+  box-shadow: 0 0 6px hsla(0, 72%, 65%, 0.45);
 }
 
 .tab-badge-warning {
@@ -784,18 +812,30 @@ h1.brand {
 .debug-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   margin-left: auto;
-  background: var(--bg-elevated);
-  padding: 3px 8px;
+  background: rgba(18, 22, 30, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 4px 12px;
+  min-height: 38px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-sm);
+  border: 1px solid hsla(0, 0%, 100%, 0.08);
+  box-shadow: 0 4px 12px hsla(0, 0%, 0%, 0.5);
 }
 
 .debug-group {
   display: flex;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
+}
+
+.toolbar-separator {
+  width: 1px;
+  height: 14px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: hsla(0, 0%, 100%, 0.08);
 }
 
 .debug-toolbar button {
@@ -805,19 +845,48 @@ h1.brand {
   padding: 0;
   background: transparent;
   border: none;
+  border-radius: var(--radius-sm);
+  box-shadow: none;
   color: var(--text-secondary);
+  transition: background var(--transition-fast), opacity var(--transition-fast), transform var(--transition-fast);
 }
 
 .debug-toolbar button:hover:not(:disabled) {
-  background: hsla(0, 0%, 100%, 0.1);
+  background: hsla(0, 0%, 100%, 0.06);
   border: none;
   transform: none;
   box-shadow: none;
 }
 
+.debug-toolbar button:disabled {
+  opacity: 0.4;
+}
+
 .debug-toolbar button:focus-visible {
   outline-offset: 1px;
   border-radius: var(--radius-sm);
+}
+
+/* Semantic colors per control group (ISSUE-036 screenshot match) */
+.debug-toolbar button.btn-continue { color: var(--ss-green); }
+.debug-toolbar button.btn-step { color: var(--ss-blue); }
+.debug-toolbar button.btn-restart { color: var(--ss-gold); }
+.debug-toolbar button.btn-stop { color: var(--ss-red); }
+
+.active-indicator {
+  width: 8px;
+  height: 8px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--ss-green-light);
+  box-shadow: 0 0 10px var(--ss-green), 0 0 4px var(--ss-green);
+  animation: pulse-indicator 2s infinite;
+}
+
+@keyframes pulse-indicator {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.6; }
 }
 
 .icon-stop {
@@ -869,27 +938,41 @@ h1.brand {
   color: var(--color-warning);
 }
 
-.var-row {
-  grid-template-columns: 16px minmax(48px, 0.7fr) minmax(0, 1fr);
-  align-items: start;
-}
-
 .var-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  min-height: unset;
+  padding: 0;
   background: none;
   border: none;
-  padding: 0;
-  color: var(--text-secondary);
+  box-shadow: none;
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
-  line-height: 1.5;
+  flex-shrink: 0;
+  transition: transform var(--transition-fast), color var(--transition-fast);
 }
 
-.var-caret:hover {
+.var-caret:hover:not(:disabled) {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  transform: rotate(0deg);
   color: var(--text-primary);
 }
 
+.var-caret.expanded,
+.var-caret.expanded:hover:not(:disabled) {
+  transform: rotate(90deg);
+}
+
 .var-caret-spacer {
-  display: inline-block;
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .var-loading {
@@ -929,10 +1012,6 @@ h1.brand {
   box-sizing: border-box;
 }
 
-.debug-form + .debug-form {
-  margin-top: 8px;
-}
-
 .breakpoint-glyph {
   width: 10px !important;
   height: 10px !important;
@@ -944,6 +1023,129 @@ h1.brand {
 
 .current-debug-line {
   background: hsla(40, 80%, 64%, 0.18);
+}
+
+/* === ISSUE-039: unified debug console (input docked below output in Debug tab) === */
+.debug-tab-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.debug-tab-container .terminal {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.debug-console-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: var(--bg-terminal);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.debug-console-prompt {
+  color: var(--text-accent);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+.debug-console-form input {
+  flex: 1;
+  min-height: unset;
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.debug-console-form input:focus {
+  outline: none;
+  border-color: var(--border-focus);
+}
+
+/* === ISSUE-037: interactive variables tree === */
+.tree-row {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.tree-row:hover {
+  background: var(--bg-surface);
+}
+
+.tree-indent {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.indent-guide {
+  width: 14px;
+  align-self: stretch;
+  border-left: 1px solid var(--border-subtle);
+}
+
+.var-name-after {
+  margin: 0 6px 0 2px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.var-type-equals {
+  margin-right: 6px;
+  color: var(--text-muted);
+}
+
+.tree-value {
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.val-string { color: var(--color-success-text); }
+.val-number { color: var(--color-warning); }
+.val-object { color: var(--color-info); font-weight: 500; }
+
+/* === ISSUE-038: status pill spinner for async phases === */
+.status-starting::before,
+.status-running::before,
+.status-pill.running-long::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  border: 2px solid currentColor;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes badge-pop {
+  from { transform: scale(0.5); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 @media (max-width: 860px) {

@@ -102,10 +102,11 @@ Propose UI/UX improvements. This workflow is triggered by:
 
 Every proposal — whether user-requested, discovered, or proactive — MUST follow this sequence:
 
-1. **Analyze:** Read the relevant source files to understand the current implementation.
+1. **Analyze:** Read the relevant source files and [DESIGN.md](DESIGN.md) to understand the current implementation and styling rules.
 2. **Design:** Create a standalone HTML/CSS demo file in `tmp/antigravity-proposals/`.
    - File naming: `YYYY-MM-DD_<short-description>.html` (e.g. `2026-05-30_debug-toolbar-redesign.html`)
    - The demo must be self-contained (inline CSS, no external dependencies except CDN fonts/icons).
+   - Align all colors, spacing, borders, and typography with [DESIGN.md](DESIGN.md) tokens.
    - Include a before/after comparison when feasible (side-by-side or toggle).
    - Include design rationale as HTML comments at the top of the file.
 3. **Present:** Inform the user the demo is ready and describe what was changed and why.
@@ -119,7 +120,7 @@ Every proposal — whether user-requested, discovered, or proactive — MUST fol
 
 Antigravity may propose changes to the entire frontend UI/UX, including:
 
-- CSS/styling: colors, layout, spacing, animation, typography, gradients, shadows
+- CSS/styling: colors, layout, spacing, animation, typography, gradients, shadows (consistent with [DESIGN.md](DESIGN.md))
 - HTML structure: element additions/modifications, accessibility improvements
 - JS interactions: hover effects, micro-animations, tooltips, transitions (no business logic)
 - Component restructure: reorganizing UI components for better UX flow
@@ -129,8 +130,9 @@ Antigravity may propose changes to the entire frontend UI/UX, including:
 
 When proposing UI/UX improvements, follow these principles:
 
+- **Design System Alignment:** Consult [DESIGN.md](DESIGN.md) to reuse existing HSL color palettes, spacing, and radius variables. Do not introduce ad-hoc styles unless explicitly justified.
 - **Modern aesthetics:** Dark mode, glassmorphism, subtle gradients, curated color palettes (not generic red/blue/green).
-- **Typography:** Use modern web fonts (Inter, Roboto, JetBrains Mono for code).
+- **Typography:** Use modern web fonts (Inter, Roboto, JetBrains Mono/Cascadia Code for code).
 - **Micro-animations:** Smooth transitions, hover effects, loading states.
 - **Consistency:** Follow existing design patterns unless proposing a deliberate improvement.
 - **Accessibility:** Maintain or improve aria-labels, keyboard navigation, contrast ratios.

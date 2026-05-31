@@ -148,9 +148,10 @@ test("debug side panel shows switchable Variables/Call Stack tabs with stacked W
   // Variables tab is default and selected
   await expect(panel.locator(".debug-side-tabs button.selected")).toContainText("Variables");
 
-  // Watch + debug console inputs are reachable from the Variables tab (stacked below)
+  // Watch input stays in the Variables tab; the debug console moved to the bottom
+  // Debug tab (ISSUE-039) and must no longer live in the side panel.
   await expect(panel.locator('input[placeholder="watch"]')).toBeVisible();
-  await expect(panel.locator('input[placeholder="debug console"]')).toBeVisible();
+  await expect(panel.locator('[data-testid="debug-console-input"]')).toHaveCount(0);
 
   // Switch to Call Stack
   await panel.getByRole("button", { name: "Call Stack" }).click();
@@ -304,6 +305,36 @@ test("watch + debug console inputs submit via Enter with no visible buttons (ISS
   await watchInput.fill("42");
   await watchInput.press("Enter");
   await expect(panel.locator(".watch-row", { hasText: "42" })).toBeVisible({ timeout: 10_000 });
+});
+
+// ISSUE-039: the debug console input is unified into the bottom Debug tab, docked
+// directly below the terminal output behind a "> " prompt — no longer in the sidebar.
+test("debug console input is unified into the bottom Debug tab (ISSUE-039)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("breakpoints").fill("6");
+  await page.getByTestId("btn-debug").click();
+  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+
+  // The console input is no longer rendered inside the right side panel.
+  await expect(page.locator('.debug-side-panel [data-testid="debug-console-input"]')).toHaveCount(0);
+
+  // It lives in the bottom Debug tab, below the terminal, behind a prompt glyph.
+  await page.locator(".tabbar button", { hasText: "Debug" }).click();
+  const consoleForm = page.locator(".debug-console-form");
+  await expect(consoleForm).toBeVisible();
+  await expect(consoleForm.locator(".debug-console-prompt")).toHaveText(">");
+
+  const consoleInput = page.locator('[data-testid="debug-console-input"]');
+  await expect(consoleInput).toBeVisible();
+
+  // The terminal output sits above the input inside the same container, and the
+  // input spans most of the form width (full-width terminal prompt minus glyph).
+  await expect(page.locator(".debug-tab-container .terminal")).toBeVisible();
+  const inputBox = await consoleInput.boundingBox();
+  const formBox = await consoleForm.boundingBox();
+  expect(inputBox).not.toBeNull();
+  expect(formBox).not.toBeNull();
+  expect(inputBox!.width).toBeGreaterThan(formBox!.width / 2);
 });
 
 async function replaceEditorSource(page: import("@playwright/test").Page, source: string) {
