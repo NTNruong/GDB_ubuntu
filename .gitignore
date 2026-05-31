@@ -11,6 +11,8 @@ tmp/
 LOG.md
 ISSUES.md
 AGENTS.md
+*.archive.md
+PHASE2.internal.md
 *.md~
 update-*.md
 .claude/
