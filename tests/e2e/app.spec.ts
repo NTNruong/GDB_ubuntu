@@ -452,3 +452,20 @@ test("multi-file: compiles and links a C header + helper (ISSUE-040)", async ({ 
   await page.getByRole("button", { name: "Run" }).click();
   await expect(page.locator(".terminal")).toContainText("sum=5", { timeout: 30_000 });
 });
+
+test("multi-file: duplicate main() surfaces a linker error in the Error List (ISSUE-040)", async ({ page }) => {
+  await page.goto("/");
+  await replaceEditorSource(page, "int main(){ return 0; }\n");
+
+  // extra.c also defines main() → linker emits "multiple definition of `main`".
+  await page.getByRole("button", { name: "Add file" }).click();
+  await page.locator(".editor-tab", { hasText: "untitled1.c" }).dblclick();
+  await page.locator(".tab-rename-input").fill("extra.c");
+  await page.locator(".tab-rename-input").press("Enter");
+  await replaceEditorSource(page, "int main(){ return 1; }\n");
+
+  await page.getByRole("button", { name: "Run" }).click();
+  // The linker error must reach the Error List (badge visible + non-zero), not only Output.
+  await expect(page.locator(".tab-badge")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".tab-badge")).not.toHaveText("0");
+});

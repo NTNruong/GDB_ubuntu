@@ -436,6 +436,7 @@ h1.brand {
 }
 
 .editor-tab {
+  position: relative; /* confines the active ::before/::after indicators to this tab */
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -541,17 +542,18 @@ h1.brand {
   margin: 3px 6px;
   flex: 0 0 auto;
   align-self: center;
-  border: 1px dashed var(--border-subtle);
+  border: 1px dashed var(--text-muted);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .tab-add:hover {
   background: var(--tab-bg-hover);
   color: var(--text-primary);
+  border-color: var(--border-active);
 }
 
 .tab-rename-input {

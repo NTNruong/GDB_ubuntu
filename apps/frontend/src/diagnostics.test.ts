@@ -33,6 +33,33 @@ describe("compiler diagnostics", () => {
     ]);
   });
 
+  it("surfaces linker errors (missing / duplicate main) as Error List diagnostics", () => {
+    const missingMain = parseCompilerDiagnostics(
+      [
+        "/usr/bin/ld: /usr/lib/x86_64-linux-gnu/Scrt1.o: in function `_start':",
+        "(.text+0x1b): undefined reference to `main'",
+        "collect2: error: ld returned 1 exit status"
+      ].join("\n")
+    );
+    expect(missingMain).toEqual([
+      { severity: "error", message: "undefined reference to `main'", raw: "(.text+0x1b): undefined reference to `main'" }
+    ]);
+
+    const duplicateMain = parseCompilerDiagnostics(
+      "/usr/bin/ld: /tmp/ccB.o:(.text+0x0): multiple definition of `main'; /tmp/ccA.o:(.text+0x0): first defined here\n"
+    );
+    expect(duplicateMain).toHaveLength(1);
+    expect(duplicateMain[0]).toMatchObject({ severity: "error", message: "multiple definition of `main'" });
+  });
+
+  it("does not treat a normal GCC warning as a linker error", () => {
+    const parsed = parseCompilerDiagnostics(
+      "/workspace/util.c:2:5: warning: unused variable 'x' [-Wunused-variable]\n"
+    );
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({ severity: "warning", line: 2 });
+  });
+
   it("identifies GCC context lines that should stay out of terminal output", () => {
     expect(
       isCompilerDiagnosticContext(
