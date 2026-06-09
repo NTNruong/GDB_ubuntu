@@ -78,6 +78,18 @@
   --ss-gold: #f59e0b;
   --ss-red: #ef4444;
 
+  /* --- Editor Tab Bar (ISSUE-040, DESIGN §7) --- */
+  --tab-bar-height: 32px;
+  --tab-bar-bg: var(--bg-layer-2);
+  --tab-bg-active: #1e1e1e; /* VS Dark editor bg — seamless visual join */
+  --tab-bg-hover: hsla(215, 20%, 18%, 0.5);
+  --tab-min-width: 80px;
+  --tab-max-width: 160px;
+  --icon-c: hsl(210, 70%, 60%);
+  --icon-h: hsl(280, 50%, 65%);
+  --icon-cpp: hsl(210, 80%, 50%);
+  --icon-hpp: hsl(280, 60%, 60%);
+
   color: var(--text-primary);
   background: var(--bg-base);
   font-family:
@@ -392,9 +404,218 @@ h1.brand {
 }
 
 .editor-panel {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* --- Editor Tab Bar (ISSUE-040, DESIGN §7) --- */
+.editor-tab-bar {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  height: var(--tab-bar-height);
+  flex: 0 0 var(--tab-bar-height);
+  background: var(--tab-bar-bg);
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.editor-tab-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.editor-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  min-width: var(--tab-min-width);
+  max-width: var(--tab-max-width);
+  padding: 0 4px 0 10px;
+  border-right: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.editor-tab:hover {
+  background: var(--tab-bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-tab.active {
+  background: var(--tab-bg-active);
+  color: var(--text-primary);
+}
+
+/* Emerald active indicator + bridge that merges the active tab into the editor. */
+.editor-tab.active::before {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.editor-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--tab-bg-active);
+}
+
+.editor-tab .tab-icon {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.editor-tab .tab-label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-tab .tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.editor-tab:hover .tab-close,
+.editor-tab.active .tab-close {
+  opacity: 1;
+}
+
+.editor-tab .tab-close:hover {
+  background: hsla(0, 72%, 65%, 0.15);
+  color: var(--color-error);
+}
+
+.editor-tab .tab-close:disabled {
+  opacity: 0;
+  cursor: default;
+}
+
+.tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: 3px 6px;
+  flex: 0 0 auto;
+  align-self: center;
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.tab-add:hover {
+  background: var(--tab-bg-hover);
+  color: var(--text-primary);
+}
+
+.tab-rename-input {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 120px;
+  height: 22px;
+  margin: 0 6px;
+  padding: 0 6px;
+  border: 1px solid var(--border-active);
+  border-radius: var(--radius-sm);
+  background: var(--bg-layer-1);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  outline: none;
+  box-shadow: 0 0 0 2px hsla(210, 60%, 50%, 0.2);
+}
+
+.tab-context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.tab-context-menu li[role="menuitem"] {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.tab-context-menu li[role="menuitem"]:hover {
+  background: hsla(210, 60%, 50%, 0.12);
+}
+
+.tab-context-menu li.menu-danger {
+  color: var(--color-error);
+}
+
+.tab-context-menu li.menu-danger:hover {
+  background: hsla(0, 72%, 65%, 0.12);
+}
+
+.tab-context-menu li[aria-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.tab-context-menu li.menu-separator {
+  height: 1px;
+  margin: 4px 0;
+  padding: 0;
+  background: var(--border-subtle);
 }
 
 .resize-handle-x {
@@ -1151,6 +1372,10 @@ h1.brand {
 @media (max-width: 860px) {
   .topbar {
     flex-wrap: wrap;
+  }
+
+  .tab-add {
+    display: none;
   }
 
   .brand {

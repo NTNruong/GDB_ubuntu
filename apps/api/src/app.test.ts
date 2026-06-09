@@ -37,6 +37,34 @@ describe("api app", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it("redaction paths strip file contents, stdin and argv (not file names)", async () => {
+    // Proves the production redact config (shared by createApiServer / createRunnerServer)
+    // strips user code/input if a request body is ever logged. Tests the pino redact paths
+    // directly because Fastify's default `req` serializer omits the body entirely.
+    const pino = (await import("pino")).default;
+    let logged = "";
+    const logger = pino(
+      { redact: ["req.body.files[*].content", "req.body.stdin", "req.body.argv"] },
+      { write: (chunk: string) => { logged += chunk; } }
+    );
+
+    logger.info({
+      req: {
+        body: {
+          files: [{ path: "main.c", content: "TOP_SECRET_SOURCE" }],
+          stdin: "SECRET_STDIN",
+          argv: ["SECRET_ARGV"]
+        }
+      }
+    });
+
+    expect(logged).not.toContain("TOP_SECRET_SOURCE");
+    expect(logged).not.toContain("SECRET_STDIN");
+    expect(logged).not.toContain("SECRET_ARGV");
+    expect(logged).toContain("main.c"); // file names are not sensitive
+    expect(logged).toContain("[Redacted]");
+  });
+
   it("keeps websocket-only debug routes from running on plain HTTP requests", async () => {
     const app = createApiServer(config);
 

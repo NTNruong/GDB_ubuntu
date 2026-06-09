@@ -38,7 +38,7 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
   const app = Fastify({
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
-      redact: ["req.body.source", "req.body.stdin", "req.body.argv"]
+      redact: ["req.body.files[*].content", "req.body.stdin", "req.body.argv"]
     }
   });
   const state: RunnerState = {

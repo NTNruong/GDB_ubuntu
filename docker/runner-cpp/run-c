@@ -6,7 +6,14 @@ mkdir -p /workspace/tmp
 export TMPDIR=/workspace/tmp
 
 echo "__RUNNER_PHASE__:compile:start" >&2
-gcc -std=gnu17 -O2 -pipe -Wall -Wextra /workspace/main.c -o /exec/program -lm
+shopt -s nullglob
+c_sources=(/workspace/*.c)
+shopt -u nullglob
+if [ ${#c_sources[@]} -eq 0 ]; then
+  echo "No C source file to compile" >&2
+  exit 1
+fi
+gcc -std=gnu17 -O2 -pipe -Wall -Wextra "${c_sources[@]}" -o /exec/program -lm
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 echo "__RUNNER_PHASE__:run:start" >&2

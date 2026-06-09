@@ -8,7 +8,7 @@ import { MAX_OUTPUT_BYTES, type Language, type RunEvent, type RunRequest } from 
 import type { RunnerConfig } from "./config.js";
 import type { EventBuffer } from "./eventBuffer.js";
 import { PhaseFilter } from "./phaseFilter.js";
-import { createWorkspacePaths, type WorkspacePaths } from "./workspace.js";
+import { createWorkspacePaths, writeProjectFiles, type WorkspacePaths } from "./workspace.js";
 
 export class DockerRunner {
   readonly docker: Docker;
@@ -186,7 +186,7 @@ async function createWorkspace(id: string, request: RunRequest, config: RunnerCo
   const workspace = await createWorkspacePaths(config, `internal-code-runner-${id}-`);
   const root = workspace.containerPath;
   await mkdir(path.join(root, "tmp"), { recursive: true });
-  await writeFile(path.join(root, sourceFileName(request.language)), request.source, { mode: 0o600 });
+  await writeProjectFiles(root, request.files, request.language);
   await writeFile(path.join(root, "stdin.txt"), request.stdin, { mode: 0o600 });
 
   // Keep an empty writable file available for programs that expect a local output target.
@@ -198,16 +198,4 @@ async function createWorkspace(id: string, request: RunRequest, config: RunnerCo
   });
 
   return workspace;
-}
-
-function sourceFileName(language: Language): string {
-  if (language === "c") {
-    return "main.c";
-  }
-
-  if (language === "cpp") {
-    return "main.cpp";
-  }
-
-  return "main.py";
 }

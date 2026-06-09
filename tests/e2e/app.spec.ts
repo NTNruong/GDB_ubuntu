@@ -402,3 +402,53 @@ test("warning-only compile stays on Output with a warning count (ISSUE-017)", as
   // The Error List badge is present and yellow (warning severity), not red.
   await expect(page.locator(".tab-badge")).toHaveClass(/tab-badge-warning/);
 });
+
+// ISSUE-040: multi-file ephemeral projects via the Editor Tab Bar (C/C++ only).
+test("multi-file: add, rename, and close editor tabs (ISSUE-040)", async ({ page }) => {
+  await page.goto("/");
+  // C is the default language → the tab bar is visible with a single main.c tab.
+  await expect(page.locator(".editor-tab-bar")).toBeVisible();
+  await expect(page.locator(".editor-tab")).toHaveCount(1);
+  await expect(page.locator(".editor-tab .tab-label")).toHaveText("main.c");
+
+  // Add a file → untitled1.c becomes the second tab.
+  await page.getByRole("button", { name: "Add file" }).click();
+  await expect(page.locator(".editor-tab")).toHaveCount(2);
+
+  // Rename it via double-click inline input → util.c.
+  await page.locator(".editor-tab", { hasText: "untitled1.c" }).dblclick();
+  const renameInput = page.locator(".tab-rename-input");
+  await renameInput.fill("util.c");
+  await renameInput.press("Enter");
+  await expect(page.locator(".editor-tab", { hasText: "util.c" })).toBeVisible();
+
+  // Close it via the × button → back to a single main.c tab.
+  await page.locator(".editor-tab", { hasText: "util.c" }).locator(".tab-close").click();
+  await expect(page.locator(".editor-tab")).toHaveCount(1);
+  await expect(page.locator(".editor-tab .tab-label")).toHaveText("main.c");
+});
+
+test("multi-file: compiles and links a C header + helper (ISSUE-040)", async ({ page }) => {
+  await page.goto("/");
+  await replaceEditorSource(
+    page,
+    '#include <stdio.h>\n#include "util.h"\nint main(){ printf("sum=%d\\n", add(2, 3)); return 0; }'
+  );
+
+  // Add util.h with the declaration.
+  await page.getByRole("button", { name: "Add file" }).click();
+  await page.locator(".editor-tab", { hasText: "untitled1.c" }).dblclick();
+  await page.locator(".tab-rename-input").fill("util.h");
+  await page.locator(".tab-rename-input").press("Enter");
+  await replaceEditorSource(page, "int add(int a, int b);\n");
+
+  // Add util.c with the definition.
+  await page.getByRole("button", { name: "Add file" }).click();
+  await page.locator(".editor-tab", { hasText: "untitled1.c" }).dblclick();
+  await page.locator(".tab-rename-input").fill("util.c");
+  await page.locator(".tab-rename-input").press("Enter");
+  await replaceEditorSource(page, '#include "util.h"\nint add(int a, int b){ return a + b; }\n');
+
+  await page.getByRole("button", { name: "Run" }).click();
+  await expect(page.locator(".terminal")).toContainText("sum=5", { timeout: 30_000 });
+});

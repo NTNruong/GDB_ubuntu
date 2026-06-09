@@ -18,16 +18,22 @@ import {
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   LANGUAGE_CAPABILITIES,
+  LANGUAGE_EXTENSIONS,
+  defaultFileName,
+  fileExtension,
   parseArgv,
+  type Breakpoint,
   type DebugCommand,
   type DebugEvent,
   type DebugFrame,
   type DebugVariable,
   type Language,
+  type ProjectFile,
   type RunEvent
 } from "@internal/shared";
 import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
 import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
+import { FileTabs } from "./FileTabs";
 import { formatRunMetric } from "./runMetrics";
 
 type TerminalLine = {
@@ -48,10 +54,13 @@ const initialLanguage = LANGUAGE_CAPABILITIES[0]!;
 
 export function App() {
   const [language, setLanguage] = useState<Language>(initialLanguage.id);
-  const [source, setSource] = useState(initialLanguage.defaultSource);
+  const [files, setFiles] = useState<ProjectFile[]>(() => [
+    { path: defaultFileName(initialLanguage.id), content: initialLanguage.defaultSource }
+  ]);
+  const [activePath, setActivePath] = useState(() => defaultFileName(initialLanguage.id));
   const [stdin, setStdin] = useState("");
   const [argvInput, setArgvInput] = useState("");
-  const [breakpointText, setBreakpointText] = useState("");
+  const [breakpointsByPath, setBreakpointsByPath] = useState<Record<string, string>>({});
   const [activeTab, setActiveTab] = useState<ActiveTab>("output");
   const [runStatus, setRunStatus] = useState("Idle");
   const [debugStatus, setDebugStatus] = useState("Idle");
@@ -66,6 +75,7 @@ export function App() {
   const [watchInput, setWatchInput] = useState("");
   const [rawCommand, setRawCommand] = useState("");
   const [stoppedLine, setStoppedLine] = useState<number | undefined>();
+  const [stoppedPath, setStoppedPath] = useState<string | undefined>();
   const [isRunActive, setIsRunActive] = useState(false);
   const [isDebugActive, setIsDebugActive] = useState(false);
   const [runElapsed, setRunElapsed] = useState(0);
@@ -89,13 +99,127 @@ export function App() {
   const debugSocket = useRef<WebSocket | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
-  const decorationIds = useRef<string[]>([]);
+  const decorationIdsByPath = useRef<Record<string, string[]>>({});
+  const activePathRef = useRef(activePath);
 
   const capability = useMemo(
     () => LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage,
     [language]
   );
+  const showTabs = language !== "python";
+  const activeFile = useMemo(
+    () => files.find((file) => file.path === activePath) ?? files[0],
+    [files, activePath]
+  );
+  const activeContent = activeFile?.content ?? "";
+  const breakpointText = breakpointsByPath[activePath] ?? "";
   const breakpoints = useMemo(() => parseBreakpointText(breakpointText), [breakpointText]);
+  const allBreakpoints = useMemo<Breakpoint[]>(
+    () =>
+      Object.entries(breakpointsByPath).flatMap(([path, text]) =>
+        parseBreakpointText(text).map((line) => ({ path, line }))
+      ),
+    [breakpointsByPath]
+  );
+
+  useEffect(() => {
+    activePathRef.current = activePath;
+  }, [activePath]);
+
+  const setActiveContent = useCallback(
+    (content: string) => {
+      const path = activePathRef.current;
+      setFiles((current) => current.map((file) => (file.path === path ? { ...file, content } : file)));
+    },
+    []
+  );
+
+  const setActiveBreakpointText = useCallback((updater: (current: string) => string) => {
+    const path = activePathRef.current;
+    setBreakpointsByPath((current) => ({ ...current, [path]: updater(current[path] ?? "") }));
+  }, []);
+
+  const isValidFileName = useCallback(
+    (name: string, ignorePath?: string) => {
+      if (!/^[A-Za-z0-9._-]{1,64}$/.test(name) || name.startsWith(".")) {
+        return false;
+      }
+      if (!LANGUAGE_EXTENSIONS[language].includes(fileExtension(name))) {
+        return false;
+      }
+      const lower = name.toLowerCase();
+      return !files.some((file) => file.path.toLowerCase() === lower && file.path !== ignorePath);
+    },
+    [files, language]
+  );
+
+  const addFile = useCallback(() => {
+    const ext = language === "cpp" ? ".cpp" : language === "c" ? ".c" : ".py";
+    let index = 1;
+    let name = `untitled${index}${ext}`;
+    while (files.some((file) => file.path.toLowerCase() === name.toLowerCase())) {
+      index += 1;
+      name = `untitled${index}${ext}`;
+    }
+    setFiles((current) => [...current, { path: name, content: "" }]);
+    setActivePath(name);
+  }, [files, language]);
+
+  const renameFile = useCallback(
+    (path: string, nextPath: string) => {
+      if (!isValidFileName(nextPath, path)) {
+        return;
+      }
+      setFiles((current) => current.map((file) => (file.path === path ? { ...file, path: nextPath } : file)));
+      setBreakpointsByPath((current) => {
+        if (!(path in current)) {
+          return current;
+        }
+        const next = { ...current };
+        next[nextPath] = next[path] ?? "";
+        delete next[path];
+        return next;
+      });
+      setActivePath((current) => (current === path ? nextPath : current));
+      setStoppedPath((current) => (current === path ? nextPath : current));
+    },
+    [isValidFileName]
+  );
+
+  const removeFile = useCallback((path: string) => {
+    setFiles((current) => {
+      if (current.length <= 1) {
+        return current;
+      }
+      const next = current.filter((file) => file.path !== path);
+      setActivePath((active) => (active === path ? next[0]!.path : active));
+      return next;
+    });
+    setBreakpointsByPath((current) => {
+      if (!(path in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
+    setStoppedPath((current) => (current === path ? undefined : current));
+  }, []);
+
+  const closeOtherFiles = useCallback((path: string) => {
+    setFiles((current) => current.filter((file) => file.path === path));
+    setActivePath(path);
+    setBreakpointsByPath((current) => (path in current ? { [path]: current[path] ?? "" } : {}));
+  }, []);
+
+  const deleteFile = useCallback(
+    (path: string) => {
+      if (window.confirm(`Delete "${path}"? This cannot be undone.`)) {
+        removeFile(path);
+      }
+    },
+    [removeFile]
+  );
 
   const isDebugRunning = isDebugActive && debugStatus === "Running";
   const isDebugStopped = isDebugActive && debugStatus !== "Running" && debugStatus !== "Starting";
@@ -276,20 +400,34 @@ export function App() {
     await startDebugRef.current();
   }, [isDebugActive, handleStop]);
 
-  const jumpToDiagnostic = useCallback((diagnostic: Diagnostic) => {
-    if (!diagnostic.line) {
-      return;
-    }
+  const jumpToDiagnostic = useCallback(
+    (diagnostic: Diagnostic) => {
+      const line = diagnostic.line;
+      if (!line) {
+        return;
+      }
 
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
+      const doReveal = () => {
+        const editor = editorRef.current;
+        if (!editor) {
+          return;
+        }
+        editor.focus();
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line, column: diagnostic.column ?? 1 });
+      };
 
-    editor.focus();
-    editor.revealLineInCenter(diagnostic.line);
-    editor.setPosition({ lineNumber: diagnostic.line, column: diagnostic.column ?? 1 });
-  }, []);
+      const target = basenameFromWorkspace(diagnostic.file);
+      if (target && target !== activePathRef.current && files.some((file) => file.path === target)) {
+        setActivePath(target);
+        // Let the editor swap to the target file's model before revealing.
+        setTimeout(doReveal, 50);
+      } else {
+        doReveal();
+      }
+    },
+    [files]
+  );
 
   const appendRunStderr = useCallback(
     (data: string) => {
@@ -349,7 +487,7 @@ export function App() {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ language, source, stdin, argv })
+        body: JSON.stringify({ language, files, stdin, argv })
       });
 
       if (!response.ok) {
@@ -376,7 +514,7 @@ export function App() {
       setIsRunActive(false);
       appendOutput("system", `${messageFromError(error)}\n`);
     }
-  }, [appendOutput, argvInput, language, source, stdin, stopSockets]);
+  }, [appendOutput, argvInput, language, files, stdin, stopSockets]);
 
   const startDebug = useCallback(async () => {
     if (!capability.debug) {
@@ -396,19 +534,22 @@ export function App() {
     setStoppedLine(undefined);
     setDebugStatus("Starting");
 
-    if (breakpoints.length === 0) {
+    if (allBreakpoints.length === 0) {
       setDebugStatus("No breakpoints");
       setIsDebugActive(false);
       appendDebug("system", "No breakpoints set. Add a breakpoint before starting debug.\n");
       return;
     }
 
-    const lineCount = editorRef.current?.getModel()?.getLineCount() ?? 0;
-    if (lineCount > 0 && breakpoints.some((line) => line > lineCount)) {
-      const invalid = breakpoints.filter((line) => line > lineCount);
+    const lineCountByPath = new Map(files.map((file) => [file.path, file.content.split("\n").length]));
+    const outOfRange = allBreakpoints.filter((bp) => bp.line > (lineCountByPath.get(bp.path) ?? Infinity));
+    if (outOfRange.length > 0) {
       setDebugStatus("Invalid breakpoints");
       setIsDebugActive(false);
-      appendDebug("system", `Breakpoints out of range: lines ${invalid.join(", ")} (file has ${lineCount} lines)\n`);
+      appendDebug(
+        "system",
+        `Breakpoints out of range: ${outOfRange.map((bp) => `${bp.path}:${bp.line}`).join(", ")}\n`
+      );
       return;
     }
 
@@ -428,10 +569,10 @@ export function App() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           language,
-          source,
+          files,
           stdin,
           argv,
-          breakpoints,
+          breakpoints: allBreakpoints,
           clientId: clientIdRef.current
         })
       });
@@ -452,7 +593,7 @@ export function App() {
       setIsDebugActive(false);
       appendDebug("system", `${messageFromError(error)}\n`);
     }
-  }, [appendDebug, argvInput, breakpoints, capability.debug, language, source, stdin, stopSockets]);
+  }, [appendDebug, allBreakpoints, argvInput, capability.debug, files, language, stdin, stopSockets]);
 
   useEffect(() => {
     startDebugRef.current = startDebug;
@@ -542,8 +683,12 @@ export function App() {
       if (event.type === "stopped") {
         setDebugStatus(event.reason ?? "Stopped");
         setStoppedLine(event.line);
-        if (event.line) {
-          editorRef.current?.revealLineInCenter(event.line);
+        const stoppedFile = basenameFromWorkspace(event.file);
+        if (stoppedFile && files.some((file) => file.path === stoppedFile)) {
+          setStoppedPath(stoppedFile);
+          setActivePath(stoppedFile);
+        } else {
+          setStoppedPath(activePathRef.current);
         }
         return;
       }
@@ -586,7 +731,7 @@ export function App() {
         appendDebug("system", `${event.message}\n`);
       }
     },
-    [appendDebug]
+    [appendDebug, files]
   );
 
   const onEditorMount: OnMount = (editor, monaco) => {
@@ -600,7 +745,7 @@ export function App() {
       }
 
       const line = event.target.position.lineNumber;
-      setBreakpointText((current) => toggleBreakpointText(current, line));
+      setActiveBreakpointText((current) => toggleBreakpointText(current, line));
     });
   };
 
@@ -613,7 +758,9 @@ export function App() {
 
     const lineCount = editor.getModel()?.getLineCount() ?? Infinity;
     const validBreakpoints = breakpoints.filter((line) => line <= lineCount);
-    decorationIds.current = editor.deltaDecorations(decorationIds.current, [
+    const showStopped = stoppedLine !== undefined && stoppedPath === activePath;
+    const previous = decorationIdsByPath.current[activePath] ?? [];
+    decorationIdsByPath.current[activePath] = editor.deltaDecorations(previous, [
       ...validBreakpoints.map((line) => ({
         range: new monaco.Range(line, 1, line, 1),
         options: {
@@ -621,10 +768,10 @@ export function App() {
           glyphMarginClassName: "breakpoint-glyph"
         }
       })),
-      ...(stoppedLine
+      ...(showStopped
         ? [
             {
-              range: new monaco.Range(stoppedLine, 1, stoppedLine, 1),
+              range: new monaco.Range(stoppedLine!, 1, stoppedLine!, 1),
               options: {
                 isWholeLine: true,
                 className: "current-debug-line"
@@ -633,7 +780,11 @@ export function App() {
           ]
         : [])
     ]);
-  }, [breakpoints, stoppedLine]);
+
+    if (showStopped) {
+      editor.revealLineInCenter(stoppedLine!);
+    }
+  }, [breakpoints, stoppedLine, stoppedPath, activePath]);
 
   useEffect(() => () => stopSockets(), [stopSockets]);
 
@@ -663,9 +814,24 @@ export function App() {
           value={language}
           onChange={(event) => {
             const next = event.target.value as Language;
+            if (next === language) {
+              return;
+            }
+            const currentCap = LANGUAGE_CAPABILITIES.find((item) => item.id === language);
+            const pristine = files.length === 1 && files[0]?.content === (currentCap?.defaultSource ?? "");
+            if (!pristine && !window.confirm("Switching language will clear all files. Continue?")) {
+              event.target.value = language;
+              return;
+            }
+            const cap = LANGUAGE_CAPABILITIES.find((item) => item.id === next);
+            const name = defaultFileName(next);
             setLanguage(next);
-            setSource(LANGUAGE_CAPABILITIES.find((item) => item.id === next)?.defaultSource ?? "");
+            setFiles([{ path: name, content: cap?.defaultSource ?? "" }]);
+            setActivePath(name);
+            setBreakpointsByPath({});
+            decorationIdsByPath.current = {};
             setStoppedLine(undefined);
+            setStoppedPath(undefined);
           }}
         >
           {LANGUAGE_CAPABILITIES.map((item) => (
@@ -749,12 +915,27 @@ export function App() {
           style={{ "--editor-height": `${editorHeight}%` } as CSSProperties}
         >
           <section className="editor-panel">
+          {showTabs && (
+            <FileTabs
+              files={files}
+              activePath={activePath}
+              language={language}
+              onSelect={setActivePath}
+              onAdd={addFile}
+              onRename={renameFile}
+              onClose={removeFile}
+              onCloseOthers={closeOtherFiles}
+              onDelete={deleteFile}
+            />
+          )}
+          <div className="editor-host">
           <Editor
             height="100%"
             language={language === "cpp" ? "cpp" : language}
             theme="vs-dark"
-            value={source}
-            onChange={(value) => setSource(value ?? "")}
+            path={activePath}
+            value={activeContent}
+            onChange={(value) => setActiveContent(value ?? "")}
             onMount={onEditorMount}
             options={{
               minimap: { enabled: false },
@@ -766,6 +947,7 @@ export function App() {
               tabSize: 4
             }}
           />
+          </div>
 
           </section>
 
@@ -787,13 +969,17 @@ export function App() {
                 className="sr-only"
                 aria-label="breakpoints"
                 value={breakpointText}
-                onChange={(event) => setBreakpointText(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setActiveBreakpointText(() => value);
+                }}
               />
               <span className="breakpoint-count">
-                {breakpoints.length} breakpoint{breakpoints.length !== 1 ? "s" : ""} set — click the gutter to toggle
+                {breakpoints.length} breakpoint{breakpoints.length !== 1 ? "s" : ""} in {activePath}
+                {allBreakpoints.length !== breakpoints.length ? ` (${allBreakpoints.length} total)` : ""} — click the gutter to toggle
               </span>
               {breakpoints.length > 0 && (
-                <button type="button" className="breakpoint-clear" onClick={() => setBreakpointText("")} title="Clear all breakpoints">
+                <button type="button" className="breakpoint-clear" onClick={() => setActiveBreakpointText(() => "")} title="Clear breakpoints in this file">
                   Clear all
                 </button>
               )}
@@ -1207,6 +1393,15 @@ async function readError(response: Response): Promise<string> {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error";
+}
+
+/** Map a debug frame path like "/workspace/util.c" to its bare file name. */
+function basenameFromWorkspace(filePath?: string): string | undefined {
+  if (!filePath) {
+    return undefined;
+  }
+  const slash = filePath.lastIndexOf("/");
+  return slash >= 0 ? filePath.slice(slash + 1) : filePath;
 }
 
 function createClientId(): string {

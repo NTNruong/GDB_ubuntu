@@ -6,7 +6,14 @@ mkdir -p /workspace/tmp
 export TMPDIR=/workspace/tmp
 
 echo "__RUNNER_PHASE__:compile:start" >&2
-g++ -std=gnu++20 -g -O0 -Wall -Wextra /workspace/main.cpp -o /exec/program
+shopt -s nullglob
+cpp_sources=(/workspace/*.cpp /workspace/*.cc)
+shopt -u nullglob
+if [ ${#cpp_sources[@]} -eq 0 ]; then
+  echo "No C++ source file to compile" >&2
+  exit 1
+fi
+g++ -std=gnu++20 -g -O0 -Wall -Wextra "${cpp_sources[@]}" -o /exec/program
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 cat > /tmp/gdb-stdin.gdb << 'GDBEOF'

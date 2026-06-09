@@ -29,10 +29,10 @@ maybeDescribe("DapDebugSession integration", () => {
   it("stops C++ at a breakpoint", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "cpp",
-      source: '#include <iostream>\nint main(){\n  int x = 41;\n  x++;\n  std::cout << x << "\\n";\n  return 0;\n}',
+      files: [{ path: "main.cpp", content: '#include <iostream>\nint main(){\n  int x = 41;\n  x++;\n  std::cout << x << "\\n";\n  return 0;\n}' }],
       stdin: "",
       argv: [],
-      breakpoints: [4],
+      breakpoints: [{ path: "main.cpp", line: 4 }],
       clientId: `test-cpp-${Date.now()}`
     });
 
@@ -44,11 +44,14 @@ maybeDescribe("DapDebugSession integration", () => {
   it("populates C++ Variables with stdin-derived locals (ISSUE-006 regression)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "cpp",
-      source:
-        '#include <iostream>\nint main(){\n  int n;\n  std::cin >> n;\n  int result = n * n;\n  std::cout << result << "\\n";\n  return 0;\n}',
+      files: [{
+        path: "main.cpp",
+        content:
+          '#include <iostream>\nint main(){\n  int n;\n  std::cin >> n;\n  int result = n * n;\n  std::cout << result << "\\n";\n  return 0;\n}'
+      }],
       stdin: "6\n",
       argv: [],
-      breakpoints: [6],
+      breakpoints: [{ path: "main.cpp", line: 6 }],
       clientId: `test-cpp-vars-${Date.now()}`
     });
 
@@ -64,11 +67,14 @@ maybeDescribe("DapDebugSession integration", () => {
   it("populates C Variables with stdin-derived locals (ISSUE-006 regression)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "c",
-      source:
-        '#include <stdio.h>\nint main(){\n  int n;\n  if (scanf("%d", &n) != 1) return 1;\n  int result = n * n;\n  printf("%d\\n", result);\n  return 0;\n}',
+      files: [{
+        path: "main.c",
+        content:
+          '#include <stdio.h>\nint main(){\n  int n;\n  if (scanf("%d", &n) != 1) return 1;\n  int result = n * n;\n  printf("%d\\n", result);\n  return 0;\n}'
+      }],
       stdin: "6\n",
       argv: [],
-      breakpoints: [7],
+      breakpoints: [{ path: "main.c", line: 7 }],
       clientId: `test-c-vars-${Date.now()}`
     });
 
@@ -84,10 +90,10 @@ maybeDescribe("DapDebugSession integration", () => {
   it("stops Python at a breakpoint", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "python",
-      source: 'name = input().strip()\nvalue = len(name)\nprint(value)',
+      files: [{ path: "main.py", content: 'name = input().strip()\nvalue = len(name)\nprint(value)' }],
       stdin: "ada\n",
       argv: [],
-      breakpoints: [2],
+      breakpoints: [{ path: "main.py", line: 2 }],
       clientId: `test-python-${Date.now()}`
     });
 

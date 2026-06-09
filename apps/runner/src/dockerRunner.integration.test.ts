@@ -15,7 +15,7 @@ maybeDescribe("DockerRunner integration", () => {
   it("runs C code", async () => {
     const events = await run({
       language: "c",
-      source: '#include <stdio.h>\nint main(){ char s[32]; scanf("%31s", s); printf("hi %s\\n", s); }',
+      files: [{ path: "main.c", content: '#include <stdio.h>\nint main(){ char s[32]; scanf("%31s", s); printf("hi %s\\n", s); }' }],
       stdin: "ada\n",
       argv: []
     });
@@ -28,7 +28,7 @@ maybeDescribe("DockerRunner integration", () => {
   it("runs C++ code with bits/stdc++.h", async () => {
     const events = await run({
       language: "cpp",
-      source: '#include <bits/stdc++.h>\nusing namespace std; int main(){ cout << vector<int>{1,2,3}.size() << "\\n"; }',
+      files: [{ path: "main.cpp", content: '#include <bits/stdc++.h>\nusing namespace std; int main(){ cout << vector<int>{1,2,3}.size() << "\\n"; }' }],
       stdin: "",
       argv: []
     });
@@ -41,7 +41,7 @@ maybeDescribe("DockerRunner integration", () => {
   it("runs Python with practical packages", async () => {
     const events = await run({
       language: "python",
-      source: "import numpy, pandas, requests\nprint(numpy.array([1,2,3]).sum())",
+      files: [{ path: "main.py", content: "import numpy, pandas, requests\nprint(numpy.array([1,2,3]).sum())" }],
       stdin: "",
       argv: []
     });
@@ -54,7 +54,7 @@ maybeDescribe("DockerRunner integration", () => {
   it("emits run metrics for non-zero exits after execution starts", async () => {
     const events = await run({
       language: "c",
-      source: '#include <stdio.h>\nint main(){ puts("before exit"); return 7; }',
+      files: [{ path: "main.c", content: '#include <stdio.h>\nint main(){ puts("before exit"); return 7; }' }],
       stdin: "",
       argv: []
     });
@@ -67,7 +67,7 @@ maybeDescribe("DockerRunner integration", () => {
   it("times out infinite loops", async () => {
     const events = await run({
       language: "cpp",
-      source: "#include <bits/stdc++.h>\nint main(){ while(true){} }",
+      files: [{ path: "main.cpp", content: "#include <bits/stdc++.h>\nint main(){ while(true){} }" }],
       stdin: "",
       argv: []
     });
@@ -78,7 +78,7 @@ maybeDescribe("DockerRunner integration", () => {
   it("truncates oversized output", async () => {
     const events = await run({
       language: "python",
-      source: "print('x' * (6 * 1024 * 1024))",
+      files: [{ path: "main.py", content: "print('x' * (6 * 1024 * 1024))" }],
       stdin: "",
       argv: []
     });

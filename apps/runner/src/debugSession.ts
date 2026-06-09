@@ -3,12 +3,12 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
-import { MAX_OUTPUT_BYTES, type DebugCommand, type DebugEvent, type DebugRequest } from "@internal/shared";
+import { MAX_OUTPUT_BYTES, type Breakpoint, type DebugCommand, type DebugEvent, type DebugRequest } from "@internal/shared";
 import type { RunnerConfig } from "./config.js";
 import type { EventBuffer } from "./eventBuffer.js";
 import { escapeMiString, parseDoneValue, parseStack, parseStopped, parseVariables, decodeMiString } from "./gdbMi.js";
 import { PhaseFilter } from "./phaseFilter.js";
-import { createWorkspacePaths, type WorkspacePaths } from "./workspace.js";
+import { createWorkspacePaths, writeProjectFiles, type WorkspacePaths } from "./workspace.js";
 
 type TokenMeta = {
   kind: "watch";
@@ -221,16 +221,15 @@ export class DebugSession {
     const workspace = await createWorkspacePaths(this.config, `internal-code-debug-${this.id}-`);
     const root = workspace.containerPath;
     await mkdir(path.join(root, "tmp"), { recursive: true });
-    await writeFile(path.join(root, this.request.language === "c" ? "main.c" : "main.cpp"), this.request.source, { mode: 0o600 });
+    await writeProjectFiles(root, this.request.files, this.request.language);
     await writeFile(path.join(root, "stdin.txt"), this.request.stdin, { mode: 0o600 });
     return workspace;
   }
 
-  private setBreakpoints(lines: number[]): void {
+  private setBreakpoints(breakpoints: Breakpoint[]): void {
     this.sendMi("-break-delete");
-    for (const line of lines) {
-      const file = this.request.language === "c" ? "/workspace/main.c" : "/workspace/main.cpp";
-      this.sendMi(`-break-insert ${file}:${line}`);
+    for (const bp of breakpoints) {
+      this.sendMi(`-break-insert /workspace/${bp.path}:${bp.line}`);
     }
   }
 

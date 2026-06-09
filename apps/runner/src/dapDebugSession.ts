@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 import Docker from "dockerode";
 import {
   MAX_OUTPUT_BYTES,
+  type Breakpoint,
   type DebugCommand,
   type DebugEvent,
   type DebugFrame,
@@ -16,7 +17,7 @@ import { DapClient, type DapEvent } from "./dapClient.js";
 import type { RunnerConfig } from "./config.js";
 import type { EventBuffer } from "./eventBuffer.js";
 import { PhaseFilter } from "./phaseFilter.js";
-import { createWorkspacePaths, type WorkspacePaths } from "./workspace.js";
+import { createWorkspacePaths, writeProjectFiles, type WorkspacePaths } from "./workspace.js";
 
 type DapSource = {
   path?: string;
@@ -67,6 +68,7 @@ export class DapDebugSession {
   private pendingExitCode: number | null = null;
   private closed = false;
   private readonly watchExpressions = new Set<string>();
+  private breakpointFiles = new Set<string>();
   private watchRefreshSeq = 0;
   private readonly verbose = process.env.DEBUG_VERBOSE === "1";
 
@@ -734,14 +736,37 @@ export class DapDebugSession {
     }
   }
 
-  private async applyBreakpoints(lines: number[]): Promise<void> {
-    await this.dap?.request("setBreakpoints", {
-      source: {
-        path: sourcePath(this.request.language)
-      },
-      breakpoints: lines.map((line) => ({ line })),
-      sourceModified: false
-    });
+  private async applyBreakpoints(breakpoints: Breakpoint[]): Promise<void> {
+    if (!this.dap) {
+      return;
+    }
+
+    const byFile = new Map<string, number[]>();
+    for (const bp of breakpoints) {
+      const lines = byFile.get(bp.path) ?? [];
+      lines.push(bp.line);
+      byFile.set(bp.path, lines);
+    }
+
+    // DAP setBreakpoints is replace-all per source: clear files that previously
+    // had breakpoints but no longer do by sending them an empty list.
+    for (const previous of this.breakpointFiles) {
+      if (!byFile.has(previous)) {
+        byFile.set(previous, []);
+      }
+    }
+
+    for (const [file, lines] of byFile) {
+      await this.dap.request("setBreakpoints", {
+        source: { path: `/workspace/${file}` },
+        breakpoints: lines.map((line) => ({ line })),
+        sourceModified: false
+      });
+    }
+
+    this.breakpointFiles = new Set(
+      [...byFile.entries()].filter(([, lines]) => lines.length > 0).map(([file]) => file)
+    );
   }
 
   private async requireThreadId(): Promise<number> {
@@ -771,7 +796,7 @@ export class DapDebugSession {
     const root = workspace.containerPath;
     await mkdir(path.join(root, "tmp"), { recursive: true });
     await writeFile(path.join(root, "tmp", "program.out"), "", { mode: 0o666 });
-    await writeFile(path.join(root, sourceFileName(this.request.language)), this.request.source, { mode: 0o600 });
+    await writeProjectFiles(root, this.request.files, this.request.language);
     await writeFile(path.join(root, "stdin.txt"), this.request.stdin, { mode: 0o600 });
     if (this.request.language === "python") {
       await writeFile(path.join(root, "__debugpy_runner.py"), pythonDebugRunnerSource(), { mode: 0o600 });
@@ -786,7 +811,9 @@ export class DapDebugSession {
       await chmod(root, 0o777);
       await chmod(path.join(root, "tmp"), 0o777);
       await chmod(path.join(root, "tmp", "program.out"), 0o666);
-      await chmod(path.join(root, sourceFileName(this.request.language)), 0o644);
+      for (const file of this.request.files) {
+        await chmod(path.join(root, file.path), 0o644);
+      }
       await chmod(path.join(root, "stdin.txt"), 0o644);
       if (this.request.language === "python") {
         await chmod(path.join(root, "__debugpy_runner.py"), 0o644);
@@ -883,21 +910,6 @@ function imageForLanguage(language: Language, config: RunnerConfig): string {
   return language === "python" ? config.pythonImage : config.cppImage;
 }
 
-function sourceFileName(language: Language): string {
-  if (language === "c") {
-    return "main.c";
-  }
-
-  if (language === "cpp") {
-    return "main.cpp";
-  }
-
-  return "main.py";
-}
-
-function sourcePath(language: Language): string {
-  return `/workspace/${sourceFileName(language)}`;
-}
 
 function pythonDebugRunnerSource(): string {
   return [
