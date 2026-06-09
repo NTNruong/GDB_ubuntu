@@ -428,6 +428,23 @@ test("multi-file: add, rename, and close editor tabs (ISSUE-040)", async ({ page
   await expect(page.locator(".editor-tab .tab-label")).toHaveText("main.c");
 });
 
+// ISSUE-042: the Add-file (+) control must stay reachable on narrow viewports.
+test("multi-file: add-file control stays visible on a narrow viewport (ISSUE-042)", async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 720, height: 800 });
+  await page.goto("/");
+  // The + button is no longer hidden at <= 860px; adding a file still works.
+  const addButton = page.getByRole("button", { name: "Add file" });
+  await expect(addButton).toBeVisible();
+  await addButton.click();
+  await expect(page.locator(".editor-tab")).toHaveCount(2);
+  // With a second tab present, the active tab's × becomes usable.
+  await expect(
+    page.locator(".editor-tab", { hasText: "untitled1.c" }).locator(".tab-close")
+  ).toBeVisible();
+});
+
 test("multi-file: compiles and links a C header + helper (ISSUE-040)", async ({ page }) => {
   await page.goto("/");
   await replaceEditorSource(

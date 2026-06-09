@@ -1376,10 +1376,6 @@ h1.brand {
     flex-wrap: wrap;
   }
 
-  .tab-add {
-    display: none;
-  }
-
   .brand {
     min-width: 100%;
   }
