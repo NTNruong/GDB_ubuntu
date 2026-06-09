@@ -48,6 +48,30 @@ function iconLetter(path: string): string {
   }
 }
 
+// Spec-aligned file icon (DESIGN §7): a 14×14 rounded-rect "file card" with the
+// extension letter centered inside, color-coded per extension. Replaces the old
+// bare text letter, which read as part of the filename rather than an icon.
+function FileIcon({ path }: { path: string }) {
+  const color = iconColorVar(path);
+  const letter = iconLetter(path);
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x={2} y={1} width={12} height={14} rx={1.5} stroke={color} strokeWidth={1.2} />
+      <text
+        x={8}
+        y={11}
+        fontSize={letter.length > 1 ? 6 : 7}
+        fontWeight={700}
+        fill={color}
+        textAnchor="middle"
+        fontFamily="system-ui"
+      >
+        {letter}
+      </text>
+    </svg>
+  );
+}
+
 export function FileTabs({
   files,
   activePath,
@@ -139,8 +163,8 @@ export function FileTabs({
             }}
             title={file.path}
           >
-            <span className="tab-icon" style={{ color: iconColorVar(file.path) }} aria-hidden="true">
-              {iconLetter(file.path)}
+            <span className="tab-icon" aria-hidden="true">
+              <FileIcon path={file.path} />
             </span>
             <span className="tab-label">{file.path}</span>
             <button

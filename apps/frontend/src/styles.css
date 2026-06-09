@@ -488,11 +488,17 @@ h1.brand {
 }
 
 .editor-tab .tab-icon {
-  font-size: 9px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   flex: 0 0 auto;
+}
+
+.editor-tab .tab-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 .editor-tab .tab-label {
@@ -542,10 +548,10 @@ h1.brand {
   margin: 3px 6px;
   flex: 0 0 auto;
   align-self: center;
-  border: 1px dashed var(--text-muted);
+  border: 1px dashed var(--text-secondary);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
