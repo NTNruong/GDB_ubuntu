@@ -30,25 +30,15 @@ RUN_DOCKER_TESTS=1 npm test -- apps/runner/src/dapDebugSession.integration.test.
 
 Dev ports: frontend `5173` (Vite, proxies `/api` → `4000`), api `4000`, runner `4001`. Production compose maps frontend to `8080`.
 
-Server deploy helper (on an Ubuntu host with the repo at `/opt/apps/GDB_ubuntu`): `bash bin/pull-latest.sh`. Flags: `RESTART_APP=1`, `REBUILD_RUNNER_IMAGES=1`.
-
 ### Deploy workflow (GitHub Actions auto-deploy)
 
-Deployment is automated. A **GitHub Actions self-hosted runner** on the Ubuntu 24.04 LTS host (`/opt/apps/GDB_ubuntu`) watches `main`; every push to `main` triggers [.github/workflows/deploy.yml](.github/workflows/deploy.yml), which runs `bash bin/pull-latest.sh` on the server. So the normal deploy is simply: **commit and push to `main`** — the runner does `git pull --ff-only`, then `docker compose up --build -d` for the app services. The workflow auto-detects changes under `docker/` (via `git diff HEAD origin/main`) and sets `REBUILD_RUNNER_IMAGES=1` so the compiler base images get rebuilt before the app services restart.
+Deploy = **commit and push to `main`**. A self-hosted GitHub Actions runner on the Ubuntu host (`/opt/apps/GDB_ubuntu`) runs [bin/pull-latest.sh](bin/pull-latest.sh) — `git pull --ff-only` → `docker compose up --build -d` for the app services. See [.github/workflows/deploy.yml](.github/workflows/deploy.yml).
 
-**WinSCP is used only for `LOG.md` and `ISSUES.md`.** Both are gitignored and never tracked, so copying them straight into `/opt/apps/GDB_ubuntu/` does not interfere with `git pull --ff-only`. Do **not** deploy source code via WinSCP — push to `main` instead, otherwise the server tree diverges from git and the next auto-deploy `pull --ff-only` may fail.
+**Rebuild rule (single source of truth):** runner-images (`--profile runner-images`) rebuild **only** when something under [docker/runner-cpp/](docker/runner-cpp/) or [docker/runner-python/](docker/runner-python/) changed; the auto-deploy detects `docker/` changes and handles it automatically. App services (`api` / `runner` / `frontend`) always rebuild on deploy.
 
-For understanding what the auto-deploy does (and for any rare manual SSH deploy), the rebuild rules are:
-   - TypeScript / shared schema changes in `apps/runner/src/**` → rebuild `runner`
-   - TypeScript changes in `apps/api/src/**` → rebuild `api`
-   - Frontend (`apps/frontend/src/**`, `apps/frontend/index.html`, Vite config) → rebuild `frontend`
-   - Multiple of the above → `docker compose up --build -d` rebuilds all app services (this is what the auto-deploy always does via `RESTART_APP=1`)
-   - Anything under `docker/runner-cpp/` or `docker/runner-python/` (Dockerfile, run-*, debug-*, debug-dap-*) → **must also** run `docker compose --profile runner-images build runner-cpp-image runner-python-image` *before* `docker compose up --build -d` so child containers pick up the new image. The auto-deploy handles this automatically when it detects `docker/` changes; if deploying by hand, skipping it is the most common mistake.
-   - `docker-compose.yml` env-var changes → `docker compose up -d` (no `--build` needed unless code also changed).
+**WinSCP** is used **only** for `LOG.md` / `ISSUES.md` (gitignored). Never deploy source via WinSCP — push to `main`, otherwise the server tree diverges from git and the next `pull --ff-only` may fail.
 
-**Verify after a deploy:** check the Actions run is green, then `docker compose logs --tail=50 <service>` on the server to confirm a clean start, manual UI smoke for the specific behavior the change targets, and hard-reload (Ctrl+Shift+R) the browser if the frontend was rebuilt.
-
-When writing the LOG.md entry for the session, the **Deploy status** block should note that the change deploys automatically on push to `main`, and call out explicitly whether the runner-images rebuild is triggered (i.e. whether anything under `docker/runner-cpp/` or `docker/runner-python/` changed). Past entries in LOG.md are the canonical examples of the expected format.
+Full runbook (dir→service rebuild matrix, `pull-latest.sh` flags, manual SSH deploy, verify-after-deploy, command tables) → [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Architecture
 
@@ -100,31 +90,21 @@ How the human operator, Claude Code, Antigravity IDE, and Codex QC collaborate o
 - **Antigravity IDE** — designer / UI-UX planner. Proposes or implements UI-UX-focused changes and records them in `LOG.md`.
 - **Codex** — QC/tester. Reviews, verifies, tests, owns `ISSUES.md`, and writes QC entries in `LOG.md`. Codex does not implement product changes unless the user explicitly changes its role.
 
-### Per-round cadence
+### Per-round workflow
 
-When the user relays QC feedback (or an Antigravity summary / manual bug report):
+When the user relays QC feedback, an Antigravity plan/summary, a design proposal/screenshot, a doc rewrite, or a manual bug report — treat it as a **hypothesis, with the codebase as ground truth**. Handle **one issue at a time, highest priority first**.
 
-1. **Verify, don't trust.** Read the actual source behind every QC diagnosis and confirm the root cause in code *before* planning a fix — never plan off the report alone. (After the ISSUE-030 wrong-fix, the user values verification/determinism highly.)
-2. **Plan first.** In plan mode, write the plan to the plan file and reach alignment before editing. Handle **one issue at a time, highest priority first**.
-3. **User approves** (e.g. "bạn hãy implement plan này nhé") → implement the change.
-4. **Verify locally:** `npm run typecheck && npm test && npm run build -w @internal/frontend` must be green. (E2E needs a live server → QC verifies after deploy.)
-5. **Record:** add the top `LOG.md` entry and generate the commit message (see **Session workflow** for both formats).
+1. **Verify, don't trust.** Read the actual source/files/selectors behind the report and confirm the root cause in code *before* planning — never plan off the report alone. (After the ISSUE-030 wrong-fix, the user values verification/determinism highly.)
+2. **Plan + structured assessment.** In plan mode, write the plan to the plan file and reach alignment before editing. Lead with a one-line verdict (phù hợp / cần sửa / không nên làm), then ✓ what matches vs ⚠❌ what is stale/wrong, each with a `file:line` citation.
+3. **Implement by correcting, not copying.** On approval ("bạn hãy implement plan này nhé"), implement the change — and if the relayed plan carries a factual error (wrong mechanism, stale value, broken selector, an overclaim), fix it to match reality and call out the deviation explicitly; never propagate a known-wrong statement just because the plan said so.
+4. **Verify locally:** `npm run typecheck && npm test && npm run build -w @internal/frontend` must be green. Re-check any e2e selectors the change touches (`.debug-toolbar`/`.debug-group`, `.var-row`/`.var-caret`, input placeholders / `data-testid`) so QC's post-deploy run stays green. (E2E needs a live server → QC verifies after deploy.)
+5. **Record + close.** Add the top `LOG.md` entry and generate the commit message (see **Session workflow**). Close concisely: verified ✓ + what was corrected and why + the verification output + the exact next-step git commands for the user. Offer to commit; never commit/push unless asked.
 6. **User pushes `main` manually** → GitHub Actions auto-deploys → QC verifies on the server and flips the issue to `PASSED` in `ISSUES.md`.
 
-### Verifying a relayed plan or proposal
-
-When the user relays something to implement — an Antigravity implementation plan, a QC diagnosis, a design proposal/screenshot, a doc rewrite — do not implement it on faith. Run this loop (the user explicitly endorsed it):
-
-1. **Cross-check against the real code first.** Read the actual files, tokens, and selectors the plan touches; treat the plan as a hypothesis and the codebase as ground truth.
-2. **Report a structured assessment before editing:** lead with a one-line verdict (phù hợp / cần sửa / không nên làm), then what matches ✓ vs what is stale/wrong ⚠❌, each with a `file:line` citation.
-3. **Implement by correcting, not copying.** If the plan carries a factual error (wrong mechanism, stale value, broken selector, an overclaim), fix it to match reality and call the deviation out explicitly — never propagate a known-wrong statement just because the plan said so.
-4. **Verify after implementing, with evidence matched to the change:** code → `npm run typecheck && npm test && npm run build -w @internal/frontend`; Markdown/docs → fenced blocks balance, every original command preserved, links/anchors resolve. Re-check any e2e selectors the change might touch (`.debug-toolbar`/`.debug-group`, `.var-row`/`.var-caret`, input placeholders / `data-testid`) so QC's post-deploy run stays green.
-5. **Close concisely:** verified ✓ + what was corrected and why + the verification output + the exact next-step git commands for the user. Offer to commit; never commit/push unless asked.
-
-### Guardrails (mechanics live in the referenced sections)
+### Guardrails
 
 - **Never push** the remote — the user always pushes manually. Never commit unless asked.
-- **Deploy & rebuild rules:** push to `main` triggers the self-hosted runner (`bin/pull-latest.sh`). Runner-images rebuild **only** when something under [docker/runner-cpp/](docker/runner-cpp/) or [docker/runner-python/](docker/runner-python/) changed — see **Deploy workflow (GitHub Actions auto-deploy)** under Commands. State this explicitly in every `LOG.md` "Deploy status".
+- **Deploy & rebuild:** push to `main` triggers the self-hosted runner; the runner-images rebuild rule → see **Deploy workflow**. State the deploy + rebuild status explicitly in every `LOG.md` "Deploy status".
 - **Commit message:** single line, Conventional-Commits, ≤ 70 chars, no body, no `Co-Authored-By`, no `LOG.md`/`ISSUES.md` mention — see **Session workflow**.
 - `LOG.md`, `ISSUES.md`, and `AGENTS.md` are **gitignored**; QC edits them via WinSCP on the server, so local copies may lag (line numbers differ) — **re-read before editing**.
 - Preserve the Fastify log redaction of `req.body.source` / `stdin` / `argv`.
@@ -138,7 +118,7 @@ Each entry follows the existing format — header `## YYYY-MM-DD — <Agent> (se
 - **Agent:** Claude Code / Codex / Antigravity IDE / Human
 - **Files Modified:** one bullet per file, with a short Vietnamese/English note saying *what* changed and *which ISSUE-### it addresses* (if any)
 - **Summary:** 2–4 sentences in Vietnamese on root cause and fix direction (matching the existing tone)
-- **Deploy status:** which files need to be copied to the server and the exact `docker compose` command(s); note explicitly whether `--profile runner-images` rebuild is needed (yes if anything under [docker/runner-cpp/](docker/runner-cpp/) or [docker/runner-python/](docker/runner-python/) changed)
+- **Deploy status:** how it deploys (push to `main` auto-deploys) and whether the runner-images rebuild is triggered (rule → **Deploy workflow**)
 - **Verification:** optional, but include when the fix has a non-trivial test/QC story
 
 Increment the session number from the previous top entry. If a session only does research/reading without code edits, do not add an entry.
@@ -155,4 +135,4 @@ When an issue is fixed and verified, also update its status in `ISSUES.md` to `P
 - TypeScript strict + `noUncheckedIndexedAccess` (see [tsconfig.base.json](tsconfig.base.json)). Array/Record indexing returns `T | undefined`; handle it.
 - ESM-only (`"type": "module"`); use `.js` import specifiers for TS source.
 - Fastify loggers in both services redact `req.body.source`, `req.body.stdin`, `req.body.argv` — preserve this when adding new endpoints that take user code.
-- The runner image build is a separate `runner-images` compose profile so `docker compose up` of the app services doesn't unnecessarily rebuild them. After editing anything in [docker/runner-cpp/](docker/runner-cpp/) or [docker/runner-python/](docker/runner-python/), explicitly rebuild with `--profile runner-images`.
+- The runner image build is a separate `runner-images` compose profile so `docker compose up` of the app services doesn't unnecessarily rebuild them (when/how to rebuild → **Deploy workflow**).
