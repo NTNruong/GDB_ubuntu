@@ -1350,7 +1350,7 @@ int main(void) { return 0; }
 ```bash
 curl -X POST http://localhost:4000/api/debug \
   -H 'content-type: application/json' \
-  -d '{"language":"c","source":"int main(){return 0;}","clientId":"X","breakpoints":[]}'
+  -d '{"language":"c","files":[{"path":"main.c","content":"int main(){return 0;}"}],"clientId":"X","breakpoints":[]}'
 # chạy 2 lần liên tục
 ```
 
@@ -1435,7 +1435,7 @@ int main(void) {
 1. C → Paste → Run.
 2. SSH server: `docker compose logs runner --tail=200 | grep MAGIC_STRING_REDACT_ME_SOURCE`.
 
-**Expected**: grep trả empty (source bị Fastify redact ở `req.body.source`).
+**Expected**: grep trả empty (file content bị Fastify redact ở `req.body.files[*].content`, ở cả api lẫn runner).
 
 **Pass criteria**:
 - [ ] Log không chứa string magic từ source

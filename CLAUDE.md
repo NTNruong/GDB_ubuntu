@@ -116,8 +116,8 @@ After making code changes in any session, append a new entry at the **top** of `
 Each entry follows the existing format — header `## YYYY-MM-DD — <Agent> (session N)`, then:
 
 - **Agent:** Claude Code / Codex / Antigravity IDE / Human
-- **Files Modified:** one bullet per file, with a short Vietnamese/English note saying *what* changed and *which ISSUE-### it addresses* (if any)
-- **Summary:** 2–4 sentences in Vietnamese on root cause and fix direction (matching the existing tone)
+- **Files Modified:** one bullet per file, with a short English note saying *what* changed and *which ISSUE-### it addresses* (if any)
+- **Summary:** 2–4 sentences in English on root cause and fix direction (matching the existing tone)
 - **Deploy status:** how it deploys (push to `main` auto-deploys) and whether the runner-images rebuild is triggered (rule → **Deploy workflow**)
 - **Verification:** optional, but include when the fix has a non-trivial test/QC story
 
@@ -136,3 +136,4 @@ When an issue is fixed and verified, also update its status in `ISSUES.md` to `P
 - ESM-only (`"type": "module"`); use `.js` import specifiers for TS source.
 - Fastify loggers in both services redact `req.body.source`, `req.body.stdin`, `req.body.argv` — preserve this when adding new endpoints that take user code.
 - The runner image build is a separate `runner-images` compose profile so `docker compose up` of the app services doesn't unnecessarily rebuild them (when/how to rebuild → **Deploy workflow**).
+- **Language:** all tracked docs/trackers — `LOG.md`, `ISSUES.md`, `DESIGN.md`, `PHASE2.md`, READMEs (default), `tests/qc/` — are written in **English**. Chat replies to the user follow the global Vietnamese-first preference, but committed files stay English.

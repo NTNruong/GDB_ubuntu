@@ -514,10 +514,13 @@ h1.brand {
   justify-content: center;
   width: 18px;
   height: 18px;
+  min-height: 0; /* override base button min-height:36px → keeps the 18px square */
   flex: 0 0 auto;
   border: none;
   border-radius: var(--radius-sm);
+  padding: 0;
   background: transparent;
+  box-shadow: none;
   color: var(--text-muted);
   cursor: pointer;
   opacity: 0;
@@ -532,6 +535,8 @@ h1.brand {
 .editor-tab .tab-close:hover {
   background: hsla(0, 72%, 65%, 0.15);
   color: var(--color-error);
+  box-shadow: none;
+  transform: none;
 }
 
 .editor-tab .tab-close:disabled {
@@ -545,12 +550,15 @@ h1.brand {
   justify-content: center;
   width: 26px;
   height: 26px;
+  min-height: 0; /* override base button min-height:36px → keeps the 26px dashed square */
   margin: 3px 6px;
   flex: 0 0 auto;
   align-self: center;
   border: 1px dashed var(--text-secondary);
   border-radius: var(--radius-sm);
+  padding: 0;
   background: transparent;
+  box-shadow: none;
   color: var(--text-primary);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
@@ -560,6 +568,8 @@ h1.brand {
   background: var(--tab-bg-hover);
   color: var(--text-primary);
   border-color: var(--border-active);
+  box-shadow: none;
+  transform: none;
 }
 
 .tab-rename-input {

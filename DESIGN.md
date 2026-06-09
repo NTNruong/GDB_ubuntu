@@ -1,5 +1,5 @@
 ---
-version: 1.0.0
+version: 1.1.0
 name: Web-Debugger UI
 description: A premium, dark-mode developer environment featuring glassmorphic overlays, vibrant emerald green accents, and a precise, developer-centric layout using Monaco and Inter.
 ---
@@ -165,6 +165,150 @@ radius: # CSS: --radius-*
     - `.btn-stop`: `--ss-red`
 - **Active Indicator (`.active-indicator`):** When stopped at a breakpoint, shows an `8px` by `8px` status dot colored with `--ss-green-light`, glowing with `--ss-green`, and utilizing a `2s` pulsing animation.
 
+### 7. Editor Tab Bar (`.editor-tab-bar`) — ISSUE-040
+
+> Added in v1.1.0 for multi-file ephemeral support (C/C++ only; Python remains single-file).
+> Proposal demo: `tmp/antigravity-proposals/2026-06-09_editor-tabs-spec.html`
+
+#### Position & Layout
+
+The tab bar sits **between the Topbar and the Monaco Editor panel** (`.editor-panel`). It occupies a new row in the workspace grid.
+
+```
+┌────────────────────────────────────────────┐
+│  Topbar (.topbar)                          │
+├────────┬────────┬────────┬──────┬──────────┤
+│ main.c │ math.h │ utils.c│  +   │          │  ← Tab Bar
+├────────┴────────┴────────┴──────┴──────────┤
+│              Monaco Editor                 │
+├────────────────────────────────────────────┤
+│           Bottom Panel                     │
+└────────────────────────────────────────────┘
+```
+
+#### New CSS Custom Properties
+
+```yaml
+# Append to :root
+tab-bar-height: "32px"
+tab-bar-bg: "var(--bg-layer-2)"              # hsl(215, 20%, 11%)
+tab-bg-active: "#1e1e1e"                     # VS Dark editor bg — seamless visual join
+tab-bg-hover: "hsla(215, 20%, 18%, 0.5)"
+tab-text-active: "var(--text-primary)"       # hsl(215, 15%, 92%)
+tab-text-inactive: "var(--text-secondary)"   # hsl(215, 12%, 72%)
+tab-close-color: "var(--text-muted)"         # hsl(215, 10%, 52%)
+tab-close-hover: "var(--color-error)"        # hsl(0, 72%, 65%)
+tab-indicator: "var(--accent)"               # emerald hsl(160, 65%, 35%)
+tab-min-width: "80px"
+tab-max-width: "160px"
+tab-add-size: "26px"
+
+# File icon colors (inline SVG stroke/fill)
+icon-c:   "hsl(210, 70%, 60%)"              # Blue — .c files
+icon-h:   "hsl(280, 50%, 65%)"              # Purple — .h files
+icon-cpp: "hsl(210, 80%, 50%)"              # Dark blue — .cpp/.cc files
+icon-hpp: "hsl(280, 60%, 60%)"              # Dark purple — .hpp/.hh files
+```
+
+#### Tab Bar Container (`.editor-tab-bar`)
+
+- **Layout:** Horizontal flexbox, `align-items: stretch`.
+- **Dimensions:** Height `32px`, full width.
+- **Background:** `--tab-bar-bg` (`--bg-layer-2`).
+- **Border:** Bottom `1px solid --border-subtle`.
+- **Overflow:** `overflow-x: auto` with hidden scrollbar (CSS `scrollbar-width: none` + `::-webkit-scrollbar { display: none }`). Mouse wheel scrolls horizontally.
+
+#### Tab Item (`.editor-tab`)
+
+- **Layout:** Inline-flex, `align-items: center`, `gap: 6px`.
+- **Dimensions:** Min-width `80px`, max-width `160px`, full height.
+- **Padding:** `0 4px 0 10px`.
+- **Border-right:** `1px solid --border-subtle` (separator between tabs).
+- **Typography:** `12px`, weight `500`, `--font-sans`.
+- **Cursor:** `pointer`.
+
+**States:**
+
+| State | Background | Text | Close × |
+|-------|-----------|------|---------|
+| Inactive | `transparent` | `--tab-text-inactive` | Hidden (`opacity: 0`) |
+| Hover | `--tab-bg-hover` | `--text-primary` | Visible (`opacity: 1`) |
+| Active | `--tab-bg-active` (`#1e1e1e`) | `--tab-text-active` | Always visible |
+
+**Active tab indicators:**
+- **Bottom:** `2px` pseudo-element in `--tab-indicator` (emerald) with `box-shadow: 0 0 6px --accent-glow`. This signals the current file.
+- **Bottom edge bridge:** A `1px` pseudo-element colored `--tab-bg-active` placed at `bottom: -1px` to visually merge the tab into the editor (hiding the bar's border-bottom under the active tab).
+
+#### Tab Sub-elements
+
+- **File icon (`.tab-icon`):** Inline SVG, `14×14px`, color-coded by extension. Placed before the label.
+- **Label (`.tab-label`):** `flex: 1`, `text-overflow: ellipsis`, `white-space: nowrap`.
+- **Close button (`.tab-close`):** `18×18px`, `border-radius: --radius-sm`. Transparent bg, `--tab-close-color`. On hover: bg `hsla(0, 72%, 65%, 0.15)`, color `--tab-close-hover`. Transition `--transition-fast`.
+
+#### File Icons (Inline SVG)
+
+Simple `16×16` SVG: rounded rectangle border + centered letter. No external icon libraries.
+
+| Extension | Letter | Stroke/Fill Color |
+|-----------|--------|-------------------|
+| `.c` | **C** | `--icon-c` (blue) |
+| `.h` | **H** | `--icon-h` (purple) |
+| `.cpp`, `.cc` | **C+** | `--icon-cpp` (dark blue) |
+| `.hpp`, `.hh` | **H+** | `--icon-hpp` (dark purple) |
+
+#### Add File Button (`.tab-add`)
+
+- **Dimensions:** `26×26px`, centered in tab bar.
+- **Margin:** `3px 6px` (vertically centered).
+- **Border:** `1px dashed --border-subtle`.
+- **Border-radius:** `--radius-sm`.
+- **Color:** `--text-muted` → `--text-primary` on hover.
+- **Hover bg:** `--tab-bg-hover`.
+- **Transition:** `--transition-fast`.
+- **Action:** Click inserts an inline `<input>` before the + button for the new filename. Extension auto-suggested based on current language (`.c` for C, `.cpp` for C++).
+
+#### New File Inline Input (`.tab-new-input`)
+
+- **Input:** `120px` wide, `22px` high, `--font-mono 12px`.
+- **Border:** `1px solid --border-active`, `--radius-sm`.
+- **Focus ring:** `box-shadow: 0 0 0 2px hsla(210, 60%, 50%, 0.2)`.
+- **Hint text:** "Enter ✓" in `--text-muted` next to input.
+- **Submit:** Enter confirms, Escape cancels, blur confirms.
+
+#### Rename Inline Input (`.tab-rename-input`)
+
+- Triggered by **double-clicking** a tab label.
+- Same styling as new-file input but placed inside the tab, replacing the `.tab-label`.
+- `90px` wide, `20px` high.
+- Enter confirms, Escape reverts, blur confirms.
+
+#### Context Menu (right-click tab)
+
+- **Container:** `position: fixed`, `z-index: 100`, `min-width: 160px`.
+- **Background:** `--bg-elevated` with `backdrop-filter: blur(12px)`.
+- **Border:** `1px solid --glass-border`, `border-radius: --radius-md`.
+- **Shadow:** `--shadow-lg`.
+- **Animation:** Fade-in 120ms with 4px translateY.
+
+**Menu items:**
+
+| Item | Icon | Shortcut | Notes |
+|------|------|----------|-------|
+| Rename | ✏️ | F2 | Triggers inline rename |
+| Close | ✕ | — | Disabled when 1 file remains |
+| Close Others | ⊘ | — | Closes all tabs except target |
+| ─ separator ─ | | | |
+| Delete File | 🗑 | — | `--color-error` text, confirm dialog |
+
+**Item states:** Hover bg `hsla(210, 60%, 50%, 0.12)`. Danger items hover bg `hsla(0, 72%, 65%, 0.12)`.
+
+#### Invariants
+
+- **≥ 1 file always:** Close and Delete are disabled on the last remaining tab. If the last file is somehow removed, auto-create `main.<ext>` with empty content.
+- **Language-scoped extensions:** Only extensions valid for the current language are accepted (C: `.c`, `.h`; C++: `.cpp`, `.cc`, `.hpp`, `.hh`, `.h`).
+- **Language switch:** Changing language shows a confirmation dialog ("Switching language will clear all files. Continue?"), then resets to 1 file `main.<ext>` with `defaultSource`.
+- **Breakpoints per-file:** Monaco decorations are per-model, so breakpoint dots automatically track correctly when switching tabs.
+
 ---
 
 ## Responsive Behavior (Viewport <= 860px)
@@ -175,6 +319,7 @@ Though visual testing is desktop-focused, the UI implements responsive behaviors
 3. **Resize Handles:** Both `.resize-handle` and `.resize-handle-x` are hidden (`display: none`), disabling dragging on mobile.
 4. **Bottom Panel (`.bottom-panel`):** Collapses from side-by-side to a single vertical column (`grid-template-columns: 1fr`).
 5. **Content Area (`.content-area.debug-active`):** The right debug side-panel collapses vertically below the main content (`grid-template-columns: 1fr`).
+6. **Editor Tab Bar (`.editor-tab-bar`):** The `+` Add button is hidden (`display: none`). Context menu is disabled. Tabs scroll horizontally as normal.
 
 ---
 
