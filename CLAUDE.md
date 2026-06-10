@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Tailnet-only online code runner (C `gnu17`, C++ `gnu++20`, Python 3.12) with DAP-based debugging. No login, no DB, no server-side source persistence — source/stdin/argv are explicitly redacted from logs. Designed to be exposed only inside a tailnet; do not put behind the public internet without adding auth and rate limiting.
+Tailnet-only online code runner (C `gnu17`, C++ `gnu++20`, Python 3.12) with DAP-based debugging. Anonymous run/debug stays login-free and stateless — source/stdin/argv are redacted from logs and cleaned up per job. **Phase 2** adds optional **app-managed accounts** (bcrypt `users.json`, signed-cookie sessions; admin-seeded via the `users` CLI, no public self-registration) that unlock a VSCode-like **file explorer** over a per-user home directory (`USER_HOMES_ROOT/<username>`, full CRUD + Ctrl+S save + run-the-folder). Designed to be exposed only inside a tailnet; do not put behind the public internet without adding rate limiting (and a stable `SESSION_SECRET` + HTTPS for accounts).
 
 ## Commands
 
@@ -45,7 +45,7 @@ Full runbook (dir→service rebuild matrix, `pull-latest.sh` flags, manual SSH d
 Three-process npm workspace. Browser ⇄ **api** (Fastify, port 4000) ⇄ **runner** (Fastify, port 4001) ⇄ **Docker** (sibling containers per job).
 
 - [packages/shared/src/index.ts](packages/shared/src/index.ts) is the source of truth for the wire protocol: `RunRequestSchema`, `DebugRequestSchema`, `DebugCommandSchema`, `RunEvent`, `DebugEvent`, plus size/arg limits and `LANGUAGE_CAPABILITIES`. Any protocol change starts here; `@internal/shared` must be rebuilt before dependents see new types — that's why every script (`build`, `dev`, `test`, `typecheck`) runs `npm run -w @internal/shared build` first.
-- [apps/api/src/app.ts](apps/api/src/app.ts) is a thin proxy: validates with the shared zod schemas, forwards REST to the runner, and bidirectionally bridges client WebSockets to runner WebSockets (`/api/run/:id`, `/api/debug/:id`). It also re-streams the runner's SSE event stream at `/api/run/:id/events`.
+- [apps/api/src/app.ts](apps/api/src/app.ts) is mostly a thin proxy for run/debug: validates with the shared zod schemas, forwards REST to the runner, and bidirectionally bridges client WebSockets to runner WebSockets (`/api/run/:id`, `/api/debug/:id`). It also re-streams the runner's SSE event stream at `/api/run/:id/events`. **Phase 2** adds two locally-served plugins it registers: [auth.ts](apps/api/src/auth.ts) (`/api/auth/*`, cookie-JWT, [userStore.ts](apps/api/src/userStore.ts) bcrypt accounts + login lockout) and [files.ts](apps/api/src/files.ts) (`/api/files/*`, auth-gated per-user CRUD; path safety in [pathSafety.ts](apps/api/src/pathSafety.ts)). These are the only stateful endpoints — they read/write `USER_HOMES_ROOT`, never the runner.
 - [apps/runner/src/app.ts](apps/runner/src/app.ts) owns job state (`activeJobs`, `runJobs`, `debugSessions`, `debugByClient`) and enforces `maxConcurrentJobs` plus one-debug-session-per-`clientId`. Events flow through [eventBuffer.ts](apps/runner/src/eventBuffer.ts), which replays history to late subscribers — that's why an SSE reconnect or WS late-attach still sees the full job timeline.
 - [apps/frontend/src/App.tsx](apps/frontend/src/App.tsx) is a single-component Monaco-based UI; `@monaco-editor/react` + lucide icons. Breakpoint gutter logic is in [breakpoints.ts](apps/frontend/src/breakpoints.ts).
 
@@ -73,7 +73,7 @@ Both expose the same `DebugSessionLike` shape (`id`, `events`, `start`, `handleC
 
 Runner: `CPP_IMAGE`, `PYTHON_IMAGE`, `MAX_CONCURRENT_JOBS`, `RUN_TIMEOUT_MS`, `DEBUG_MAX_MS`, `DEBUG_IDLE_MS`, `DEBUG_ENGINE` (`dap`|`mi`), `MEMORY_BYTES`, `NANO_CPUS`, `DOCKER_SOCKET_PATH`, `WORKSPACE_CONTAINER_ROOT`, `WORKSPACE_HOST_ROOT`. Defaults are in [apps/runner/src/config.ts](apps/runner/src/config.ts).
 
-API: `RUNNER_BASE_URL` (HTTP) and `RUNNER_WS_URL` (WebSocket) must point at the same runner instance.
+API: `RUNNER_BASE_URL` (HTTP) and `RUNNER_WS_URL` (WebSocket) must point at the same runner instance. Accounts/explorer (Phase 2): `USER_HOMES_ROOT` (per-user homes dir, host bind via `USER_HOMES_HOST_ROOT` in compose), `USERS_FILE` (defaults to `<USER_HOMES_ROOT>/users.json`), `SESSION_SECRET` (cookie signing — unset = ephemeral, sessions reset on restart), `SESSION_COOKIE_SECURE` (`1` to mark the cookie `Secure`). Defaults in [apps/api/src/config.ts](apps/api/src/config.ts).
 
 ## Windows development environment
 
@@ -107,7 +107,7 @@ When the user relays QC feedback, an Antigravity plan/summary, a design proposal
 - **Deploy & rebuild:** push to `main` triggers the self-hosted runner; the runner-images rebuild rule → see **Deploy workflow**. State the deploy + rebuild status explicitly in every `LOG.md` "Deploy status".
 - **Commit message:** single line, Conventional-Commits, ≤ 70 chars, no body, no `Co-Authored-By`, no `LOG.md`/`ISSUES.md` mention — see **Session workflow**.
 - `LOG.md`, `ISSUES.md`, and `AGENTS.md` are **gitignored**; QC edits them via WinSCP on the server, so local copies may lag (line numbers differ) — **re-read before editing**.
-- Preserve the Fastify log redaction of `req.body.source` / `stdin` / `argv`.
+- Preserve the Fastify log redaction of `req.body.files[*].content` / `stdin` / `argv` / `content` / `password`.
 
 ## Session workflow
 
@@ -134,6 +134,6 @@ When an issue is fixed and verified, also update its status in `ISSUES.md` to `P
 
 - TypeScript strict + `noUncheckedIndexedAccess` (see [tsconfig.base.json](tsconfig.base.json)). Array/Record indexing returns `T | undefined`; handle it.
 - ESM-only (`"type": "module"`); use `.js` import specifiers for TS source.
-- Fastify loggers in both services redact `req.body.source`, `req.body.stdin`, `req.body.argv` — preserve this when adding new endpoints that take user code.
+- Fastify loggers redact `req.body.files[*].content`, `req.body.stdin`, `req.body.argv` (run/debug source) plus `req.body.content` (explorer file writes) and `req.body.password` (login) — preserve this when adding new endpoints that take user code or credentials.
 - The runner image build is a separate `runner-images` compose profile so `docker compose up` of the app services doesn't unnecessarily rebuild them (when/how to rebuild → **Deploy workflow**).
 - **Language:** all tracked docs/trackers — `LOG.md`, `ISSUES.md`, `DESIGN.md`, `PHASE2.md`, READMEs (default), `tests/qc/` — are written in **English**. Chat replies to the user follow the global Vietnamese-first preference, but committed files stay English.

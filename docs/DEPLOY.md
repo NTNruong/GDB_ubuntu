@@ -41,6 +41,24 @@ Wire the stack to the rootless daemon (no code change — `DOCKER_SOCKET_PATH` s
 
 After switching, verify the sandbox did not regress: child-container memory/cpu/pids limits still enforced (re-run the `tests/qc/runner.md` resource-limit cases), a Run for each language succeeds, and a DAP debug session (needs `CapAdd: SYS_PTRACE`) stops at a breakpoint.
 
+## Accounts & file explorer
+
+The optional per-user file explorer (Phase 2) is auth-gated and stores files on the host. One-time setup, run **as the `gdbrunner` service user** so the homes dir stays inside the ISSUE-044 rootless boundary:
+
+1. Create the homes dir: `mkdir -p /home/gdbrunner/gdb-user-homes` (the api container writes here as `gdbrunner` under rootless Docker).
+2. Add to the deploy `.env` (next to `docker-compose.yml`):
+   - `USER_HOMES_HOST_ROOT=/home/gdbrunner/gdb-user-homes` — host bind-source (must match the `volumes:` entry and `USER_HOMES_ROOT=/user-homes` inside the container).
+   - `SESSION_SECRET=$(openssl rand -hex 32)` — signs the auth cookie. **If unset the api logs a warning and uses an ephemeral secret, so every restart invalidates all sessions.** Set a stable value in production.
+   - `SESSION_COOKIE_SECURE=1` once the stack is served over HTTPS (the cookie is `HttpOnly; SameSite=Lax` regardless).
+3. `docker compose up -d` (env-only change → no `--build` unless code also changed), then seed the first user:
+   ```bash
+   docker compose exec api node apps/api/dist/cli/users.js add alice 's3cret'
+   docker compose exec api node apps/api/dist/cli/users.js list
+   ```
+   The user's home dir is created automatically on first login.
+
+`users.json` (default `<USER_HOMES_ROOT>/users.json`) and the per-user homes directory are the **only stateful host paths** the app owns — back them up together. There is no public self-registration; accounts are admin-managed via the CLI above.
+
 ## WinSCP
 
 Used **only** for `LOG.md` and `ISSUES.md` (gitignored, never tracked) — copying them straight into `/opt/apps/GDB_ubuntu/` does not interfere with `git pull --ff-only`. Do **not** deploy source code via WinSCP — push to `main` instead, otherwise the server tree diverges from git and the next auto-deploy `pull --ff-only` may fail.

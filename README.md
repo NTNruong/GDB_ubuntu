@@ -26,7 +26,8 @@ The run-and-debug experience is built on strict security and performance princip
 
 | Feature | Description | Security marker |
 |---|---|---|
-| 🔒 **Zero Server Persistence** | No database, no login, no long-lived server-side source. Source/stdin/argv exist only transiently in each job's workspace and are cleaned up after the job ends; they are also redacted from logs. | **No DB · No login** |
+| 🔒 **Ephemeral Run Jobs** | Anonymous run/debug keeps no database and no long-lived source: source/stdin/argv exist only transiently in each job's workspace, cleaned up after the job ends and redacted from logs. | **No DB · Ephemeral jobs** |
+| 🗂️ **Accounts + File Explorer** | Optional app-managed accounts (bcrypt, cookie sessions) unlock a VSCode-like left sidebar over a per-user home directory (full CRUD, save, run-the-folder). Anonymous use is unchanged. | **App-managed auth · Per-user homes** |
 | 🚀 **Multi-Language Runner** | Compiles and runs C `gnu17`, C++ `gnu++20`, and Python 3.12. | **GCC / Python 3.12** |
 | 🔍 **DAP-Bridged Debugging** | Real-time interactive debugging via GDB (C/C++) and debugpy (Python), bridged straight into the Monaco editor over the Debug Adapter Protocol. | **GDB / debugpy / GDB-MI** |
 | 🛡️ **Docker Sandbox Isolation** | Fully isolated execution: no outbound network access, with strict CPU, memory, run-time, and output limits. | **CapDrop / PidsLimit** |
@@ -39,10 +40,11 @@ The run-and-debug experience is built on strict security and performance princip
 > [!WARNING]
 > This tool **executes arbitrary code** (C/C++/Python). Each job runs in a hardened Docker sandbox (`NetworkDisabled`, `CapDrop: ALL`, `ReadonlyRootfs`, `no-new-privileges`, CPU/RAM/PID/time/output limits), but a sandbox only **mitigates** risk — it does not eliminate it.
 
-* **No authentication, no rate limiting.** There is no login and no throttling — anyone who can reach the endpoint can run code.
-* **For trusted environments.** Designed to run **inside a private tailnet**. Do **not** place it directly on the public internet without adding your own authentication + rate limiting (reverse proxy / API gateway / Tailscale identity).
+* **Anonymous run is open; the file explorer requires an account.** Run/debug stay login-free and unthrottled — anyone who can reach the endpoint can run code. The per-user file explorer is gated behind app-managed accounts (bcrypt-hashed `users.json`, signed HttpOnly cookie sessions, a lightweight login lockout). There is **no public self-registration** — an admin seeds users with the [`users` CLI](docs/DEPLOY.md).
+* **For trusted environments.** Designed to run **inside a private tailnet**. Do **not** place it directly on the public internet without adding your own rate limiting (reverse proxy / API gateway / Tailscale identity). Set a stable `SESSION_SECRET` and serve over HTTPS (`SESSION_COOKIE_SECURE=1`) before exposing accounts more widely.
+* **Per-user storage isolation.** Each account's files live under its own subdirectory of `USER_HOMES_ROOT`; the API confines every path to that home (resolve + prefix assert + symlink rejection). Under the production rootless-Docker setup the files are owned by the unprivileged service user (ISSUE-044), so a runner compromise stays capped to that user.
 * **Self-host at your own risk.** If you fork or deploy this, you are responsible for your own infrastructure security. The software is provided "AS IS", without warranty — see [LICENSE](LICENSE).
-* **Log privacy.** Source / stdin / argv are redacted from logs; only performance metadata is kept.
+* **Log privacy.** Source / stdin / argv, explorer file `content`, and login `password` are redacted from logs; only performance metadata is kept.
 
 ---
 
@@ -95,6 +97,26 @@ Production deployment on an Ubuntu host with Tailscale installed:
 
 > [!IMPORTANT]
 > The runner controls the Docker socket, so run the production stack under a **rootless Docker daemon owned by a dedicated, non-sudo service user** to keep a runner compromise from becoming host root. Set `DOCKER_HOST` / `DOCKER_SOCK_SOURCE` to the rootless socket — see the rootless runbook in [docs/DEPLOY.md](docs/DEPLOY.md#rootless-docker-isolation-issue-044).
+
+### Accounts & file explorer
+
+The optional per-user file explorer needs three things in the deploy `.env` (next to `docker-compose.yml`) and a seeded user. Full one-time setup → [docs/DEPLOY.md](docs/DEPLOY.md#accounts--file-explorer).
+
+| Env var | Purpose | Production value |
+|---|---|---|
+| `SESSION_SECRET` | Signs the auth cookie. Unset → ephemeral secret, sessions reset on restart. | `openssl rand -hex 32` |
+| `USER_HOMES_HOST_ROOT` | Host bind-source of the per-user homes (owned by the rootless service user). | `/home/gdbrunner/gdb-user-homes` |
+| `SESSION_COOKIE_SECURE` | Set `1` to mark the cookie `Secure` (serve over HTTPS). | `1` behind TLS |
+
+Seed accounts with the admin CLI (no public self-registration):
+
+```bash
+docker compose exec api node apps/api/dist/cli/users.js add alice 's3cret'
+docker compose exec api node apps/api/dist/cli/users.js list
+docker compose exec api node apps/api/dist/cli/users.js remove alice
+```
+
+`users.json` and the per-user homes directory are the only stateful host paths — back them up together.
 
 ---
 

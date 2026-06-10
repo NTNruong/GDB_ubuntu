@@ -18,6 +18,8 @@ Before implementing any new UI/UX feature (Auth, File Tree, Editor Tabs, Collabo
 
 ## Scope (v1)
 
+> **Shipped (v1):** Scope **1 (Accounts + Auth)** and **2 (File/Folder persistence)** landed as app-managed accounts (bcrypt `users.json`, signed-cookie sessions, admin-seeded CLI — no DB) plus a VSCode-like left sidebar explorer over per-user `USER_HOMES_ROOT/<username>` (full CRUD + Ctrl+S save). The **UI half of Scope 3 (Editor Tabs + run-the-folder)** is wired: a logged-in run/debug gathers every top-level file of the active file's folder into the existing multi-file pipeline. Backend stays app-managed (no database) and the runner is unchanged — user dirs are **not** mounted into child containers in v1. The required security review was exercised against the new auth + stored-code + path surface. Remaining: Scope 3's deeper project model and Scope 4 (sharing/collaboration).
+
 ### 1. Accounts + Authentication
 - **Goal:** registration, login, sessions.
 - **Backend:** user store (database), password + session security, auth middleware on the API.
