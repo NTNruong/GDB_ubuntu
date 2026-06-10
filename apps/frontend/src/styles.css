@@ -351,6 +351,14 @@ h1.brand {
   grid-template-columns: minmax(0, 1fr) 6px var(--inspector-width, 30%);
 }
 
+.content-area.explorer-open {
+  grid-template-columns: var(--explorer-width, 240px) minmax(0, 1fr);
+}
+
+.content-area.explorer-open.debug-active {
+  grid-template-columns: var(--explorer-width, 240px) minmax(0, 1fr) 6px var(--inspector-width, 30%);
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1416,7 +1424,289 @@ h1.brand {
     grid-template-columns: 1fr;
   }
 
+  .content-area.explorer-open,
+  .content-area.explorer-open.debug-active {
+    grid-template-columns: 1fr;
+  }
+
   .resize-handle-x {
     display: none;
   }
+}
+
+/* --- Accounts + file explorer (Phase 2) --------------------------------- */
+
+.topbar-icon-btn,
+.auth-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: 30px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.topbar-icon-btn {
+  padding: 0 var(--space-xs);
+}
+
+.topbar-icon-btn:hover,
+.auth-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-color: var(--border-active);
+}
+
+.topbar-icon-btn[aria-pressed="true"] {
+  color: var(--text-accent);
+  border-color: var(--border-active);
+}
+
+.auth-btn span {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-layer-1);
+  border-right: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.explorer-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-actions {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.explorer-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.explorer-actions button:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.explorer-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-xs) 0;
+}
+
+.explorer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  height: 24px;
+  padding-right: var(--space-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.explorer-row:hover {
+  background: var(--tab-bg-hover);
+}
+
+.explorer-row.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.explorer-caret {
+  display: inline-flex;
+  align-items: center;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform var(--transition-fast);
+}
+
+.explorer-caret.open {
+  transform: rotate(90deg);
+}
+
+.explorer-caret-spacer {
+  display: inline-block;
+  width: 14px;
+}
+
+.explorer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-input {
+  flex: 1 1 auto;
+  height: 20px;
+  margin-left: 18px;
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.explorer-empty {
+  padding: var(--space-sm);
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Unsaved-changes dot on a server-backed editor tab. */
+.tab-dirty {
+  width: 7px;
+  height: 7px;
+  margin-left: 2px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.editor-tab.dirty .tab-close {
+  opacity: 0;
+}
+
+.editor-tab.dirty:hover .tab-close {
+  opacity: 1;
+}
+
+/* --- Sign-in modal --- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsla(0, 0%, 0%, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: min(92vw, 360px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal-header h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.modal-close {
+  display: inline-flex;
+  padding: 4px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-lg);
+}
+
+.modal-body label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modal-body input {
+  height: 34px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.modal-body input:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+
+.modal-error {
+  margin: var(--space-xs) 0 0;
+  font-size: 13px;
+  color: var(--color-error);
+}
+
+.modal-submit {
+  margin-top: var(--space-sm);
+  justify-content: center;
 }

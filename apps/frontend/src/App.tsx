@@ -6,6 +6,9 @@ import {
   ChevronRight,
   CircleX,
   ListTree,
+  LogIn,
+  LogOut,
+  PanelLeft,
   Pause,
   Play,
   RotateCcw,
@@ -29,12 +32,17 @@ import {
   type DebugVariable,
   type Language,
   type ProjectFile,
-  type RunEvent
+  type RunEvent,
+  type TreeNode
 } from "@internal/shared";
 import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
 import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
-import { FileTabs } from "./FileTabs";
+import { Explorer } from "./Explorer";
+import { FileTabs, type TabMeta } from "./FileTabs";
+import { AuthExpiredError, authApi, filesApi } from "./filesApi";
+import { LoginDialog } from "./LoginDialog";
 import { formatRunMetric } from "./runMetrics";
+import { baseOf, dirOf, gatherFolderRun } from "./runGather";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
@@ -87,6 +95,15 @@ export function App() {
   const [variablesHeight, setVariablesHeight] = useState<number | undefined>(undefined);
   const [isDraggingVSplit, setIsDraggingVSplit] = useState(false);
 
+  // --- Accounts + file explorer (Phase 2) ---------------------------------
+  const [user, setUser] = useState<string | null>(null);
+  const [explorerOpen, setExplorerOpen] = useState(true);
+  const [tree, setTree] = useState<TreeNode[]>([]);
+  const [showLogin, setShowLogin] = useState(false);
+  // Presence of a path here marks it as a server-backed (explorer) tab; the
+  // value is the last-saved content, so dirty = current content !== savedContent.
+  const [serverTabs, setServerTabs] = useState<Record<string, { savedContent: string }>>({});
+
   const clientIdRef = useRef(createClientId());
   const workspaceRef = useRef<HTMLElement | null>(null);
   const contentAreaRef = useRef<HTMLDivElement | null>(null);
@@ -101,12 +118,16 @@ export function App() {
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const decorationIdsByPath = useRef<Record<string, string[]>>({});
   const activePathRef = useRef(activePath);
+  const filesRef = useRef(files);
+  const serverTabsRef = useRef(serverTabs);
 
   const capability = useMemo(
     () => LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage,
     [language]
   );
-  const showTabs = language !== "python";
+  // Logged-in users always get the tab bar (server files of any language live in
+  // tabs); anonymous behavior is unchanged (tabs hidden for single-buffer Python).
+  const showTabs = user !== null || language !== "python";
   const activeFile = useMemo(
     () => files.find((file) => file.path === activePath) ?? files[0],
     [files, activePath]
@@ -125,6 +146,14 @@ export function App() {
   useEffect(() => {
     activePathRef.current = activePath;
   }, [activePath]);
+
+  useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
+  useEffect(() => {
+    serverTabsRef.current = serverTabs;
+  }, [serverTabs]);
 
   const setActiveContent = useCallback(
     (content: string) => {
@@ -203,6 +232,14 @@ export function App() {
       delete next[path];
       return next;
     });
+    setServerTabs((current) => {
+      if (!(path in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
     setStoppedPath((current) => (current === path ? undefined : current));
   }, []);
 
@@ -210,6 +247,7 @@ export function App() {
     setFiles((current) => current.filter((file) => file.path === path));
     setActivePath(path);
     setBreakpointsByPath((current) => (path in current ? { [path]: current[path] ?? "" } : {}));
+    setServerTabs((current) => (path in current ? { [path]: current[path]! } : {}));
   }, []);
 
   const deleteFile = useCallback(
@@ -245,6 +283,252 @@ export function App() {
   const appendDebug = useCallback((stream: TerminalLine["stream"], text: string) => {
     setDebugConsole((current) => [...current, { stream, text }]);
   }, []);
+
+  // --- Accounts + explorer handlers ---------------------------------------
+
+  const resetToLoggedOut = useCallback(() => {
+    setUser(null);
+    setTree([]);
+    setFiles((current) => {
+      const scratch = current.filter((file) => !(file.path in serverTabsRef.current));
+      if (scratch.length === 0) {
+        const cap = LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage;
+        const name = defaultFileName(cap.id);
+        setActivePath(name);
+        return [{ path: name, content: cap.defaultSource }];
+      }
+      setActivePath((active) => (active in serverTabsRef.current ? scratch[0]!.path : active));
+      return scratch;
+    });
+    setServerTabs({});
+  }, [language]);
+
+  const handleAuthError = useCallback(
+    (error: unknown) => {
+      if (error instanceof AuthExpiredError) {
+        resetToLoggedOut();
+        return true;
+      }
+      return false;
+    },
+    [resetToLoggedOut]
+  );
+
+  const refreshTree = useCallback(async () => {
+    try {
+      const res = await filesApi.tree();
+      setTree(res.entries);
+    } catch (error) {
+      handleAuthError(error);
+    }
+  }, [handleAuthError]);
+
+  const openServerFile = useCallback(
+    async (path: string) => {
+      try {
+        const res = await filesApi.read(path);
+        setFiles((current) =>
+          current.some((file) => file.path === path)
+            ? current.map((file) => (file.path === path ? { ...file, content: res.content } : file))
+            : [...current, { path, content: res.content }]
+        );
+        setServerTabs((current) => ({ ...current, [path]: { savedContent: res.content } }));
+        setActivePath(path);
+        const lang = languageForFile(path);
+        if (lang) {
+          setLanguage(lang);
+        }
+      } catch (error) {
+        if (!handleAuthError(error)) {
+          appendOutput("system", `${messageFromError(error)}\n`);
+        }
+      }
+    },
+    [appendOutput, handleAuthError]
+  );
+
+  const saveActiveServerTab = useCallback(async () => {
+    const path = activePathRef.current;
+    const saved = serverTabsRef.current[path];
+    if (!saved) {
+      return;
+    }
+    const file = filesRef.current.find((item) => item.path === path);
+    if (!file || file.content === saved.savedContent) {
+      return;
+    }
+    try {
+      await filesApi.write(path, file.content);
+      setServerTabs((current) => ({ ...current, [path]: { savedContent: file.content } }));
+    } catch (error) {
+      if (!handleAuthError(error)) {
+        appendOutput("system", `${messageFromError(error)}\n`);
+      }
+    }
+  }, [appendOutput, handleAuthError]);
+
+  const handleCreate = useCallback(
+    async (parentDir: string, name: string, kind: "file" | "folder") => {
+      const path = parentDir ? `${parentDir}/${name}` : name;
+      try {
+        if (kind === "folder") {
+          await filesApi.mkdir(path);
+          await refreshTree();
+        } else {
+          await filesApi.write(path, "");
+          await refreshTree();
+          await openServerFile(path);
+        }
+      } catch (error) {
+        if (!handleAuthError(error)) {
+          appendOutput("system", `${messageFromError(error)}\n`);
+        }
+      }
+    },
+    [appendOutput, handleAuthError, openServerFile, refreshTree]
+  );
+
+  const handleRenameServer = useCallback(
+    async (path: string, newName: string) => {
+      try {
+        const newPath = await filesApi.rename(path, newName);
+        await refreshTree();
+        setFiles((current) => current.map((file) => (file.path === path ? { ...file, path: newPath } : file)));
+        setServerTabs((current) => {
+          if (!(path in current)) {
+            return current;
+          }
+          const next = { ...current };
+          next[newPath] = next[path]!;
+          delete next[path];
+          return next;
+        });
+        setActivePath((active) => (active === path ? newPath : active));
+        setBreakpointsByPath((current) => {
+          if (!(path in current)) {
+            return current;
+          }
+          const next = { ...current };
+          next[newPath] = next[path] ?? "";
+          delete next[path];
+          return next;
+        });
+      } catch (error) {
+        if (!handleAuthError(error)) {
+          appendOutput("system", `${messageFromError(error)}\n`);
+        }
+      }
+    },
+    [appendOutput, handleAuthError, refreshTree]
+  );
+
+  const handleDeleteServer = useCallback(
+    async (node: TreeNode) => {
+      if (!window.confirm(`Delete "${node.path}"? This cannot be undone.`)) {
+        return;
+      }
+      try {
+        await filesApi.remove(node.path);
+        await refreshTree();
+        const isAffected = (p: string) => p === node.path || p.startsWith(`${node.path}/`);
+        setServerTabs((current) => {
+          const next: Record<string, { savedContent: string }> = {};
+          for (const [p, value] of Object.entries(current)) {
+            if (!isAffected(p)) {
+              next[p] = value;
+            }
+          }
+          return next;
+        });
+        setFiles((current) => {
+          const next = current.filter((file) => !isAffected(file.path));
+          if (next.length === 0) {
+            const cap = LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage;
+            const name = defaultFileName(cap.id);
+            setActivePath(name);
+            return [{ path: name, content: cap.defaultSource }];
+          }
+          setActivePath((active) => (isAffected(active) ? next[0]!.path : active));
+          return next;
+        });
+      } catch (error) {
+        if (!handleAuthError(error)) {
+          appendOutput("system", `${messageFromError(error)}\n`);
+        }
+      }
+    },
+    [appendOutput, handleAuthError, language, refreshTree]
+  );
+
+  const handleLogin = useCallback(
+    async (username: string, password: string) => {
+      const name = await authApi.login(username, password);
+      setUser(name);
+      setShowLogin(false);
+      await refreshTree();
+    },
+    [refreshTree]
+  );
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await authApi.logout();
+    } finally {
+      resetToLoggedOut();
+    }
+  }, [resetToLoggedOut]);
+
+  // Persist any dirty server tabs in `dir` before a folder run gathers them.
+  const saveDirtyInDir = useCallback(async (dir: string) => {
+    const targets = filesRef.current.filter(
+      (file) =>
+        file.path in serverTabsRef.current &&
+        dirOf(file.path) === dir &&
+        file.content !== serverTabsRef.current[file.path]!.savedContent
+    );
+    for (const file of targets) {
+      await filesApi.write(file.path, file.content);
+      setServerTabs((current) => ({ ...current, [file.path]: { savedContent: file.content } }));
+    }
+  }, []);
+
+  // Build the run/debug file list. Logged-in + active tab is a server file →
+  // gather the whole folder; otherwise use the open scratch buffers (the
+  // anonymous path, byte-identical to before).
+  const buildRunPayload = useCallback(async (): Promise<
+    { ok: true; files: ProjectFile[]; breakpoints: Breakpoint[] } | { ok: false; error: string }
+  > => {
+    const activeIsServer = activePath in serverTabsRef.current;
+    if (user && activeIsServer) {
+      const dir = dirOf(activePath);
+      await saveDirtyInDir(dir);
+      const folder = await filesApi.folder(dir);
+      return gatherFolderRun({
+        language,
+        folderDir: dir,
+        folderFiles: folder.files,
+        activeName: baseOf(activePath),
+        allBreakpoints
+      });
+    }
+    const scratch = files.filter((file) => !(file.path in serverTabsRef.current));
+    const usable = scratch.length > 0 ? scratch : files;
+    const names = new Set(usable.map((file) => file.path));
+    return { ok: true, files: usable, breakpoints: allBreakpoints.filter((bp) => names.has(bp.path)) };
+  }, [activePath, allBreakpoints, files, language, saveDirtyInDir, user]);
+
+  const tabMeta = useMemo<Record<string, TabMeta>>(() => {
+    const meta: Record<string, TabMeta> = {};
+    for (const [path, saved] of Object.entries(serverTabs)) {
+      const file = files.find((item) => item.path === path);
+      meta[path] = {
+        label: baseOf(path),
+        locked: true,
+        dirty: file ? file.content !== saved.savedContent : false
+      };
+    }
+    return meta;
+  }, [serverTabs, files]);
 
   const stopSockets = useCallback(() => {
     runSocket.current?.close();
@@ -483,11 +767,19 @@ export function App() {
       return;
     }
 
+    const payload = await buildRunPayload();
+    if (!payload.ok) {
+      setRunStatus("Failed");
+      setIsRunActive(false);
+      appendOutput("system", `${payload.error}\n`);
+      return;
+    }
+
     try {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ language, files, stdin, argv })
+        body: JSON.stringify({ language, files: payload.files, stdin, argv })
       });
 
       if (!response.ok) {
@@ -514,7 +806,7 @@ export function App() {
       setIsRunActive(false);
       appendOutput("system", `${messageFromError(error)}\n`);
     }
-  }, [appendOutput, argvInput, language, files, stdin, stopSockets]);
+  }, [appendOutput, argvInput, buildRunPayload, language, stdin, stopSockets]);
 
   const startDebug = useCallback(async () => {
     if (!capability.debug) {
@@ -534,25 +826,6 @@ export function App() {
     setStoppedLine(undefined);
     setDebugStatus("Starting");
 
-    if (allBreakpoints.length === 0) {
-      setDebugStatus("No breakpoints");
-      setIsDebugActive(false);
-      appendDebug("system", "No breakpoints set. Add a breakpoint before starting debug.\n");
-      return;
-    }
-
-    const lineCountByPath = new Map(files.map((file) => [file.path, file.content.split("\n").length]));
-    const outOfRange = allBreakpoints.filter((bp) => bp.line > (lineCountByPath.get(bp.path) ?? Infinity));
-    if (outOfRange.length > 0) {
-      setDebugStatus("Invalid breakpoints");
-      setIsDebugActive(false);
-      appendDebug(
-        "system",
-        `Breakpoints out of range: ${outOfRange.map((bp) => `${bp.path}:${bp.line}`).join(", ")}\n`
-      );
-      return;
-    }
-
     let argv: string[];
     try {
       argv = parseArgv(argvInput);
@@ -563,16 +836,43 @@ export function App() {
       return;
     }
 
+    const payload = await buildRunPayload();
+    if (!payload.ok) {
+      setDebugStatus("Failed");
+      setIsDebugActive(false);
+      appendDebug("system", `${payload.error}\n`);
+      return;
+    }
+
+    if (payload.breakpoints.length === 0) {
+      setDebugStatus("No breakpoints");
+      setIsDebugActive(false);
+      appendDebug("system", "No breakpoints set. Add a breakpoint before starting debug.\n");
+      return;
+    }
+
+    const lineCountByPath = new Map(payload.files.map((file) => [file.path, file.content.split("\n").length]));
+    const outOfRange = payload.breakpoints.filter((bp) => bp.line > (lineCountByPath.get(bp.path) ?? Infinity));
+    if (outOfRange.length > 0) {
+      setDebugStatus("Invalid breakpoints");
+      setIsDebugActive(false);
+      appendDebug(
+        "system",
+        `Breakpoints out of range: ${outOfRange.map((bp) => `${bp.path}:${bp.line}`).join(", ")}\n`
+      );
+      return;
+    }
+
     try {
       const response = await fetch("/api/debug", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           language,
-          files,
+          files: payload.files,
           stdin,
           argv,
-          breakpoints: allBreakpoints,
+          breakpoints: payload.breakpoints,
           clientId: clientIdRef.current
         })
       });
@@ -593,7 +893,7 @@ export function App() {
       setIsDebugActive(false);
       appendDebug("system", `${messageFromError(error)}\n`);
     }
-  }, [appendDebug, allBreakpoints, argvInput, capability.debug, files, language, stdin, stopSockets]);
+  }, [appendDebug, argvInput, buildRunPayload, capability.debug, language, stdin, stopSockets]);
 
   useEffect(() => {
     startDebugRef.current = startDebug;
@@ -788,6 +1088,40 @@ export function App() {
 
   useEffect(() => () => stopSockets(), [stopSockets]);
 
+  // Restore an existing session on load (cookie → /me), then load the tree.
+  useEffect(() => {
+    authApi
+      .me()
+      .then((name) => {
+        if (!name) {
+          return undefined;
+        }
+        setUser(name);
+        return filesApi.tree();
+      })
+      .then((res) => {
+        if (res) {
+          setTree(res.entries);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Ctrl/Cmd+S saves the active server-backed tab (no-op for scratch buffers).
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && (event.key === "s" || event.key === "S")) {
+        event.preventDefault();
+        void saveActiveServerTab();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [user, saveActiveServerTab]);
+
   useEffect(() => {
     if (!isRunActive) {
       setRunElapsed(0);
@@ -809,12 +1143,31 @@ export function App() {
           </div>
           <span className="brand-text">Internal Code Runner</span>
         </h1>
+        {user && (
+          <button
+            type="button"
+            className="topbar-icon-btn"
+            aria-label="Toggle explorer"
+            title="Explorer"
+            aria-pressed={explorerOpen}
+            onClick={() => setExplorerOpen((value) => !value)}
+          >
+            <PanelLeft size={16} />
+          </button>
+        )}
         <select
           aria-label="Language"
           value={language}
           onChange={(event) => {
             const next = event.target.value as Language;
             if (next === language) {
+              return;
+            }
+            // Logged-in users keep their open files (server tabs persist on the
+            // host); the picker only changes how Run/Debug compiles. The
+            // clear-on-switch flow stays for the anonymous single-buffer mode.
+            if (user !== null) {
+              setLanguage(next);
               return;
             }
             const currentCap = LANGUAGE_CAPABILITIES.find((item) => item.id === language);
@@ -902,13 +1255,38 @@ export function App() {
               ? `Running ${runElapsed}s…`
               : runStatus}
         </span>
+        {user ? (
+          <button type="button" className="auth-btn" onClick={handleLogout} title={`Signed in as ${user} — sign out`}>
+            <LogOut size={16} />
+            <span>{user}</span>
+          </button>
+        ) : (
+          <button type="button" className="auth-btn" onClick={() => setShowLogin(true)} title="Sign in">
+            <LogIn size={16} />
+            <span>Sign in</span>
+          </button>
+        )}
       </header>
 
+      {showLogin && <LoginDialog onClose={() => setShowLogin(false)} onSubmit={handleLogin} />}
+
       <div
-        className={`content-area ${isDebugActive ? "debug-active" : ""}`}
+        className={`content-area ${isDebugActive ? "debug-active" : ""} ${user && explorerOpen ? "explorer-open" : ""}`}
         ref={contentAreaRef}
         style={{ "--inspector-width": `${inspectorWidth}%` } as CSSProperties}
       >
+        {user && explorerOpen && (
+          <Explorer
+            username={user}
+            entries={tree}
+            activePath={activePath in serverTabs ? activePath : null}
+            onOpenFile={openServerFile}
+            onRefresh={refreshTree}
+            onCreate={handleCreate}
+            onRename={handleRenameServer}
+            onDelete={handleDeleteServer}
+          />
+        )}
         <main
           className="workspace"
           ref={workspaceRef}
@@ -920,6 +1298,7 @@ export function App() {
               files={files}
               activePath={activePath}
               language={language}
+              meta={tabMeta}
               onSelect={setActivePath}
               onAdd={addFile}
               onRename={renameFile}
@@ -1393,6 +1772,21 @@ async function readError(response: Response): Promise<string> {
 
 function messageFromError(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error";
+}
+
+/** Pick the editor language for a file name by extension (for explorer opens). */
+function languageForFile(path: string): Language | undefined {
+  const ext = fileExtension(path);
+  if (ext === ".py") {
+    return "python";
+  }
+  if (ext === ".cpp" || ext === ".cc" || ext === ".hpp" || ext === ".hh") {
+    return "cpp";
+  }
+  if (ext === ".c") {
+    return "c";
+  }
+  return undefined;
 }
 
 /** Map a debug frame path like "/workspace/util.c" to its bare file name. */

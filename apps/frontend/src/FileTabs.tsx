@@ -2,10 +2,21 @@ import { Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fileExtension, type Language, type ProjectFile } from "@internal/shared";
 
+/** Per-tab presentation overrides for server-backed (explorer) files. */
+export type TabMeta = {
+  /** Display label (basename) when the tab id is a full relative path. */
+  label?: string;
+  /** Unsaved-changes indicator. */
+  dirty?: boolean;
+  /** Server file — disable in-tab rename/delete (do it from the explorer). */
+  locked?: boolean;
+};
+
 type FileTabsProps = {
   files: ProjectFile[];
   activePath: string;
   language: Language;
+  meta?: Record<string, TabMeta>;
   onSelect(path: string): void;
   onAdd(): void;
   onRename(path: string, nextPath: string): void;
@@ -75,6 +86,7 @@ function FileIcon({ path }: { path: string }) {
 export function FileTabs({
   files,
   activePath,
+  meta,
   onSelect,
   onAdd,
   onRename,
@@ -127,6 +139,9 @@ export function FileTabs({
     <div className="editor-tab-bar" role="tablist" aria-label="Open files">
       {files.map((file) => {
         const isActive = file.path === activePath;
+        const tabMeta = meta?.[file.path];
+        const label = tabMeta?.label ?? file.path;
+        const locked = tabMeta?.locked ?? false;
         if (renaming === file.path) {
           return (
             <input
@@ -150,12 +165,16 @@ export function FileTabs({
         return (
           <div
             key={file.path}
-            className={`editor-tab ${isActive ? "active" : ""}`}
+            className={`editor-tab ${isActive ? "active" : ""}${tabMeta?.dirty ? " dirty" : ""}`}
             role="tab"
             aria-selected={isActive}
             data-path={file.path}
             onClick={() => onSelect(file.path)}
-            onDoubleClick={() => beginRename(file.path)}
+            onDoubleClick={() => {
+              if (!locked) {
+                beginRename(file.path);
+              }
+            }}
             onContextMenu={(event) => {
               event.preventDefault();
               onSelect(file.path);
@@ -164,9 +183,10 @@ export function FileTabs({
             title={file.path}
           >
             <span className="tab-icon" aria-hidden="true">
-              <FileIcon path={file.path} />
+              <FileIcon path={label} />
             </span>
-            <span className="tab-label">{file.path}</span>
+            <span className="tab-label">{label}</span>
+            {tabMeta?.dirty && <span className="tab-dirty" aria-hidden="true" title="Unsaved changes" />}
             <button
               type="button"
               className="tab-close"
@@ -194,7 +214,15 @@ export function FileTabs({
           role="menu"
           onClick={(event) => event.stopPropagation()}
         >
-          <li role="menuitem" onClick={() => beginRename(menu.path)}>
+          <li
+            role="menuitem"
+            aria-disabled={meta?.[menu.path]?.locked ?? false}
+            onClick={() => {
+              if (!meta?.[menu.path]?.locked) {
+                beginRename(menu.path);
+              }
+            }}
+          >
             Rename
           </li>
           <li
@@ -225,9 +253,9 @@ export function FileTabs({
           <li
             role="menuitem"
             className="menu-danger"
-            aria-disabled={files.length <= 1}
+            aria-disabled={files.length <= 1 || (meta?.[menu.path]?.locked ?? false)}
             onClick={() => {
-              if (files.length > 1) {
+              if (files.length > 1 && !meta?.[menu.path]?.locked) {
                 onDelete(menu.path);
               }
               setMenu(null);
