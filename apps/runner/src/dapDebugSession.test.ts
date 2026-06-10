@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   boundSummary,
   frameMatchesBreakpoint,
+  launchArgumentsFor,
   normalizeChildNames,
   parseInfoLocals,
   summarizeChildren
@@ -146,6 +147,34 @@ describe("frameMatchesBreakpoint", () => {
 
   it("returns false when there are no breakpoints", () => {
     expect(frameMatchesBreakpoint({ source: { path: "/workspace/main.c" }, line: 6 }, [])).toBe(false);
+  });
+});
+
+describe("launchArgumentsFor", () => {
+  it("uses gdb's documented stop-at-main parameter for C, not cppdbg's stopAtEntry", () => {
+    const args = launchArgumentsFor({ language: "c", argv: [] });
+    // gdb -i dap silently ignores unknown launch parameters, so the exact
+    // documented name matters: stopAtBeginningOfMainSubprogram (GDB ≥ 14).
+    expect(args.stopAtBeginningOfMainSubprogram).toBe(true);
+    expect(args).not.toHaveProperty("stopAtEntry");
+    expect(args.type).toBe("gdb");
+    expect(args.program).toBe("/exec/program");
+  });
+
+  it("uses the same stop-at-main parameter for C++ and forwards argv", () => {
+    const args = launchArgumentsFor({ language: "cpp", argv: ["a", "b"] });
+    expect(args.stopAtBeginningOfMainSubprogram).toBe(true);
+    expect(args).not.toHaveProperty("stopAtEntry");
+    expect(args.args).toEqual(["a", "b"]);
+  });
+
+  it("does not send any stop-on-entry flag to debugpy (Python)", () => {
+    const args = launchArgumentsFor({ language: "python", argv: ["x"] });
+    expect(args).not.toHaveProperty("stopAtBeginningOfMainSubprogram");
+    expect(args).not.toHaveProperty("stopAtEntry");
+    expect(args).not.toHaveProperty("stopOnEntry");
+    expect(args.type).toBe("python");
+    expect(args.args).toEqual(["/workspace/main.py", "x"]);
   });
 });
 

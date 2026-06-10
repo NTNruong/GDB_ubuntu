@@ -289,36 +289,7 @@ export class DapDebugSession {
   }
 
   private attachArguments(): Record<string, unknown> {
-    if (this.request.language === "python") {
-      return {
-        name: "Python",
-        type: "python",
-        request: "launch",
-        program: "/workspace/__debugpy_runner.py",
-        args: ["/workspace/main.py", ...this.request.argv],
-        cwd: "/workspace",
-        console: "internalConsole",
-        python: ["python3", "-I"],
-        justMyCode: false,
-        subProcess: false,
-        redirectOutput: true
-      };
-    }
-
-    return {
-      name: this.request.language === "c" ? "C" : "C++",
-      type: "gdb",
-      program: "/exec/program",
-      args: this.request.argv,
-      cwd: "/workspace",
-      // Stop at the entry point so user breakpoints are installed into the
-      // inferior before any user code runs. Without this, a fast program can run
-      // to completion before the breakpoint binds (the inferior may start during
-      // `launch`, before setBreakpoints/configurationDone), which surfaced as an
-      // intermittent "[configurationDone]: DAP session closed" startup error.
-      // The initial entry stop is auto-continued below. (ISSUE-041)
-      stopAtEntry: true
-    };
+    return launchArgumentsFor(this.request);
   }
 
   private waitForInitialized(timeoutMs: number): Promise<void> {
@@ -471,13 +442,19 @@ export class DapDebugSession {
       if (this.autoContinueOnInitialStop) {
         this.autoContinueOnInitialStop = false;
         const initialFrames = await this.fetchFrames(threadId);
-        // The first stop is the entry stop (stopAtEntry for C/C++, or the debugpy
-        // bootstrap for Python) unless it already landed on a user breakpoint.
-        // Decide by LOCATION, not reason: gdb may report the entry stop as
-        // "entry" or even "breakpoint" (an internal temp breakpoint). Auto-continue
-        // past a non-user-breakpoint entry stop so the run proceeds with the user
-        // breakpoints now installed. (ISSUE-041)
+        // The first stop is the entry stop (stopAtBeginningOfMainSubprogram for
+        // C/C++, or the debugpy bootstrap for Python) unless it already landed on
+        // a user breakpoint. Decide by LOCATION, not reason: gdb reports the entry
+        // stop as a temporary "breakpoint". Auto-continue past a non-user-breakpoint
+        // entry stop so the run proceeds with the user breakpoints installed. (ISSUE-041)
         if (!this.isAtUserBreakpoint(initialFrames[0])) {
+          if (this.request.language !== "python") {
+            // Re-apply user breakpoints while the inferior is provably paused before
+            // any user code: setBreakpoints is replace-all/idempotent, and doing it
+            // here is correct regardless of how gdb sequences launch vs
+            // configurationDone — the remaining startup free-run window. (ISSUE-041)
+            await this.applyBreakpoints(this.request.breakpoints).catch((error) => this.emitError(error));
+          }
           this.stopped = false;
           await this.dap?.request("continue", { threadId }).catch((error) => this.emitError(error));
           this.events.emit({ type: "running" });
@@ -957,6 +934,46 @@ export class DapDebugSession {
     this.exitEmitted = true;
     this.events.emit({ type: "exit", code, signal, timedOut });
   }
+}
+
+/**
+ * DAP `launch` request arguments per language. Exported so unit tests can pin the
+ * exact parameter names — gdb's DAP silently ignores unknown launch parameters
+ * (they land in the handler's `**extra`), so a misnamed flag is an invisible no-op.
+ */
+export function launchArgumentsFor(request: Pick<DebugRequest, "language" | "argv">): Record<string, unknown> {
+  if (request.language === "python") {
+    return {
+      name: "Python",
+      type: "python",
+      request: "launch",
+      program: "/workspace/__debugpy_runner.py",
+      args: ["/workspace/main.py", ...request.argv],
+      cwd: "/workspace",
+      console: "internalConsole",
+      python: ["python3", "-I"],
+      justMyCode: false,
+      subProcess: false,
+      redirectOutput: true
+    };
+  }
+
+  return {
+    name: request.language === "c" ? "C" : "C++",
+    type: "gdb",
+    program: "/exec/program",
+    args: request.argv,
+    cwd: "/workspace",
+    // Stop at the beginning of main (gdb `start` semantics) so user breakpoints
+    // are installed into the inferior before any user code runs. Without this, a
+    // fast program can run to completion before the breakpoint binds, which
+    // surfaced as an intermittent "[configurationDone]: DAP session closed"
+    // startup error. NOTE: the parameter name must be exactly
+    // `stopAtBeginningOfMainSubprogram` (GDB manual, DAP launch request, GDB ≥ 14)
+    // — `stopAtEntry` is the VS Code cppdbg name and gdb ignores it silently.
+    // The initial entry stop is auto-continued by the stopped handler. (ISSUE-041)
+    stopAtBeginningOfMainSubprogram: true
+  };
 }
 
 /**
