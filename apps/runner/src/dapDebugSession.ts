@@ -185,7 +185,17 @@ export class DapDebugSession {
       void this.close(false);
     });
 
-    await this.initializeDap(compileDone, firstAdapterEvent);
+    try {
+      await this.initializeDap(compileDone, firstAdapterEvent);
+    } catch (error) {
+      // If the program already finished during the startup handshake (a very
+      // short program that ran to exit), the exit path has already reported the
+      // result — don't surface a spurious startup error on top of it. (ISSUE-041)
+      if (this.exitEmitted || this.closed) {
+        return;
+      }
+      throw error;
+    }
     this.events.emit({ type: "ready", id: this.id });
   }
 
@@ -301,7 +311,13 @@ export class DapDebugSession {
       program: "/exec/program",
       args: this.request.argv,
       cwd: "/workspace",
-      stopAtEntry: false
+      // Stop at the entry point so user breakpoints are installed into the
+      // inferior before any user code runs. Without this, a fast program can run
+      // to completion before the breakpoint binds (the inferior may start during
+      // `launch`, before setBreakpoints/configurationDone), which surfaced as an
+      // intermittent "[configurationDone]: DAP session closed" startup error.
+      // The initial entry stop is auto-continued below. (ISSUE-041)
+      stopAtEntry: true
     };
   }
 
@@ -452,15 +468,25 @@ export class DapDebugSession {
       const reason = asString(body.reason);
       this.currentThreadId = threadId;
 
-      if (this.autoContinueOnInitialStop && reason !== "breakpoint") {
+      if (this.autoContinueOnInitialStop) {
         this.autoContinueOnInitialStop = false;
-        this.stopped = false;
-        await this.dap?.request("continue", { threadId }).catch((error) => this.emitError(error));
-        this.events.emit({ type: "running" });
+        const initialFrames = await this.fetchFrames(threadId);
+        // The first stop is the entry stop (stopAtEntry for C/C++, or the debugpy
+        // bootstrap for Python) unless it already landed on a user breakpoint.
+        // Decide by LOCATION, not reason: gdb may report the entry stop as
+        // "entry" or even "breakpoint" (an internal temp breakpoint). Auto-continue
+        // past a non-user-breakpoint entry stop so the run proceeds with the user
+        // breakpoints now installed. (ISSUE-041)
+        if (!this.isAtUserBreakpoint(initialFrames[0])) {
+          this.stopped = false;
+          await this.dap?.request("continue", { threadId }).catch((error) => this.emitError(error));
+          this.events.emit({ type: "running" });
+          return;
+        }
+        this.stopped = true;
+        await this.refreshStackAndVariables(threadId, reason, initialFrames);
         return;
       }
-
-      this.autoContinueOnInitialStop = false;
 
       const frames = await this.fetchFrames(threadId);
       if (reason !== "pause" && reason !== "breakpoint" && !this.hasUserFrame(frames)) {
@@ -514,6 +540,11 @@ export class DapDebugSession {
       const src = frame.source?.path ?? frame.source?.name ?? "";
       return src.startsWith("/workspace/") && !src.endsWith("__debugpy_runner.py");
     });
+  }
+
+  /** True if the frame sits on one of the user's requested breakpoints (basename + line). */
+  private isAtUserBreakpoint(frame: DapStackFrame | undefined): boolean {
+    return frameMatchesBreakpoint(frame, this.request.breakpoints);
   }
 
   private async refreshStackAndVariables(
@@ -926,6 +957,24 @@ export class DapDebugSession {
     this.exitEmitted = true;
     this.events.emit({ type: "exit", code, signal, timedOut });
   }
+}
+
+/**
+ * True if a stack frame sits on one of the user's requested breakpoints, matched
+ * by file basename + line (frame source paths are absolute `/workspace/<file>`).
+ * Used to decide whether an initial stop is the entry stop (auto-continue) or an
+ * actual user breakpoint (stop), independent of the adapter's `reason` string.
+ */
+export function frameMatchesBreakpoint(
+  frame: { source?: { path?: string; name?: string }; line?: number } | undefined,
+  breakpoints: readonly { path: string; line: number }[]
+): boolean {
+  if (!frame || frame.line === undefined) {
+    return false;
+  }
+  const src = frame.source?.path ?? frame.source?.name ?? "";
+  const base = src.replace(/^.*[\\/]/, "");
+  return breakpoints.some((bp) => bp.path === base && bp.line === frame.line);
 }
 
 function commandForLanguage(language: Language, argv: string[]): string[] {

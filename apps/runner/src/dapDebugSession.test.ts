@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { boundSummary, normalizeChildNames, parseInfoLocals, summarizeChildren } from "./dapDebugSession.js";
+import {
+  boundSummary,
+  frameMatchesBreakpoint,
+  normalizeChildNames,
+  parseInfoLocals,
+  summarizeChildren
+} from "./dapDebugSession.js";
 
 describe("parseInfoLocals", () => {
   it("parses simple name = value pairs", () => {
@@ -109,6 +115,37 @@ describe("normalizeChildNames", () => {
 
   it("returns empty input unchanged", () => {
     expect(normalizeChildNames([])).toEqual([]);
+  });
+});
+
+describe("frameMatchesBreakpoint", () => {
+  const breakpoints = [
+    { path: "main.c", line: 6 },
+    { path: "util.c", line: 3 }
+  ];
+
+  it("matches an absolute /workspace path by basename + line", () => {
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/main.c" }, line: 6 }, breakpoints)).toBe(true);
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/util.c" }, line: 3 }, breakpoints)).toBe(true);
+  });
+
+  it("does not match the entry stop (different line / file)", () => {
+    // main()'s opening line, not a user breakpoint → treated as the entry stop.
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/main.c" }, line: 3 }, breakpoints)).toBe(false);
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/other.c" }, line: 6 }, breakpoints)).toBe(false);
+  });
+
+  it("falls back to source.name when path is absent", () => {
+    expect(frameMatchesBreakpoint({ source: { name: "util.c" }, line: 3 }, breakpoints)).toBe(true);
+  });
+
+  it("returns false for missing frame or missing line", () => {
+    expect(frameMatchesBreakpoint(undefined, breakpoints)).toBe(false);
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/main.c" } }, breakpoints)).toBe(false);
+  });
+
+  it("returns false when there are no breakpoints", () => {
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/main.c" }, line: 6 }, [])).toBe(false);
   });
 });
 
