@@ -71,6 +71,10 @@ export class DapDebugSession {
   private breakpointFiles = new Set<string>();
   private watchRefreshSeq = 0;
   private readonly verbose = process.env.DEBUG_VERBOSE === "1";
+  // One-time gdb/debugpy startup handshake under a loaded (rootless) host can
+  // exceed the 10s steady-state DAP request timeout; give startup its own,
+  // larger budget. Interactive requests keep the default. (ISSUE-041)
+  private readonly startupTimeoutMs = Number.parseInt(process.env.DAP_STARTUP_TIMEOUT_MS ?? "30000", 10);
 
   constructor(
     private readonly docker: Docker,
@@ -220,32 +224,58 @@ export class DapDebugSession {
 
     await this.waitForDebugAdapterReady(compileDone, firstAdapterEvent);
 
-    await this.dap.request("initialize", {
-      clientID: "gdb-ubuntu-runner",
-      clientName: "GDB Ubuntu Runner",
-      adapterID: this.request.language === "python" ? "debugpy" : "gdb",
-      pathFormat: "path",
-      linesStartAt1: true,
-      columnsStartAt1: true,
-      supportsRunInTerminalRequest: false,
-      supportsVariableType: false
-    });
+    const startup = this.startupTimeoutMs;
 
-    const dapCommand = "launch";
-    const connect = this.dap.request(dapCommand, this.attachArguments());
+    await this.startupStep("initialize", () =>
+      this.dap!.request(
+        "initialize",
+        {
+          clientID: "gdb-ubuntu-runner",
+          clientName: "GDB Ubuntu Runner",
+          adapterID: this.request.language === "python" ? "debugpy" : "gdb",
+          pathFormat: "path",
+          linesStartAt1: true,
+          columnsStartAt1: true,
+          supportsRunInTerminalRequest: false,
+          supportsVariableType: false
+        },
+        startup
+      )
+    );
+
+    const connect = this.dap.request("launch", this.attachArguments(), startup);
     void connect.catch(() => {}); // prevent unhandled rejection if waitForInitialized throws first
-    await this.waitForInitialized(10_000);
-    await this.applyBreakpoints(this.request.breakpoints);
-    await this.dap.request("configurationDone").catch((error) => {
-      if (this.request.language !== "python" && error instanceof Error && error.message === "notStopped") {
-        return;
-      }
+    await this.startupStep("waitForInitialized", () => this.waitForInitialized(startup));
+    await this.startupStep("setBreakpoints", () => this.applyBreakpoints(this.request.breakpoints, startup));
+    await this.startupStep("configurationDone", () =>
+      this.dap!.request("configurationDone", undefined, startup).then(
+        () => undefined,
+        (error: unknown) => {
+          if (this.request.language !== "python" && error instanceof Error && error.message === "notStopped") {
+            return;
+          }
+          throw error;
+        }
+      )
+    );
+    await this.startupStep("launch", () =>
+      connect.then(
+        () => undefined,
+        (error: unknown) => {
+          throw error instanceof Error ? error : new Error("DAP connect failed");
+        }
+      )
+    );
+  }
 
-      throw error;
-    });
-    await connect.catch((error) => {
-      throw error instanceof Error ? error : new Error("DAP connect failed");
-    });
+  /** Rethrow a startup-handshake failure tagged with the exact step (ISSUE-041). */
+  private async startupStep<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`debug startup failed [${label}]: ${message}`, { cause: error });
+    }
   }
 
   private attachArguments(): Record<string, unknown> {
@@ -736,7 +766,7 @@ export class DapDebugSession {
     }
   }
 
-  private async applyBreakpoints(breakpoints: Breakpoint[]): Promise<void> {
+  private async applyBreakpoints(breakpoints: Breakpoint[], timeoutMs?: number): Promise<void> {
     if (!this.dap) {
       return;
     }
@@ -757,11 +787,15 @@ export class DapDebugSession {
     }
 
     for (const [file, lines] of byFile) {
-      await this.dap.request("setBreakpoints", {
-        source: { path: `/workspace/${file}` },
-        breakpoints: lines.map((line) => ({ line })),
-        sourceModified: false
-      });
+      await this.dap.request(
+        "setBreakpoints",
+        {
+          source: { path: `/workspace/${file}` },
+          breakpoints: lines.map((line) => ({ line })),
+          sourceModified: false
+        },
+        timeoutMs
+      );
     }
 
     this.breakpointFiles = new Set(

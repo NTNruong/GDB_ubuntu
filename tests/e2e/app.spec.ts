@@ -30,6 +30,11 @@ test.afterEach(async ({ page }) => {
 // test output/artifact so the intermittent flake is self-diagnosing instead of a
 // bare "Error" pill.
 async function startDebugExpectStopped(page: Page): Promise<void> {
+  // Give the test more budget than the 30s debug-start wait below, so when the
+  // wait fails the catch still has time to read the DOM + attach the runner's
+  // real error message (Stage 1 attached "(unreadable)" because the assertion
+  // timeout equalled the per-test timeout). (ISSUE-041)
+  test.setTimeout(45_000);
   await page.getByTestId("btn-debug").click();
   try {
     await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });

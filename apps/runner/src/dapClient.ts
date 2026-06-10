@@ -70,7 +70,7 @@ export class DapClient {
     return () => this.emitter.off("dapError", listener);
   }
 
-  async request(command: string, args?: unknown): Promise<DapResponse> {
+  async request(command: string, args?: unknown, timeoutMs: number = this.requestTimeoutMs): Promise<DapResponse> {
     if (this.closed) {
       throw new Error("DAP session is closed");
     }
@@ -88,8 +88,8 @@ export class DapClient {
     return await new Promise<DapResponse>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pending.delete(seq);
-        reject(new Error(`DAP request '${command}' timed out after ${this.requestTimeoutMs}ms`));
-      }, this.requestTimeoutMs);
+        reject(new Error(`DAP request '${command}' timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
       this.pending.set(seq, { command, resolve, reject, timeout });
       this.output.write(framed, "utf8", (error) => {
         if (!error) {

@@ -54,6 +54,25 @@ describe("DapClient", () => {
 
     await expect(client.request("initialize")).rejects.toThrow("DAP request 'initialize' timed out");
   });
+
+  it("honors a per-request timeout override and reports it in the error (ISSUE-041)", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    // Default timeout is large; the override (2ms) must win and surface in the message.
+    const client = new DapClient(input, output, 60_000);
+
+    await expect(client.request("configurationDone", undefined, 2)).rejects.toThrow(
+      "DAP request 'configurationDone' timed out after 2ms"
+    );
+  });
+
+  it("uses the default timeout when no override is passed (ISSUE-041)", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const client = new DapClient(input, output, 3);
+
+    await expect(client.request("initialize")).rejects.toThrow("timed out after 3ms");
+  });
 });
 
 function encode(message: unknown): Buffer {
