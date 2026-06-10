@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test.afterEach(async ({ page }) => {
   if (page.isClosed()) return;
@@ -18,7 +18,38 @@ test.afterEach(async ({ page }) => {
       { timeout: 5_000 }
     )
     .catch(() => undefined);
+  // ISSUE-041: wait until the client has actually left run/debug (Stop becomes
+  // disabled) before the next test starts a fresh session, to shrink the
+  // teardown/startup contention window. Bounded; never throws in teardown.
+  await expect(stop).toBeDisabled({ timeout: 5_000 }).catch(() => undefined);
 });
+
+// ISSUE-041: start a debug session and wait for the breakpoint/stopped state.
+// On failure, capture the status pill + debug-console text (where the runner's
+// real error message lands, e.g. "Timed out creating debug container") into the
+// test output/artifact so the intermittent flake is self-diagnosing instead of a
+// bare "Error" pill.
+async function startDebugExpectStopped(page: Page): Promise<void> {
+  await page.getByTestId("btn-debug").click();
+  try {
+    await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  } catch (error) {
+    const pill = await page
+      .locator(".status-pill")
+      .innerText()
+      .catch(() => "(unreadable)");
+    const debugTerminal = await page
+      .locator(".debug-tab-container .terminal")
+      .innerText()
+      .catch(() => "(debug terminal not mounted)");
+    const detail = `debug start did not reach breakpoint/stopped\n  status pill: ${pill}\n  debug terminal:\n${debugTerminal}`;
+    await test
+      .info()
+      .attach("debug-start-failure", { body: detail, contentType: "text/plain" })
+      .catch(() => undefined);
+    throw new Error(detail, { cause: error });
+  }
+}
 
 test("runs a C++ hello world snippet", async ({ page }) => {
   await page.goto("/");
@@ -36,8 +67,7 @@ test("requires a breakpoint before debugging", async ({ page }) => {
 test("opens a C++ debug session", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 });
 
 test("runs Python hello world", async ({ page }) => {
@@ -51,21 +81,18 @@ test("topbar Stop allows starting Debug again without reload (ISSUE-013)", async
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
 
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   await page.getByTestId("btn-topbar-stop").click();
   await expect(page.locator(".status-pill")).toContainText("Stopped");
 
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 });
 
 test("debug toolbar disables step controls when not stopped (ISSUE-010 scaffolding)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   // When stopped at breakpoint: Continue/Step/Restart/Stop enabled; Pause is hidden (toggle replaced by Continue)
   await expect(page.locator('.debug-toolbar button[aria-label="Continue"]')).toBeEnabled();
@@ -84,8 +111,7 @@ test("debug toolbar lives in the topbar with 6 icon buttons (ISSUE-028)", async 
   await expect(page.locator(".debug-toolbar")).toHaveCount(0);
 
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   // Toolbar appears inside the topbar header
   await expect(page.locator("header .debug-toolbar")).toBeVisible();
@@ -112,8 +138,7 @@ test("debug toolbar lives in the topbar with 6 icon buttons (ISSUE-028)", async 
 test("debug side panel shows switchable Variables/Call Stack tabs with stacked Watches (ISSUE-028)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   const panel = page.locator(".debug-side-panel");
   await expect(panel).toBeVisible();
@@ -168,8 +193,7 @@ test("debug terminal shows C program stdout (ISSUE-030)", async ({ page }) => {
     `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
   );
   await page.getByLabel("breakpoints").fill("5");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   // Continue to completion: the program prints "1 3 5 7 9" then exits.
   await page.locator('.debug-toolbar button[aria-label="Continue"]').click();
@@ -191,8 +215,7 @@ test("step over past end of main exits cleanly (ISSUE-032)", async ({ page }) =>
     `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
   );
   await page.getByLabel("breakpoints").fill("11");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   // Step over repeatedly past main's return; the session must reach Exited, not hang in Running.
   const stepOver = page.locator('.debug-toolbar button[aria-label="Step over"]');
@@ -221,8 +244,7 @@ test("C array variable shows a summary and expands to elements (ISSUE-031)", asy
     `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
   );
   await page.getByLabel("breakpoints").fill("8");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   const panel = page.locator(".debug-side-panel");
   // Variables tab is the default; the arr row shows a bounded summary value.
@@ -245,8 +267,7 @@ test("watches refresh on step and can be removed (ISSUE-031)", async ({ page }) 
     `#include <stdio.h>\n\nint main() {\n  int arr[] = {1, 3, 5, 7, 9};\n  int *p = arr;\n  int n = sizeof(arr) / sizeof(arr[0]);\n  for (int i = 0; i < n; i++) {\n    printf("%d ", *(p + i));\n  }\n  return 0;\n}\n`
   );
   await page.getByLabel("breakpoints").fill("8");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   const panel = page.locator(".debug-side-panel");
   // Watches are now visible under the Variables tab (stacked layout) — no tab click needed
@@ -279,8 +300,7 @@ test("watches refresh on step and can be removed (ISSUE-031)", async ({ page }) 
 test("watch + debug console inputs submit via Enter with no visible buttons (ISSUE-035)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   const panel = page.locator(".debug-side-panel");
   await expect(panel.locator('.debug-form button[type="submit"]')).toHaveCount(0);
@@ -312,8 +332,7 @@ test("watch + debug console inputs submit via Enter with no visible buttons (ISS
 test("debug console input is unified into the bottom Debug tab (ISSUE-039)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   // The console input is no longer rendered inside the right side panel.
   await expect(page.locator('.debug-side-panel [data-testid="debug-console-input"]')).toHaveCount(0);
@@ -353,8 +372,7 @@ async function replaceEditorSource(page: import("@playwright/test").Page, source
 test("Variables and Watches are stacked with a resize handle under the Variables tab", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("breakpoints").fill("6");
-  await page.getByTestId("btn-debug").click();
-  await expect(page.locator(".status-pill")).toContainText(/breakpoint|Stopped/i, { timeout: 30_000 });
+  await startDebugExpectStopped(page);
 
   const panel = page.locator(".debug-side-panel");
   await expect(panel).toBeVisible();
