@@ -10,7 +10,9 @@ test-results/
 tmp/
 LOG.md
 ISSUES.md
+DESIGN.md
 AGENTS.md
+GEMINI.md
 *.archive.md
 PHASE2.internal.md
 *.md~

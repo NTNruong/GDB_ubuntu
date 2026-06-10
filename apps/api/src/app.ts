@@ -3,6 +3,7 @@ import websocket from "@fastify/websocket";
 import {
   DebugRequestSchema,
   LANGUAGE_CAPABILITIES,
+  MAX_REQUEST_BODY_BYTES,
   RunRequestSchema,
   type HealthResponse,
   type JobCreateResponse
@@ -17,6 +18,7 @@ type ErrorResponse = {
 
 export function createApiServer(config: ApiConfig): FastifyInstance {
   const app = Fastify({
+    bodyLimit: MAX_REQUEST_BODY_BYTES,
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
       redact: ["req.body.files[*].content", "req.body.stdin", "req.body.argv"]

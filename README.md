@@ -93,6 +93,9 @@ Production deployment on an Ubuntu host with Tailscale installed:
 | **3. Tailnet Access** | Expose `http://<tailscale-ip>:8080` | Tailnet only. Do not expose to the public internet without auth. |
 | **4. Shared Space** | Mounts `/tmp/gdb-ubuntu-runner-workspaces` | Temporary file-exchange area for child containers. |
 
+> [!IMPORTANT]
+> The runner controls the Docker socket, so run the production stack under a **rootless Docker daemon owned by a dedicated, non-sudo service user** to keep a runner compromise from becoming host root. Set `DOCKER_HOST` / `DOCKER_SOCK_SOURCE` to the rootless socket — see the rootless runbook in [docs/DEPLOY.md](docs/DEPLOY.md#rootless-docker-isolation-issue-044).
+
 ---
 
 ## 🤖 Server Update Helper

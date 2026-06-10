@@ -2,6 +2,7 @@ import websocket from "@fastify/websocket";
 import {
   DebugCommandSchema,
   DebugRequestSchema,
+  MAX_REQUEST_BODY_BYTES,
   RunRequestSchema,
   type DebugCommand,
   type DebugEvent,
@@ -36,6 +37,7 @@ type RunnerState = {
 
 export function createRunnerServer(config: RunnerConfig, dockerRunner = new DockerRunner(config)): FastifyInstance {
   const app = Fastify({
+    bodyLimit: MAX_REQUEST_BODY_BYTES,
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
       redact: ["req.body.files[*].content", "req.body.stdin", "req.body.argv"]

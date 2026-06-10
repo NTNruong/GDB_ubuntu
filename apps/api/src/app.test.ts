@@ -65,6 +65,31 @@ describe("api app", () => {
     expect(logged).toContain("[Redacted]");
   });
 
+  it("accepts a run request larger than Fastify's default 1 MiB body limit (ISSUE-043)", async () => {
+    const app = createApiServer(config);
+
+    // ~1.8 MB of source across 9 files — well past the old default bodyLimit
+    // (1 MiB) but within MAX_TOTAL_SOURCE_BYTES (2 MB). A 413 here would mean the
+    // transport limit, not the schema, rejected a valid payload.
+    const files = Array.from({ length: 9 }, (_, index) => ({
+      path: `part${index}.c`,
+      content: "a".repeat(200_000)
+    }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/run",
+      payload: { language: "c", files }
+    });
+    await app.close();
+
+    // The runner URL is unreachable in this test, so the request gets past body
+    // parsing + zod validation and then fails forwarding — anything but 413/400
+    // proves the size gate accepted it.
+    expect(response.statusCode).not.toBe(413);
+    expect(response.statusCode).not.toBe(400);
+  });
+
   it("keeps websocket-only debug routes from running on plain HTTP requests", async () => {
     const app = createApiServer(config);
 

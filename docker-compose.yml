@@ -40,10 +40,18 @@ services:
       DEBUG_ENGINE: "dap"
       DEBUG_VERBOSE: "0"
       WORKSPACE_CONTAINER_ROOT: "/runner-workspaces"
-      WORKSPACE_HOST_ROOT: "/tmp/gdb-ubuntu-runner-workspaces"
+      # Must equal the host bind-source below (the child containers' bind paths are
+      # resolved by the daemon on the host). Override in production to a path owned
+      # by the rootless service user when /tmp is not owned by it (ISSUE-044).
+      WORKSPACE_HOST_ROOT: "${WORKSPACE_HOST_ROOT:-/tmp/gdb-ubuntu-runner-workspaces}"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/gdb-ubuntu-runner-workspaces:/runner-workspaces
+      # Host bind-source of the Docker socket. Default = root daemon (dev / Docker
+      # Desktop). In production set DOCKER_SOCK_SOURCE to the rootless socket
+      # (/run/user/<uid>/docker.sock) so a compromised runner is capped to an
+      # unprivileged user, not host root (ISSUE-044). The in-container path stays
+      # /var/run/docker.sock, so DOCKER_SOCKET_PATH does not change.
+      - ${DOCKER_SOCK_SOURCE:-/var/run/docker.sock}:/var/run/docker.sock
+      - ${WORKSPACE_HOST_ROOT:-/tmp/gdb-ubuntu-runner-workspaces}:/runner-workspaces
     expose:
       - "4001"
     restart: unless-stopped

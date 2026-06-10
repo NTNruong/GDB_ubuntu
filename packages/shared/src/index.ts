@@ -10,6 +10,12 @@ export const MAX_ARG_BYTES = 256;
 export const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
 export const MAX_FILES = 20;
 export const MAX_TOTAL_SOURCE_BYTES = 2_000_000;
+/**
+ * Max raw HTTP body (JSON) accepted for /run + /debug. Must comfortably cover
+ * MAX_TOTAL_SOURCE_BYTES + MAX_STDIN_BYTES + argv plus JSON-escaping headroom,
+ * otherwise the transport rejects (413) a payload the schema would allow.
+ */
+export const MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
 
 export const LanguageSchema = z.enum(LANGUAGES);
 
