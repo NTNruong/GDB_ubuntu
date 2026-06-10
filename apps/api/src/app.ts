@@ -10,7 +10,9 @@ import {
 } from "@internal/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import WebSocket from "ws";
+import { registerAuth } from "./auth.js";
 import type { ApiConfig } from "./config.js";
+import { registerFiles } from "./files.js";
 
 type ErrorResponse = {
   error: string;
@@ -21,14 +23,26 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
     bodyLimit: MAX_REQUEST_BODY_BYTES,
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
-      redact: ["req.body.files[*].content", "req.body.stdin", "req.body.argv"]
+      // Strip user code/input/credentials if a request body is ever logged:
+      // run/debug source, the explorer's file content, and login passwords.
+      redact: [
+        "req.body.files[*].content",
+        "req.body.stdin",
+        "req.body.argv",
+        "req.body.content",
+        "req.body.password"
+      ]
     }
   });
 
   app.register(cors, {
-    origin: true
+    origin: true,
+    credentials: true
   });
   app.register(websocket);
+
+  registerAuth(app, config);
+  registerFiles(app, config);
 
   app.register(async (routes) => {
     routes.get("/api/health", async (): Promise<HealthResponse> => {

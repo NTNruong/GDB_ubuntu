@@ -18,6 +18,16 @@ services:
       HOST: "0.0.0.0"
       RUNNER_BASE_URL: "http://runner:4001"
       RUNNER_WS_URL: "ws://runner:4001"
+      # Per-user file explorer (Phase 2). Root dir holding one folder per user +
+      # users.json. SESSION_SECRET signs the auth cookie — set a stable value in
+      # the deploy .env (openssl rand -hex 32) or sessions reset on every restart.
+      USER_HOMES_ROOT: "/user-homes"
+      SESSION_SECRET: "${SESSION_SECRET:-}"
+    volumes:
+      # Host bind-source of the per-user homes. In production (rootless Docker)
+      # point USER_HOMES_HOST_ROOT at a dir owned by the service user (ISSUE-044),
+      # e.g. /home/gdbrunner/gdb-user-homes. Must match USER_HOMES_ROOT above.
+      - ${USER_HOMES_HOST_ROOT:-/tmp/gdb-ubuntu-user-homes}:/user-homes
     expose:
       - "4000"
     depends_on:

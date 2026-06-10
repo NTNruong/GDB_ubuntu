@@ -254,6 +254,115 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
   }
 ];
 
+// ---------------------------------------------------------------------------
+// User accounts + per-user file explorer (Phase 2)
+//
+// App-managed accounts (no Linux/PAM): each user owns a directory tree under the
+// server's USER_HOMES_ROOT. Unlike the run/debug protocol (a flat file list),
+// the explorer supports nested folders, so paths here use "/" separators. The
+// segment charset mirrors FILENAME_PATTERN (no leading dot) so every saved file
+// is still a valid run-protocol file name when gathered into a run request.
+// ---------------------------------------------------------------------------
+
+/** Account name; doubles as the on-disk directory name for the user's home. */
+export const USERNAME_PATTERN = /^[a-z][a-z0-9_-]{2,31}$/;
+/** One path segment (file or folder name). No leading dot, no "/" or "..". */
+export const USER_PATH_SEGMENT_PATTERN = /^(?!\.)[A-Za-z0-9._-]{1,64}$/;
+
+export const MAX_USER_FILE_BYTES = MAX_SOURCE_BYTES;
+export const MAX_TREE_ENTRIES = 500;
+export const MAX_TREE_DEPTH = 8;
+export const MAX_USER_PATH_SEGMENTS = MAX_TREE_DEPTH;
+export const MAX_USER_PATH_CHARS = 512;
+
+/**
+ * Validate a relative user path and return its segments, or null if invalid.
+ * Pure shape check (charset, segment count, length) — server-side path-safety
+ * (resolve + prefix assert + symlink rejection) lives in apps/api/pathSafety.ts.
+ */
+export function parseUserPath(path: string): string[] | null {
+  if (typeof path !== "string" || path.length === 0 || path.length > MAX_USER_PATH_CHARS) {
+    return null;
+  }
+  const segments = path.split("/");
+  if (segments.length < 1 || segments.length > MAX_USER_PATH_SEGMENTS) {
+    return null;
+  }
+  for (const segment of segments) {
+    if (!USER_PATH_SEGMENT_PATTERN.test(segment)) {
+      return null;
+    }
+  }
+  return segments;
+}
+
+export const UserPathSchema = z
+  .string()
+  .min(1)
+  .max(MAX_USER_PATH_CHARS)
+  .refine((value) => parseUserPath(value) !== null, {
+    message: "Invalid path (use letters, digits, ., _, -, / separators; no leading dot, no ..)"
+  });
+
+export const UsernameSchema = z.string().regex(USERNAME_PATTERN, {
+  message: "Invalid username (3-32 chars, lowercase letter first, then a-z 0-9 _ -)"
+});
+
+export const LoginRequestSchema = z.object({
+  username: UsernameSchema,
+  password: z.string().min(1).max(256)
+});
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+
+export const WriteFileRequestSchema = z.object({
+  path: UserPathSchema,
+  content: z.string().max(MAX_USER_FILE_BYTES)
+});
+export type WriteFileRequest = z.infer<typeof WriteFileRequestSchema>;
+
+export const MkdirRequestSchema = z.object({
+  path: UserPathSchema
+});
+export type MkdirRequest = z.infer<typeof MkdirRequestSchema>;
+
+export const RenameRequestSchema = z.object({
+  path: UserPathSchema,
+  newName: z.string().regex(USER_PATH_SEGMENT_PATTERN, {
+    message: "Invalid name (letters, digits, ., _, -; no leading dot, no slashes)"
+  })
+});
+export type RenameRequest = z.infer<typeof RenameRequestSchema>;
+
+export type TreeNode = {
+  name: string;
+  path: string;
+  type: "dir" | "file";
+  size?: number;
+  children?: TreeNode[];
+};
+
+export type TreeResponse = {
+  username: string;
+  entries: TreeNode[];
+};
+
+export type FileResponse = {
+  path: string;
+  content: string;
+  size: number;
+  mtimeMs: number;
+};
+
+/** Top-level regular files of one folder, with content — feeds run-the-folder. */
+export type FolderFilesResponse = {
+  path: string;
+  files: { name: string; content: string; size: number }[];
+};
+
+export type AuthMeResponse = {
+  username: string;
+};
+
 export function parseArgv(input: string): string[] {
   const args: string[] = [];
   let current = "";

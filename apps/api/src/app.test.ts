@@ -6,7 +6,11 @@ describe("api app", () => {
     host: "127.0.0.1",
     port: 0,
     runnerBaseUrl: "http://127.0.0.1:1",
-    runnerWsUrl: "ws://127.0.0.1:1"
+    runnerWsUrl: "ws://127.0.0.1:1",
+    userHomesRoot: "/tmp/gdb-test-user-homes",
+    usersFile: "/tmp/gdb-test-user-homes/users.json",
+    sessionSecret: "test-secret",
+    sessionCookieSecure: false
   };
 
   it("returns language capabilities without contacting the runner", async () => {
@@ -44,7 +48,15 @@ describe("api app", () => {
     const pino = (await import("pino")).default;
     let logged = "";
     const logger = pino(
-      { redact: ["req.body.files[*].content", "req.body.stdin", "req.body.argv"] },
+      {
+        redact: [
+          "req.body.files[*].content",
+          "req.body.stdin",
+          "req.body.argv",
+          "req.body.content",
+          "req.body.password"
+        ]
+      },
       { write: (chunk: string) => { logged += chunk; } }
     );
 
@@ -53,7 +65,9 @@ describe("api app", () => {
         body: {
           files: [{ path: "main.c", content: "TOP_SECRET_SOURCE" }],
           stdin: "SECRET_STDIN",
-          argv: ["SECRET_ARGV"]
+          argv: ["SECRET_ARGV"],
+          content: "TOP_SECRET_FILE_WRITE",
+          password: "TOP_SECRET_PASSWORD"
         }
       }
     });
@@ -61,6 +75,8 @@ describe("api app", () => {
     expect(logged).not.toContain("TOP_SECRET_SOURCE");
     expect(logged).not.toContain("SECRET_STDIN");
     expect(logged).not.toContain("SECRET_ARGV");
+    expect(logged).not.toContain("TOP_SECRET_FILE_WRITE");
+    expect(logged).not.toContain("TOP_SECRET_PASSWORD");
     expect(logged).toContain("main.c"); // file names are not sensitive
     expect(logged).toContain("[Redacted]");
   });
