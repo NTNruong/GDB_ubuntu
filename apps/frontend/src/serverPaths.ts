@@ -30,6 +30,21 @@ export function remapKeys<T>(record: Record<string, T>, remap: (key: string) => 
   return next;
 }
 
+/**
+ * Scratch (non-server) buffers worth offering to save into the user's home on
+ * login: not already a server tab, non-empty, and not an untouched language
+ * default template (EXPLORER-008). Pristine defaults stay as labeled scratch.
+ */
+export function savableScratch<T extends { path: string; content: string }>(
+  files: readonly T[],
+  serverTabs: Record<string, unknown>,
+  defaultSources: ReadonlySet<string>
+): T[] {
+  return files.filter(
+    (file) => !(file.path in serverTabs) && file.content.trim() !== "" && !defaultSources.has(file.content)
+  );
+}
+
 /** Basename → original server path + content for the active folder's run/debug. */
 export type DebugFileMap = Map<string, { serverPath: string; content: string }>;
 

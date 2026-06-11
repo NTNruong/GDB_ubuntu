@@ -10,6 +10,8 @@ export type TabMeta = {
   dirty?: boolean;
   /** Server file — disable in-tab rename/delete (do it from the explorer). */
   locked?: boolean;
+  /** Local scratch buffer (logged-in only) — not a /home/<user> file. */
+  scratch?: boolean;
 };
 
 type FileTabsProps = {
@@ -192,6 +194,11 @@ export function FileTabs({
               <FileIcon path={label} />
             </span>
             <span className="tab-label">{label}</span>
+            {tabMeta?.scratch && (
+              <span className="tab-scratch-badge" title="Local scratch buffer — not saved in your files">
+                Scratch
+              </span>
+            )}
             {tabMeta?.dirty && <span className="tab-dirty" aria-hidden="true" title="Unsaved changes" />}
             <button
               type="button"

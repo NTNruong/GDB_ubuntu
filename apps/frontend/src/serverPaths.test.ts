@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { remapKeys, remapPath, resolveStopped, type DebugFileMap } from "./serverPaths";
+import { remapKeys, remapPath, resolveStopped, savableScratch, type DebugFileMap } from "./serverPaths";
 
 describe("remapPath", () => {
   it("remaps the exact renamed path", () => {
@@ -55,5 +55,26 @@ describe("resolveStopped", () => {
   it("returns undefined when nothing matches or base is missing", () => {
     expect(resolveStopped("ghost.c", map, ["proj/main.c"])).toBeUndefined();
     expect(resolveStopped(undefined, map, ["proj/main.c"])).toBeUndefined();
+  });
+});
+
+describe("savableScratch", () => {
+  const defaults = new Set(['print("Hello World")', "int main(){}"]);
+
+  it("keeps edited scratch buffers not already saved as server tabs", () => {
+    const files = [
+      { path: "main.py", content: "print('my real code')" },
+      { path: "notes.py", content: "x = 1" }
+    ];
+    expect(savableScratch(files, {}, defaults).map((f) => f.path)).toEqual(["main.py", "notes.py"]);
+  });
+
+  it("drops pristine defaults, empty buffers, and existing server tabs", () => {
+    const files = [
+      { path: "main.py", content: 'print("Hello World")' }, // default template
+      { path: "empty.py", content: "   \n" }, // blank
+      { path: "saved.c", content: "int main(){ return 1; }" } // already a server tab
+    ];
+    expect(savableScratch(files, { "saved.c": { savedContent: "" } }, defaults)).toEqual([]);
   });
 });

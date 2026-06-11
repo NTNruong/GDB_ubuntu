@@ -43,7 +43,7 @@ import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
 import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
-import { remapKeys, remapPath, resolveStopped, type DebugFileMap } from "./serverPaths";
+import { remapKeys, remapPath, resolveStopped, savableScratch, type DebugFileMap } from "./serverPaths";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
@@ -473,8 +473,43 @@ export function App() {
       setUser(name);
       setShowLogin(false);
       await refreshTree();
+
+      // Offer to save edited scratch buffers into the user's home (EXPLORER-008).
+      // Pristine/empty scratch is left alone (it stays visibly labeled "Scratch").
+      const defaults = new Set(LANGUAGE_CAPABILITIES.map((cap) => cap.defaultSource));
+      const candidates = savableScratch(filesRef.current, serverTabsRef.current, defaults);
+      if (candidates.length === 0) {
+        return;
+      }
+      const list = candidates.map((file) => file.path).join(", ");
+      const plural = candidates.length === 1 ? "" : "s";
+      if (!window.confirm(`Save your edited scratch file${plural} (${list}) into /home/${name}?`)) {
+        return;
+      }
+
+      try {
+        // Don't overwrite existing home files — skip name collisions and report them.
+        const existing = new Set((await filesApi.tree()).entries.map((entry) => entry.name));
+        const skipped: string[] = [];
+        for (const file of candidates) {
+          if (existing.has(file.path)) {
+            skipped.push(file.path);
+            continue;
+          }
+          await filesApi.write(file.path, file.content);
+          setServerTabs((current) => ({ ...current, [file.path]: { savedContent: file.content } }));
+        }
+        await refreshTree();
+        if (skipped.length > 0) {
+          appendOutput("system", `Not saved (a file with that name already exists): ${skipped.join(", ")}\n`);
+        }
+      } catch (error) {
+        if (!handleAuthError(error)) {
+          appendOutput("system", `${messageFromError(error)}\n`);
+        }
+      }
     },
-    [refreshTree]
+    [appendOutput, handleAuthError, refreshTree]
   );
 
   const handleLogout = useCallback(async () => {
@@ -542,8 +577,17 @@ export function App() {
         dirty: file ? file.content !== saved.savedContent : false
       };
     }
+    // When logged in, flag the remaining open buffers as local scratch so they
+    // are visibly distinct from /home/<user> files (EXPLORER-008).
+    if (user) {
+      for (const file of files) {
+        if (!(file.path in serverTabs)) {
+          meta[file.path] = { ...meta[file.path], scratch: true };
+        }
+      }
+    }
     return meta;
-  }, [serverTabs, files]);
+  }, [serverTabs, files, user]);
 
   const stopSockets = useCallback(() => {
     runSocket.current?.close();
