@@ -59,6 +59,40 @@ The optional per-user file explorer (Phase 2) is auth-gated and stores files on 
 
 `users.json` (default `<USER_HOMES_ROOT>/users.json`) and the per-user homes directory are the **only stateful host paths** the app owns — back them up together. There is no public self-registration; accounts are admin-managed via the CLI above.
 
+## Public Funnel route allowlist (EXPLORER-001/002, ISSUE-049)
+
+The container nginx (`apps/frontend/nginx.conf`) already proxies **all** of `/api/` to the api service, so login / Explorer / run / debug work on the LAN URL (`http://<host>:8080`). The **public Tailscale Funnel** is fronted by a **host** nginx (`/etc/nginx/conf.d/gdb_ubuntu.conf`, *not* in git): if it only allowlists the original run/debug routes, the Phase-2 account + file APIs return nginx `404` and **public login fails while LAN login works**.
+
+Fix on the host (operator task — not deployable from the repo):
+
+1. Ensure the Funnel `server {}` proxies every Phase-2 route. Simplest is a single catch-all that mirrors the container nginx:
+   ```nginx
+   # /etc/nginx/conf.d/gdb_ubuntu.conf  (inside the Funnel server block)
+   client_max_body_size 8m;            # match MAX_REQUEST_BODY_BYTES (packages/shared)
+
+   location /api/ {                    # covers /api/auth/*, /api/files/*, /api/run*,
+     proxy_pass http://127.0.0.1:8080; # /api/debug*, /api/languages, /api/health
+     proxy_http_version 1.1;
+     proxy_set_header Host $host;
+     proxy_set_header Upgrade $http_upgrade;        # websockets (debug, run ws)
+     proxy_set_header Connection "upgrade";
+     proxy_buffering off;                            # SSE run event stream
+     proxy_read_timeout 1h;
+     proxy_send_timeout 1h;
+   }
+   ```
+   (If the host config must keep an explicit allowlist instead of a catch-all, add `location /api/auth/` and `location /api/files/` blocks alongside the existing ones.)
+2. `sudo nginx -t && sudo systemctl reload nginx`.
+3. Set `SESSION_COOKIE_SECURE=1` (see above) since the Funnel is HTTPS.
+
+### Verification gate — do not consider the public route "done" until all pass on `https://<funnel-host>/`:
+
+- Login succeeds; `GET /api/auth/me` returns the user; `GET /api/files/tree` returns the tree (not 404).
+- Explorer create / read / write / rename / delete works.
+- Run works **and** Stop cancels an infinite run with no orphan container/job (EXPLORER-005).
+- Debug starts and stops at a breakpoint.
+- The login / run / debug traffic appears in `docker compose logs api runner` of the **same** stack being tested, and `docker compose ps` shows **frontend + api + runner** (a stale/duplicate stack on `:8080` is ISSUE-046 — redeploy one clean stack from current source).
+
 ## WinSCP
 
 Used **only** for `LOG.md` and `ISSUES.md` (gitignored, never tracked) — copying them straight into `/opt/apps/GDB_ubuntu/` does not interfere with `git pull --ff-only`. Do **not** deploy source code via WinSCP — push to `main` instead, otherwise the server tree diverges from git and the next auto-deploy `pull --ff-only` may fail.
