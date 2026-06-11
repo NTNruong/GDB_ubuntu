@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TreeNode } from "@internal/shared";
 import {
   duplicateName,
+  hasDirtyServerTab,
   pathExistsInTree,
   remapKeys,
   remapPath,
@@ -121,5 +122,25 @@ describe("pathExistsInTree", () => {
   it("returns false for absent paths", () => {
     expect(pathExistsInTree(tree, "main-copy.c")).toBe(false);
     expect(pathExistsInTree(tree, "src/other.c")).toBe(false);
+  });
+});
+
+describe("hasDirtyServerTab", () => {
+  it("is true only when an open server tab differs from its saved content", () => {
+    const files = [
+      { path: "a.c", content: "edited" },
+      { path: "b.c", content: "same" }
+    ];
+    const tabs = { "a.c": { savedContent: "saved" }, "b.c": { savedContent: "same" } };
+    expect(hasDirtyServerTab(files, tabs)).toBe(true);
+  });
+
+  it("ignores scratch buffers and matching server tabs", () => {
+    const files = [
+      { path: "scratch.c", content: "typed but not a server tab" },
+      { path: "b.c", content: "same" }
+    ];
+    const tabs = { "b.c": { savedContent: "same" } };
+    expect(hasDirtyServerTab(files, tabs)).toBe(false);
   });
 });

@@ -45,6 +45,7 @@ import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
 import {
   duplicateName,
+  hasDirtyServerTab,
   pathExistsInTree,
   remapKeys,
   remapPath,
@@ -1255,6 +1256,20 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [user, saveActiveServerTab]);
+
+  // Guard against losing unsaved server-tab edits on tab close/reload (ISSUE-048).
+  // Attached only while something is dirty; cleared when clean or on logout.
+  useEffect(() => {
+    if (!hasDirtyServerTab(files, serverTabs)) {
+      return undefined;
+    }
+    const handler = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [files, serverTabs]);
 
   useEffect(() => {
     if (!isRunActive) {

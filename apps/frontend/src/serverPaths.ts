@@ -61,6 +61,17 @@ export function duplicateName(path: string): string {
   return `${dir}${stem}-copy${ext}`;
 }
 
+/** Whether any open server-backed tab has unsaved changes (drives the unload guard). */
+export function hasDirtyServerTab(
+  files: readonly { path: string; content: string }[],
+  serverTabs: Record<string, { savedContent: string }>
+): boolean {
+  return files.some((file) => {
+    const saved = serverTabs[file.path];
+    return saved !== undefined && file.content !== saved.savedContent;
+  });
+}
+
 /** Whether a "/"-separated path exists anywhere in a nested explorer tree. */
 export function pathExistsInTree(nodes: readonly TreeNode[], path: string): boolean {
   for (const node of nodes) {
