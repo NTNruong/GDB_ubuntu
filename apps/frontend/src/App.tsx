@@ -421,13 +421,23 @@ export function App() {
 
   const handleDeleteServer = useCallback(
     async (node: TreeNode) => {
-      if (!window.confirm(`Delete "${node.path}"? This cannot be undone.`)) {
+      const isAffected = (p: string) => p === node.path || p.startsWith(`${node.path}/`);
+      // Stronger confirm when a folder delete will close open (esp. unsaved) tabs.
+      const openTabs = filesRef.current.filter((file) => isAffected(file.path) && file.path in serverTabsRef.current);
+      const dirtyCount = openTabs.filter(
+        (file) => file.content !== serverTabsRef.current[file.path]!.savedContent
+      ).length;
+      const message =
+        node.type === "dir" && openTabs.length > 0
+          ? `Delete folder "${node.path}" and close ${openTabs.length} open file${openTabs.length === 1 ? "" : "s"}` +
+            `${dirtyCount > 0 ? ` (${dirtyCount} with unsaved changes)` : ""}? This cannot be undone.`
+          : `Delete "${node.path}"? This cannot be undone.`;
+      if (!window.confirm(message)) {
         return;
       }
       try {
         await filesApi.remove(node.path);
         await refreshTree();
-        const isAffected = (p: string) => p === node.path || p.startsWith(`${node.path}/`);
         setServerTabs((current) => {
           const next: Record<string, { savedContent: string }> = {};
           for (const [p, value] of Object.entries(current)) {

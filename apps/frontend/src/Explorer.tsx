@@ -55,9 +55,14 @@ export function Explorer({
       return;
     }
     const close = () => setMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
+    // Attach on the next tick so the same right-click/click that opened the menu
+    // doesn't bubble to window and immediately close it (open-then-close race).
+    const id = window.setTimeout(() => {
+      window.addEventListener("click", close);
+      window.addEventListener("contextmenu", close);
+    }, 0);
     return () => {
+      window.clearTimeout(id);
       window.removeEventListener("click", close);
       window.removeEventListener("contextmenu", close);
     };
@@ -143,6 +148,7 @@ export function Explorer({
           onClick={() => (isDir ? toggle(node.path) : onOpenFile(node.path))}
           onContextMenu={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             setMenu({ node, x: e.clientX, y: e.clientY });
           }}
           title={node.path}

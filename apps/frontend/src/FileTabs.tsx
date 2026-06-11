@@ -111,9 +111,14 @@ export function FileTabs({
       return;
     }
     const close = () => setMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
+    // Defer so the opening right-click/click doesn't bubble to window and close
+    // the menu it just opened (open-then-close race).
+    const id = window.setTimeout(() => {
+      window.addEventListener("click", close);
+      window.addEventListener("contextmenu", close);
+    }, 0);
     return () => {
+      window.clearTimeout(id);
       window.removeEventListener("click", close);
       window.removeEventListener("contextmenu", close);
     };
@@ -177,6 +182,7 @@ export function FileTabs({
             }}
             onContextMenu={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               onSelect(file.path);
               setMenu({ path: file.path, x: event.clientX, y: event.clientY });
             }}
