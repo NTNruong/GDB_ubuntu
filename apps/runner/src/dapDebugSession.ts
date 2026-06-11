@@ -1018,6 +1018,9 @@ function pythonDebugRunnerSource(): string {
     "",
     "target = sys.argv[1]",
     "sys.argv = [target, *sys.argv[2:]]",
+    // Restore /workspace on sys.path so the debuggee can import sibling modules;
+    // launched under `python3 -I`, which otherwise strips the script dir (ISSUE-051).
+    "sys.path.insert(0, '/workspace')",
     "stdin = open('/workspace/stdin.txt', 'r', encoding='utf-8', errors='replace')",
     "try:",
     "    sys.stdin = stdin",

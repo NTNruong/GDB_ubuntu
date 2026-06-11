@@ -101,6 +101,26 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(events.some((event) => event.type === "variables")).toBe(true);
   });
 
+  it("imports sibling modules in a python folder debug (ISSUE-051)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugUntilStopped({
+      language: "python",
+      files: [
+        { path: "main.py", content: "from helper import value\nresult = value()\nprint(result)" },
+        { path: "helper.py", content: "def value():\n    return 88" }
+      ],
+      stdin: "",
+      argv: [],
+      breakpoints: [{ path: "main.py", line: 3 }],
+      clientId: `test-python-import-${Date.now()}`
+    });
+
+    expect(events.find((event): event is Extract<DebugEvent, { type: "stopped" }> => event.type === "stopped")?.line).toBe(3);
+    const lastVariables = [...events].reverse().find(
+      (event): event is Extract<DebugEvent, { type: "variables" }> => event.type === "variables"
+    );
+    expect(lastVariables?.variables.find((variable) => variable.name === "result")?.value).toBe("88");
+  });
+
   async function debugUntilStopped(request: DebugRequest): Promise<DebugEvent[]> {
     const runner = new DockerRunner(config);
     const events = new EventBuffer<DebugEvent>();

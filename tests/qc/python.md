@@ -1,7 +1,7 @@
 # tests/qc/python.md — Python 3.12 capability checklist
 
 Phạm vi: smoke + asyncio + typing/dataclass + stdlib showcase.
-Runner: `python3 -I` (xem [`docker/runner-python/run-python`](../../docker/runner-python/run-python)).
+Runner: `python3 -I -c <runpy wrapper>` with `/workspace` re-inserted on `sys.path` so folder runs import siblings (ISSUE-051; see [`docker/runner-python/run-python`](../../docker/runner-python/run-python)).
 Image pre-installed: `numpy 2.1.3`, `pandas 2.2.3`, `requests 2.32.3`, `debugpy 1.8.20`.
 
 > 12 fields template. Code Python inline.

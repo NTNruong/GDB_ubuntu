@@ -32,4 +32,8 @@ run_with_metrics() {
   return "$exit_code"
 }
 
-run_with_metrics python3 -I /workspace/main.py "$@"
+# Keep -I (isolated: no user site, ignore env) for sandbox hardening, but restore
+# /workspace on sys.path so a folder run's main.py can import sibling modules
+# (-I/-P otherwise strip the script dir from sys.path) — ISSUE-051.
+PYRUN='import sys, runpy; sys.path.insert(0, "/workspace"); t = "/workspace/main.py"; sys.argv = [t, *sys.argv[1:]]; runpy.run_path(t, run_name="__main__")'
+run_with_metrics python3 -I -c "$PYRUN" "$@"

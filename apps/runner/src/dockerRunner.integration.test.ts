@@ -51,6 +51,21 @@ maybeDescribe("DockerRunner integration", () => {
     expect(metric(events)).toBeDefined();
   });
 
+  it("imports sibling modules in a python folder run (ISSUE-051)", async () => {
+    const events = await run({
+      language: "python",
+      files: [
+        { path: "main.py", content: "from helper import value\nprint(f'py-main={value()}')" },
+        { path: "helper.py", content: "def value():\n    return 88" }
+      ],
+      stdin: "",
+      argv: []
+    });
+
+    expect(text(events, "stdout")).toContain("py-main=88");
+    expect(exit(events)?.code).toBe(0);
+  });
+
   it("emits run metrics for non-zero exits after execution starts", async () => {
     const events = await run({
       language: "c",
