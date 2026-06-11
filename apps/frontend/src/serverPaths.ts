@@ -29,3 +29,34 @@ export function remapKeys<T>(record: Record<string, T>, remap: (key: string) => 
   }
   return next;
 }
+
+/** Basename → original server path + content for the active folder's run/debug. */
+export type DebugFileMap = Map<string, { serverPath: string; content: string }>;
+
+/**
+ * Resolve a debug "stopped" file (a flat workspace basename like "util.c") back to
+ * the editor tab to activate. For a server folder run, the map carries every
+ * gathered file's original path + content, so a stop in a secondary file — even one
+ * whose tab was never opened (step-into) — resolves correctly; `content` is returned
+ * only when the tab still needs opening. Falls back to a bare basename that is
+ * already open (the anonymous multi-file case). `undefined` ⇒ keep the current tab.
+ */
+export function resolveStopped(
+  base: string | undefined,
+  fileMap: DebugFileMap,
+  openPaths: readonly string[]
+): { path: string; content?: string } | undefined {
+  if (!base) {
+    return undefined;
+  }
+  const mapped = fileMap.get(base);
+  if (mapped) {
+    return openPaths.includes(mapped.serverPath)
+      ? { path: mapped.serverPath }
+      : { path: mapped.serverPath, content: mapped.content };
+  }
+  if (openPaths.includes(base)) {
+    return { path: base };
+  }
+  return undefined;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { remapKeys, remapPath } from "./serverPaths";
+import { remapKeys, remapPath, resolveStopped, type DebugFileMap } from "./serverPaths";
 
 describe("remapPath", () => {
   it("remaps the exact renamed path", () => {
@@ -31,5 +31,29 @@ describe("remapKeys", () => {
     const record = { old: { savedContent: "x" }, "other.c": { savedContent: "y" } };
     const next = remapKeys(record, (k) => remapPath(k, "old", "new"));
     expect(next).toEqual({ new: { savedContent: "x" }, "other.c": { savedContent: "y" } });
+  });
+});
+
+describe("resolveStopped", () => {
+  const map: DebugFileMap = new Map([
+    ["util.c", { serverPath: "proj/util.c", content: "int u;" }],
+    ["main.c", { serverPath: "proj/main.c", content: "int main(){}" }]
+  ]);
+
+  it("maps a stopped basename to its server path when the tab is already open", () => {
+    expect(resolveStopped("util.c", map, ["proj/main.c", "proj/util.c"])).toEqual({ path: "proj/util.c" });
+  });
+
+  it("returns content to open a stopped file whose tab is not open (step-into)", () => {
+    expect(resolveStopped("util.c", map, ["proj/main.c"])).toEqual({ path: "proj/util.c", content: "int u;" });
+  });
+
+  it("falls back to a bare basename that is open (anonymous multi-file)", () => {
+    expect(resolveStopped("helper.c", new Map(), ["main.c", "helper.c"])).toEqual({ path: "helper.c" });
+  });
+
+  it("returns undefined when nothing matches or base is missing", () => {
+    expect(resolveStopped("ghost.c", map, ["proj/main.c"])).toBeUndefined();
+    expect(resolveStopped(undefined, map, ["proj/main.c"])).toBeUndefined();
   });
 });

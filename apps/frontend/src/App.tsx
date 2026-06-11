@@ -43,7 +43,7 @@ import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
 import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
-import { remapKeys, remapPath } from "./serverPaths";
+import { remapKeys, remapPath, resolveStopped, type DebugFileMap } from "./serverPaths";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
@@ -121,6 +121,9 @@ export function App() {
   const activePathRef = useRef(activePath);
   const filesRef = useRef(files);
   const serverTabsRef = useRef(serverTabs);
+  // Basename → server path/content for the folder of the active server debug run;
+  // lets a stop in a secondary file activate the right tab (ISSUE-052).
+  const debugFileMapRef = useRef<DebugFileMap>(new Map());
 
   const capability = useMemo(
     () => LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage,
@@ -496,6 +499,13 @@ export function App() {
       const dir = dirOf(activePath);
       await saveDirtyInDir(dir);
       const folder = await filesApi.folder(dir);
+      // Remember each gathered file's original server path + content so a debug
+      // stop in a secondary file resolves to the correct tab (ISSUE-052).
+      const map: DebugFileMap = new Map();
+      for (const file of folder.files) {
+        map.set(file.name, { serverPath: dir ? `${dir}/${file.name}` : file.name, content: file.content });
+      }
+      debugFileMapRef.current = map;
       return gatherFolderRun({
         language,
         folderDir: dir,
@@ -504,6 +514,7 @@ export function App() {
         allBreakpoints
       });
     }
+    debugFileMapRef.current = new Map();
     const scratch = files.filter((file) => !(file.path in serverTabsRef.current));
     const usable = scratch.length > 0 ? scratch : files;
     const names = new Set(usable.map((file) => file.path));
@@ -976,10 +987,23 @@ export function App() {
       if (event.type === "stopped") {
         setDebugStatus(event.reason ?? "Stopped");
         setStoppedLine(event.line);
-        const stoppedFile = basenameFromWorkspace(event.file);
-        if (stoppedFile && files.some((file) => file.path === stoppedFile)) {
-          setStoppedPath(stoppedFile);
-          setActivePath(stoppedFile);
+        const base = basenameFromWorkspace(event.file);
+        const resolved = resolveStopped(base, debugFileMapRef.current, filesRef.current.map((file) => file.path));
+        if (resolved) {
+          // Step-into a folder file whose tab isn't open yet → open it as a server tab.
+          if (resolved.content !== undefined) {
+            const content = resolved.content;
+            setFiles((current) =>
+              current.some((file) => file.path === resolved.path)
+                ? current
+                : [...current, { path: resolved.path, content }]
+            );
+            setServerTabs((current) =>
+              resolved.path in current ? current : { ...current, [resolved.path]: { savedContent: content } }
+            );
+          }
+          setStoppedPath(resolved.path);
+          setActivePath(resolved.path);
         } else {
           setStoppedPath(activePathRef.current);
         }
@@ -1024,7 +1048,7 @@ export function App() {
         appendDebug("system", `${event.message}\n`);
       }
     },
-    [appendDebug, files]
+    [appendDebug]
   );
 
   const onEditorMount: OnMount = (editor, monaco) => {
