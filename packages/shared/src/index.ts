@@ -183,7 +183,7 @@ export type RunEvent =
   | { type: "metric"; phase: "run"; elapsedMs: number; memoryBytes: number }
   | { type: "stdout"; data: string }
   | { type: "stderr"; data: string }
-  | { type: "exit"; code: number | null; signal?: string | null; timedOut: boolean; outputTruncated: boolean }
+  | { type: "exit"; code: number | null; signal?: string | null; timedOut: boolean; outputTruncated: boolean; cancelled?: boolean }
   | { type: "error"; message: string };
 
 export type DebugFrame = {

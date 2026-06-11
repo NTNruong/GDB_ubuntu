@@ -18,6 +18,7 @@ import { EventBuffer } from "./eventBuffer.js";
 
 type RunJob = {
   events: EventBuffer<RunEvent>;
+  cancel: () => void;
 };
 
 type DebugSessionLike = {
@@ -70,16 +71,28 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
 
       const id = crypto.randomUUID();
       const events = new EventBuffer<RunEvent>();
-      state.runJobs.set(id, { events });
+      const controller = new AbortController();
+      state.runJobs.set(id, { events, cancel: () => controller.abort() });
       events.emit({ type: "ready", id });
 
       request.log.info({ jobId: id, language: parsed.data.language }, "runner accepted run job");
-      void dockerRunner.run(parsed.data, events).finally(() => {
+      void dockerRunner.run(parsed.data, events, controller.signal).finally(() => {
         releaseJobSlot(state);
         setTimeout(() => state.runJobs.delete(id), 5 * 60_000);
       });
 
       return reply.code(202).send({ id });
+    });
+
+    routes.post<{ Params: { id: string } }>("/run/:id/cancel", async (request, reply) => {
+      const job = state.runJobs.get(request.params.id);
+      if (!job) {
+        return reply.code(404).send("Run job not found");
+      }
+
+      job.cancel();
+      request.log.info({ jobId: request.params.id }, "runner cancelled run job");
+      return reply.code(202).send({ ok: true });
     });
 
     routes.post<{ Body: unknown }>("/debug", async (request, reply) => {

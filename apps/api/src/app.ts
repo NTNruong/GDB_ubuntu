@@ -107,6 +107,20 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
       return reply.code(202).send(body);
     });
 
+    routes.post<{ Params: { id: string }; Reply: { ok: true } | ErrorResponse }>(
+      "/api/run/:id/cancel",
+      async (request, reply) => {
+        const response = await fetch(`${config.runnerBaseUrl}/run/${encodeURIComponent(request.params.id)}/cancel`, {
+          method: "POST"
+        });
+        if (!response.ok) {
+          const text = await response.text();
+          return reply.code(response.status).send({ error: text || "Failed to cancel run" });
+        }
+        return reply.code(202).send({ ok: true });
+      }
+    );
+
     routes.get<{ Params: { id: string } }>("/api/run/:id", { websocket: true }, (client, request) => {
       proxyWebSocket(client, `${config.runnerWsUrl}/run/${encodeURIComponent(request.params.id)}`);
     });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createRunnerServer } from "./app.js";
 import type { RunnerConfig } from "./config.js";
+import type { DockerRunner } from "./dockerRunner.js";
 
 describe("runner app", () => {
   const config: RunnerConfig = {
@@ -39,5 +40,37 @@ describe("runner app", () => {
       type: "error",
       message: "Debug session not found"
     });
+  });
+
+  it("cancels a run job (aborts the runner signal) and 404s an unknown job", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const runner = {
+      // Resolve only when cancelled, so the job stays active until /cancel.
+      run: (_request: unknown, _events: unknown, signal?: AbortSignal) => {
+        capturedSignal = signal;
+        return new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
+      },
+      readiness: async () => ({ ok: true, docker: true, images: { cpp: true, python: true } })
+    } as unknown as DockerRunner;
+
+    const app = createRunnerServer(config, runner);
+    await app.ready();
+
+    const unknown = await app.inject({ method: "POST", url: "/run/does-not-exist/cancel" });
+    expect(unknown.statusCode).toBe(404);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/run",
+      payload: { language: "python", files: [{ path: "main.py", content: "print(1)" }] }
+    });
+    expect(created.statusCode).toBe(202);
+    const { id } = created.json() as { id: string };
+
+    const cancelled = await app.inject({ method: "POST", url: `/run/${id}/cancel` });
+    expect(cancelled.statusCode).toBe(202);
+    expect(capturedSignal?.aborted).toBe(true);
+
+    await app.close();
   });
 });

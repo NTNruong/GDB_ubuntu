@@ -110,6 +110,7 @@ export function App() {
   const contentAreaRef = useRef<HTMLDivElement | null>(null);
   const runSocket = useRef<WebSocket | null>(null);
   const runEvents = useRef<EventSource | null>(null);
+  const runIdRef = useRef<string | null>(null);
   const runPhaseRef = useRef<RunPhase>("idle");
   const runLanguageRef = useRef<Language>(initialLanguage.id);
   const compileWarningsRef = useRef(0);
@@ -546,25 +547,50 @@ export function App() {
   const handleStop = useCallback(() => {
     const stoppingRun = runSocket.current !== null || runEvents.current !== null;
     const stoppingDebug = debugSocket.current !== null;
-    if (stoppingDebug && debugSocket.current?.readyState === WebSocket.OPEN) {
-      try {
-        debugSocket.current.send(JSON.stringify({ type: "stop" }));
-      } catch {
-        // Runner ws-close handler sẽ cleanup nếu send fail
-      }
-    }
-    stopSockets();
-    if (stoppingRun) {
-      setRunStatus("Stopped");
-      setIsRunActive(false);
-      appendOutput("system", "\nStopped by user\n");
-    }
+
     if (stoppingDebug) {
+      if (debugSocket.current?.readyState === WebSocket.OPEN) {
+        try {
+          debugSocket.current.send(JSON.stringify({ type: "stop" }));
+        } catch {
+          // Runner ws-close handler sẽ cleanup nếu send fail
+        }
+      }
+      debugSocket.current?.close();
+      debugSocket.current = null;
       setDebugStatus("Stopped");
       setIsDebugActive(false);
       appendDebug("system", "\nStopped by user\n");
     }
-  }, [appendDebug, appendOutput, stopSockets]);
+
+    if (stoppingRun) {
+      const id = runIdRef.current;
+      runSocket.current?.close();
+      runSocket.current = null;
+      setRunStatus("Stopping…");
+      appendOutput("system", "\nStopping…\n");
+      if (id) {
+        // Cancel the server-side container; keep the SSE open so the terminal
+        // exit({cancelled}) event closes us out (EXPLORER-005).
+        void fetch(`/api/run/${id}/cancel`, { method: "POST" }).catch(() => undefined);
+        window.setTimeout(() => {
+          // Fallback if the cancelled exit event never arrives.
+          if (runIdRef.current === id && runEvents.current) {
+            runEvents.current.close();
+            runEvents.current = null;
+            runIdRef.current = null;
+            setRunStatus("Stopped");
+            setIsRunActive(false);
+          }
+        }, 2_000);
+      } else {
+        runEvents.current?.close();
+        runEvents.current = null;
+        setRunStatus("Stopped");
+        setIsRunActive(false);
+      }
+    }
+  }, [appendDebug, appendOutput]);
 
   const startResize = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
@@ -791,6 +817,7 @@ export function App() {
       }
 
       const { id } = (await response.json()) as { id: string };
+      runIdRef.current = id;
       const events = new EventSource(`/api/run/${id}/events`);
       runEvents.current = events;
 
@@ -939,13 +966,16 @@ export function App() {
       if (event.type === "exit") {
         runEvents.current?.close();
         runEvents.current = null;
+        runIdRef.current = null;
         runPhaseRef.current = "idle";
         setIsRunActive(false);
-        setRunStatus(event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
+        setRunStatus(event.cancelled ? "Stopped" : event.timedOut ? "Timed out" : `Exited ${event.code ?? ""}`);
         const truncatedSuffix = event.outputTruncated ? " (output truncated)" : "";
         const warnings = compileWarningsRef.current;
         const warningSuffix = warnings > 0 ? `, ${warnings} Warning${warnings === 1 ? "" : "s"}` : "";
-        if (event.timedOut) {
+        if (event.cancelled) {
+          appendOutput("system", `\n■ Stopped${truncatedSuffix}\n`);
+        } else if (event.timedOut) {
           appendOutput("system", `\n⚠ Timed out${truncatedSuffix}\n`);
         } else if (event.code === 0) {
           appendOutput("system", `\n✓ Finished${warningSuffix}${truncatedSuffix}\n`);
@@ -957,6 +987,7 @@ export function App() {
       if (event.type === "error") {
         runEvents.current?.close();
         runEvents.current = null;
+        runIdRef.current = null;
         runPhaseRef.current = "idle";
         setIsRunActive(false);
         setRunStatus("Error");

@@ -42,12 +42,13 @@ export class DockerRunner {
     };
   }
 
-  async run(request: RunRequest, events: EventBuffer<RunEvent>): Promise<void> {
+  async run(request: RunRequest, events: EventBuffer<RunEvent>, signal?: AbortSignal): Promise<void> {
     const id = randomUUID();
     const workspace = await createWorkspace(id, request, this.config);
     let outputBytes = 0;
     let outputTruncated = false;
     let timedOut = false;
+    let cancelled = false;
     let container: Docker.Container | undefined;
 
     const emitLimited = async (type: "stdout" | "stderr", data: string) => {
@@ -72,7 +73,18 @@ export class DockerRunner {
       events.emit({ type, data: chunk });
     };
 
+    const emitCancelledExit = () => {
+      cancelled = true;
+      events.emit({ type: "exit", code: null, signal: "SIGKILL", timedOut: false, outputTruncated, cancelled: true });
+    };
+
     try {
+      // Stop pressed before the container even existed.
+      if (signal?.aborted) {
+        emitCancelledExit();
+        return;
+      }
+
       const image = imageForLanguage(request.language, this.config);
       container = await this.docker.createContainer({
         Image: image,
@@ -130,7 +142,23 @@ export class DockerRunner {
         stderrFilter.write(chunk.toString("utf8"));
       });
 
+      // Stop pressed during create/attach, before we start the program.
+      if (signal?.aborted) {
+        emitCancelledExit();
+        return;
+      }
+
       await container.start();
+
+      // From here a cancel must kill the running container.
+      signal?.addEventListener(
+        "abort",
+        () => {
+          cancelled = true;
+          void container?.kill().catch(() => undefined);
+        },
+        { once: true }
+      );
 
       const timeout = setTimeout(() => {
         timedOut = true;
@@ -144,9 +172,10 @@ export class DockerRunner {
       events.emit({
         type: "exit",
         code: typeof result.StatusCode === "number" ? result.StatusCode : null,
-        signal: timedOut ? "SIGKILL" : null,
+        signal: timedOut || cancelled ? "SIGKILL" : null,
         timedOut,
-        outputTruncated
+        outputTruncated,
+        cancelled
       });
     } catch (error) {
       events.emit({ type: "error", message: error instanceof Error ? error.message : "Runner failed" });
