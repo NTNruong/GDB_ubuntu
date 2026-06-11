@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { remapKeys, remapPath, resolveStopped, savableScratch, type DebugFileMap } from "./serverPaths";
+import type { TreeNode } from "@internal/shared";
+import {
+  duplicateName,
+  pathExistsInTree,
+  remapKeys,
+  remapPath,
+  resolveStopped,
+  savableScratch,
+  type DebugFileMap
+} from "./serverPaths";
 
 describe("remapPath", () => {
   it("remaps the exact renamed path", () => {
@@ -76,5 +85,41 @@ describe("savableScratch", () => {
       { path: "saved.c", content: "int main(){ return 1; }" } // already a server tab
     ];
     expect(savableScratch(files, { "saved.c": { savedContent: "" } }, defaults)).toEqual([]);
+  });
+});
+
+describe("duplicateName", () => {
+  it("inserts -copy before the extension in the same dir", () => {
+    expect(duplicateName("util.c")).toBe("util-copy.c");
+    expect(duplicateName("dir/util.c")).toBe("dir/util-copy.c");
+    expect(duplicateName("a/b/main.cpp")).toBe("a/b/main-copy.cpp");
+  });
+
+  it("handles names without an extension", () => {
+    expect(duplicateName("notes")).toBe("notes-copy");
+    expect(duplicateName("dir/notes")).toBe("dir/notes-copy");
+  });
+});
+
+describe("pathExistsInTree", () => {
+  const tree: TreeNode[] = [
+    { name: "main.c", path: "main.c", type: "file" },
+    {
+      name: "src",
+      path: "src",
+      type: "dir",
+      children: [{ name: "util.c", path: "src/util.c", type: "file" }]
+    }
+  ];
+
+  it("finds top-level and nested paths", () => {
+    expect(pathExistsInTree(tree, "main.c")).toBe(true);
+    expect(pathExistsInTree(tree, "src/util.c")).toBe(true);
+    expect(pathExistsInTree(tree, "src")).toBe(true);
+  });
+
+  it("returns false for absent paths", () => {
+    expect(pathExistsInTree(tree, "main-copy.c")).toBe(false);
+    expect(pathExistsInTree(tree, "src/other.c")).toBe(false);
   });
 });

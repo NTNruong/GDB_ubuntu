@@ -1,6 +1,7 @@
 // Path-state utilities for server-backed (explorer) tabs. Kept separate from
 // runGather.ts (which owns the run-the-folder domain) because these helpers are
 // about editor/tab path bookkeeping, not building run payloads.
+import type { TreeNode } from "@internal/shared";
 
 /**
  * Remap a "/"-separated relative path when `oldPath` is renamed to `newPath`.
@@ -43,6 +44,34 @@ export function savableScratch<T extends { path: string; content: string }>(
   return files.filter(
     (file) => !(file.path in serverTabs) && file.content.trim() !== "" && !defaultSources.has(file.content)
   );
+}
+
+/**
+ * Copy target for "Duplicate": insert "-copy" before the extension, same dir.
+ * Uses a hyphen (not a space) so the result stays a valid path segment.
+ * e.g. "dir/util.c" → "dir/util-copy.c", "notes" → "notes-copy".
+ */
+export function duplicateName(path: string): string {
+  const slash = path.lastIndexOf("/");
+  const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
+  const base = slash >= 0 ? path.slice(slash + 1) : path;
+  const dot = base.lastIndexOf(".");
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : "";
+  return `${dir}${stem}-copy${ext}`;
+}
+
+/** Whether a "/"-separated path exists anywhere in a nested explorer tree. */
+export function pathExistsInTree(nodes: readonly TreeNode[], path: string): boolean {
+  for (const node of nodes) {
+    if (node.path === path) {
+      return true;
+    }
+    if (node.children && pathExistsInTree(node.children, path)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /** Basename → original server path + content for the active folder's run/debug. */

@@ -17,6 +17,7 @@ type ExplorerProps = {
   onCreate(parentDir: string, name: string, kind: "file" | "folder"): void;
   onRename(path: string, newName: string): void;
   onDelete(node: TreeNode): void;
+  onDuplicate(node: TreeNode): void;
 };
 
 type Menu = { node: TreeNode | null; x: number; y: number } | null;
@@ -35,7 +36,8 @@ export function Explorer({
   onRefresh,
   onCreate,
   onRename,
-  onDelete
+  onDelete,
+  onDuplicate
 }: ExplorerProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [menu, setMenu] = useState<Menu>(null);
@@ -217,6 +219,17 @@ export function Explorer({
               <li role="menuitem" onClick={() => startRename(menu.node!)}>
                 Rename
               </li>
+              {menu.node.type === "file" && (
+                <li
+                  role="menuitem"
+                  onClick={() => {
+                    onDuplicate(menu.node!);
+                    setMenu(null);
+                  }}
+                >
+                  Duplicate
+                </li>
+              )}
               <li
                 role="menuitem"
                 className="menu-danger"

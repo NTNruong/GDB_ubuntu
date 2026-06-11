@@ -43,7 +43,15 @@ import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
 import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
-import { remapKeys, remapPath, resolveStopped, savableScratch, type DebugFileMap } from "./serverPaths";
+import {
+  duplicateName,
+  pathExistsInTree,
+  remapKeys,
+  remapPath,
+  resolveStopped,
+  savableScratch,
+  type DebugFileMap
+} from "./serverPaths";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
@@ -465,6 +473,30 @@ export function App() {
       }
     },
     [appendOutput, handleAuthError, language, refreshTree]
+  );
+
+  const handleDuplicate = useCallback(
+    async (node: TreeNode) => {
+      try {
+        const src = await filesApi.read(node.path);
+        const target = duplicateName(node.path);
+        // Authoritative collision check against a fresh tree; never overwrite an
+        // existing entry — surface a duplicate error instead (EXPLORER-009a).
+        const fresh = await filesApi.tree();
+        if (pathExistsInTree(fresh.entries, target)) {
+          appendOutput("system", `Cannot duplicate: "${target}" already exists — rename it first.\n`);
+          return;
+        }
+        await filesApi.write(target, src.content);
+        await refreshTree();
+        await openServerFile(target);
+      } catch (error) {
+        if (!handleAuthError(error)) {
+          appendOutput("system", `${messageFromError(error)}\n`);
+        }
+      }
+    },
+    [appendOutput, handleAuthError, openServerFile, refreshTree]
   );
 
   const handleLogin = useCallback(
@@ -1387,6 +1419,7 @@ export function App() {
             onCreate={handleCreate}
             onRename={handleRenameServer}
             onDelete={handleDeleteServer}
+            onDuplicate={handleDuplicate}
           />
         )}
         <main
