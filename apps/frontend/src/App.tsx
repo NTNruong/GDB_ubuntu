@@ -43,6 +43,7 @@ import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
 import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
+import { remapKeys, remapPath } from "./serverPaths";
 
 type TerminalLine = {
   stream: "stdout" | "stderr" | "system";
@@ -393,26 +394,18 @@ export function App() {
       try {
         const newPath = await filesApi.rename(path, newName);
         await refreshTree();
-        setFiles((current) => current.map((file) => (file.path === path ? { ...file, path: newPath } : file)));
-        setServerTabs((current) => {
-          if (!(path in current)) {
-            return current;
-          }
-          const next = { ...current };
-          next[newPath] = next[path]!;
-          delete next[path];
-          return next;
-        });
-        setActivePath((active) => (active === path ? newPath : active));
-        setBreakpointsByPath((current) => {
-          if (!(path in current)) {
-            return current;
-          }
-          const next = { ...current };
-          next[newPath] = next[path] ?? "";
-          delete next[path];
-          return next;
-        });
+        // A rename can target a file or a folder; for a folder, every open
+        // descendant tab/breakpoint/decoration must follow from `path/...` to
+        // `newPath/...` (ISSUE-050), not just the exact path.
+        const remap = (p: string) => remapPath(p, path, newPath);
+        setFiles((current) => current.map((file) => ({ ...file, path: remap(file.path) })));
+        setServerTabs((current) => remapKeys(current, remap));
+        setBreakpointsByPath((current) => remapKeys(current, remap));
+        setActivePath((active) => remap(active));
+        setStoppedPath((stopped) => (stopped ? remap(stopped) : stopped));
+        // Hygiene: rekey decoration ids so the old subtree keys don't dangle.
+        // The decoration effect re-creates fresh decorations for the new paths.
+        decorationIdsByPath.current = remapKeys(decorationIdsByPath.current, remap);
       } catch (error) {
         if (!handleAuthError(error)) {
           appendOutput("system", `${messageFromError(error)}\n`);
