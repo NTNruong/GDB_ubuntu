@@ -46,6 +46,10 @@ function iconColorVar(path: string): string {
       return "var(--icon-js)";
     case ".java":
       return "var(--icon-java)";
+    case ".go":
+      return "var(--icon-go)";
+    case ".rs":
+      return "var(--icon-rust)";
     default:
       return "var(--text-muted)";
   }
@@ -66,6 +70,10 @@ function iconLetter(path: string): string {
       return "JS";
     case ".java":
       return "J";
+    case ".go":
+      return "Go";
+    case ".rs":
+      return "Rs";
     default:
       return "C";
   }

@@ -7,6 +7,8 @@ export type RunnerConfig = {
   pythonImage: string;
   javascriptImage: string;
   javaImage: string;
+  goImage: string;
+  rustImage: string;
   maxConcurrentJobs: number;
   runTimeoutMs: number;
   debugMaxMs: number;
@@ -46,6 +48,8 @@ export function readConfig(): RunnerConfig {
     pythonImage: process.env.PYTHON_IMAGE ?? "internal-code-runner-python:0.1.0",
     javascriptImage: process.env.JAVASCRIPT_IMAGE ?? "internal-code-runner-javascript:0.1.0",
     javaImage: process.env.JAVA_IMAGE ?? "internal-code-runner-java:0.1.0",
+    goImage: process.env.GO_IMAGE ?? "internal-code-runner-go:0.1.0",
+    rustImage: process.env.RUST_IMAGE ?? "internal-code-runner-rust:0.1.0",
     maxConcurrentJobs: Number.parseInt(process.env.MAX_CONCURRENT_JOBS ?? "6", 10),
     runTimeoutMs: Number.parseInt(process.env.RUN_TIMEOUT_MS ?? "15000", 10),
     debugMaxMs: Number.parseInt(process.env.DEBUG_MAX_MS ?? "900000", 10),

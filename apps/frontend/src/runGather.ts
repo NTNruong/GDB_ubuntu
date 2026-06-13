@@ -68,6 +68,14 @@ export function gatherFolderRun(params: {
     if (!runnable.some((file) => file.name === "Main.java")) {
       return { ok: false, error: "Java runs Main.java — add a Main.java to this folder." };
     }
+  } else if (language === "go") {
+    if (!runnable.some((file) => file.name === "main.go")) {
+      return { ok: false, error: "Go runs main.go — add a main.go to this folder." };
+    }
+  } else if (language === "rust") {
+    if (!runnable.some((file) => file.name === "main.rs")) {
+      return { ok: false, error: "Rust runs main.rs — add a main.rs to this folder." };
+    }
   } else if (!runnable.some((file) => !HEADER_EXTENSIONS.has(fileExtension(file.name)))) {
     return { ok: false, error: "No compilable source (.c/.cpp/.cc) in this folder — only headers." };
   }

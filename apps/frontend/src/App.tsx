@@ -209,7 +209,11 @@ export function App() {
             ? ".js"
             : language === "java"
               ? ".java"
-              : ".py";
+              : language === "go"
+                ? ".go"
+                : language === "rust"
+                  ? ".rs"
+                  : ".py";
     let index = 1;
     let name = `untitled${index}${ext}`;
     while (files.some((file) => file.path.toLowerCase() === name.toLowerCase())) {
@@ -1984,6 +1988,12 @@ function languageForFile(path: string): Language | undefined {
   }
   if (ext === ".java") {
     return "java";
+  }
+  if (ext === ".go") {
+    return "go";
+  }
+  if (ext === ".rs") {
+    return "rust";
   }
   return undefined;
 }

@@ -37,4 +37,12 @@ describe("assertSafeFileName", () => {
     expect(() => assertSafeFileName("Main.java", "javascript")).toThrow();
     expect(() => assertSafeFileName("main.js", "java")).toThrow();
   });
+
+  it("accepts Go and Rust file names", () => {
+    expect(() => assertSafeFileName("main.go", "go")).not.toThrow();
+    expect(() => assertSafeFileName("util.go", "go")).not.toThrow();
+    expect(() => assertSafeFileName("main.rs", "rust")).not.toThrow();
+    expect(() => assertSafeFileName("main.rs", "go")).toThrow();
+    expect(() => assertSafeFileName("main.go", "rust")).toThrow();
+  });
 });

@@ -48,6 +48,8 @@ services:
       PYTHON_IMAGE: "internal-code-runner-python:0.1.0"
       JAVASCRIPT_IMAGE: "internal-code-runner-javascript:0.1.0"
       JAVA_IMAGE: "internal-code-runner-java:0.1.0"
+      GO_IMAGE: "internal-code-runner-go:0.1.0"
+      RUST_IMAGE: "internal-code-runner-rust:0.1.0"
       MAX_CONCURRENT_JOBS: "6"
       RUN_TIMEOUT_MS: "15000"
       DEBUG_MAX_MS: "900000"
@@ -96,5 +98,19 @@ services:
     image: internal-code-runner-java:0.1.0
     build:
       context: docker/runner-java
+    profiles:
+      - runner-images
+
+  runner-go-image:
+    image: internal-code-runner-go:0.1.0
+    build:
+      context: docker/runner-go
+    profiles:
+      - runner-images
+
+  runner-rust-image:
+    image: internal-code-runner-rust:0.1.0
+    build:
+      context: docker/runner-rust
     profiles:
       - runner-images

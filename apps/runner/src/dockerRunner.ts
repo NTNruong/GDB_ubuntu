@@ -29,7 +29,7 @@ export class DockerRunner {
   async readiness(): Promise<{
     ok: boolean;
     docker: boolean;
-    images: { cpp: boolean; python: boolean; javascript: boolean; java: boolean };
+    images: { cpp: boolean; python: boolean; javascript: boolean; java: boolean; go: boolean; rust: boolean };
   }> {
     const docker = await this.ping();
     const images = docker
@@ -37,12 +37,14 @@ export class DockerRunner {
           cpp: await this.imageExists(this.config.cppImage),
           python: await this.imageExists(this.config.pythonImage),
           javascript: await this.imageExists(this.config.javascriptImage),
-          java: await this.imageExists(this.config.javaImage)
+          java: await this.imageExists(this.config.javaImage),
+          go: await this.imageExists(this.config.goImage),
+          rust: await this.imageExists(this.config.rustImage)
         }
-      : { cpp: false, python: false, javascript: false, java: false };
+      : { cpp: false, python: false, javascript: false, java: false, go: false, rust: false };
 
     return {
-      ok: docker && images.cpp && images.python && images.javascript && images.java,
+      ok: docker && images.cpp && images.python && images.javascript && images.java && images.go && images.rust,
       docker,
       images
     };
@@ -217,6 +219,12 @@ function imageForLanguage(language: Language, config: RunnerConfig): string {
   if (language === "java") {
     return config.javaImage;
   }
+  if (language === "go") {
+    return config.goImage;
+  }
+  if (language === "rust") {
+    return config.rustImage;
+  }
   return config.cppImage;
 }
 
@@ -235,6 +243,14 @@ function commandForLanguage(language: Language, argv: string[]): string[] {
 
   if (language === "java") {
     return ["/usr/local/bin/run-java", ...argv];
+  }
+
+  if (language === "go") {
+    return ["/usr/local/bin/run-go", ...argv];
+  }
+
+  if (language === "rust") {
+    return ["/usr/local/bin/run-rust", ...argv];
   }
 
   return ["/usr/local/bin/run-python", ...argv];

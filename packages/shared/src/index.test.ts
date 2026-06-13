@@ -56,19 +56,23 @@ describe("schemas", () => {
       "cpp",
       "python",
       "javascript",
-      "java"
+      "java",
+      "go",
+      "rust"
     ]);
     expect(LANGUAGE_CAPABILITIES.map((language) => language.label)).toEqual([
       "C",
       "C++",
       "Python",
       "JavaScript",
-      "Java"
+      "Java",
+      "Go",
+      "Rust"
     ]);
   });
 
   it("declares JavaScript and Java as run-only (no debugger yet)", () => {
-    for (const id of ["javascript", "java"] as const) {
+    for (const id of ["javascript", "java", "go", "rust"] as const) {
       const capability = LANGUAGE_CAPABILITIES.find((language) => language.id === id);
       expect(capability?.run).toBe(true);
       expect(capability?.debug).toBe(false);
@@ -154,6 +158,11 @@ describe("multi-file validation", () => {
     expect(() => RunRequestSchema.parse({ language: "javascript", files: cFiles("main.py") })).toThrow();
     expect(() => RunRequestSchema.parse({ language: "java", files: cFiles("Main.java", "Helper.java") })).not.toThrow();
     expect(() => RunRequestSchema.parse({ language: "java", files: cFiles("main.js") })).toThrow();
+    // Go + Rust accept their own extensions and reject foreign ones.
+    expect(() => RunRequestSchema.parse({ language: "go", files: cFiles("main.go", "util.go") })).not.toThrow();
+    expect(() => RunRequestSchema.parse({ language: "go", files: cFiles("main.rs") })).toThrow();
+    expect(() => RunRequestSchema.parse({ language: "rust", files: cFiles("main.rs", "lib.rs") })).not.toThrow();
+    expect(() => RunRequestSchema.parse({ language: "rust", files: cFiles("main.go") })).toThrow();
   });
 
   it("rejects case-insensitive duplicate file names", () => {

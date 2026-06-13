@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const LANGUAGES = ["c", "cpp", "python", "javascript", "java"] as const;
+export const LANGUAGES = ["c", "cpp", "python", "javascript", "java", "go", "rust"] as const;
 export type Language = (typeof LANGUAGES)[number];
 
 export const MAX_SOURCE_BYTES = 200_000;
@@ -25,7 +25,9 @@ export const LANGUAGE_EXTENSIONS: Record<Language, readonly string[]> = {
   cpp: [".cpp", ".cc", ".hpp", ".hh", ".h"],
   python: [".py"],
   javascript: [".js", ".mjs"],
-  java: [".java"]
+  java: [".java"],
+  go: [".go"],
+  rust: [".rs"]
 };
 
 /** Workspace files the runner writes itself — user files must not collide. */
@@ -61,6 +63,12 @@ export function defaultFileName(language: Language): string {
   }
   if (language === "java") {
     return "Main.java";
+  }
+  if (language === "go") {
+    return "main.go";
+  }
+  if (language === "rust") {
+    return "main.rs";
   }
   return "main.py";
 }
@@ -333,6 +341,32 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
       "    public static void main(String[] args) {",
       "        System.out.println(\"Hello World\");",
       "    }",
+      "}"
+    ].join("\n")
+  },
+  {
+    id: "go",
+    label: "Go",
+    run: true,
+    debug: false,
+    defaultSource: [
+      "package main",
+      "",
+      "import \"fmt\"",
+      "",
+      "func main() {",
+      "\tfmt.Println(\"Hello World\")",
+      "}"
+    ].join("\n")
+  },
+  {
+    id: "rust",
+    label: "Rust",
+    run: true,
+    debug: false,
+    defaultSource: [
+      "fn main() {",
+      "    println!(\"Hello World\");",
       "}"
     ].join("\n")
   }

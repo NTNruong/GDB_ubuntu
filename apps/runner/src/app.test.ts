@@ -11,6 +11,8 @@ describe("runner app", () => {
     pythonImage: "internal-code-runner-python:test",
     javascriptImage: "internal-code-runner-javascript:test",
     javaImage: "internal-code-runner-java:test",
+    goImage: "internal-code-runner-go:test",
+    rustImage: "internal-code-runner-rust:test",
     maxConcurrentJobs: 6,
     runTimeoutMs: 1_000,
     debugMaxMs: 1_000,
@@ -52,7 +54,7 @@ describe("runner app", () => {
         capturedSignal = signal;
         return new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve()));
       },
-      readiness: async () => ({ ok: true, docker: true, images: { cpp: true, python: true, javascript: true, java: true } })
+      readiness: async () => ({ ok: true, docker: true, images: { cpp: true, python: true, javascript: true, java: true, go: true, rust: true } })
     } as unknown as DockerRunner;
 
     const app = createRunnerServer(config, runner);
