@@ -363,7 +363,7 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
     id: "rust",
     label: "Rust",
     run: true,
-    debug: false,
+    debug: true,
     defaultSource: [
       "fn main() {",
       "    println!(\"Hello World\");",

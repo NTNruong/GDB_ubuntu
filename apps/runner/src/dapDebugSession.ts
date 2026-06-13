@@ -959,7 +959,7 @@ export function launchArgumentsFor(request: Pick<DebugRequest, "language" | "arg
   }
 
   return {
-    name: request.language === "c" ? "C" : "C++",
+    name: request.language === "c" ? "C" : request.language === "rust" ? "Rust" : "C++",
     type: "gdb",
     program: "/exec/program",
     args: request.argv,
@@ -1003,11 +1003,21 @@ function commandForLanguage(language: Language, argv: string[]): string[] {
     return ["/usr/local/bin/debug-dap-cpp", ...argv];
   }
 
+  if (language === "rust") {
+    return ["/usr/local/bin/debug-dap-rust", ...argv];
+  }
+
   return ["/usr/local/bin/debug-dap-python", ...argv];
 }
 
 function imageForLanguage(language: Language, config: RunnerConfig): string {
-  return language === "python" ? config.pythonImage : config.cppImage;
+  if (language === "python") {
+    return config.pythonImage;
+  }
+  if (language === "rust") {
+    return config.rustImage;
+  }
+  return config.cppImage;
 }
 
 

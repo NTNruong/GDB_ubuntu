@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+echo "__RUNNER_PHASE__:compile:start" >&2
+if [ ! -f /workspace/main.rs ]; then
+  echo "No main.rs to compile" >&2
+  exit 1
+fi
+# Debug info, no optimization so line tables + locals are faithful. rustc pulls in
+# sibling files via `mod` declarations from main.rs.
+rustc -g -C opt-level=0 main.rs -o /exec/program
+echo "__RUNNER_PHASE__:compile:done" >&2
+
+cat > /tmp/gdb-stdin.gdb << 'GDBEOF'
+set exec-wrapper sh -c 'exec "$@" </workspace/stdin.txt >/workspace/tmp/program.out 2>&1' --
+GDBEOF
+exec gdb --interpreter=dap --quiet --init-command=/tmp/gdb-stdin.gdb

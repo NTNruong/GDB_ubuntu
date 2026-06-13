@@ -117,7 +117,12 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
       }
 
       const events = new EventBuffer<DebugEvent>();
-      const createDebugSession = config.debugEngine === "mi" && parsed.data.language !== "python" ? DebugSession : DapDebugSession;
+      // MI engine only implements C/C++ (debug-c/debug-cpp); every other language
+      // (python, rust, …) must use DAP regardless of DEBUG_ENGINE.
+      const createDebugSession =
+        config.debugEngine === "mi" && (parsed.data.language === "c" || parsed.data.language === "cpp")
+          ? DebugSession
+          : DapDebugSession;
       const session = new createDebugSession(dockerRunner.docker, config, parsed.data, events, () => {
         state.debugSessions.delete(session.id);
         state.debugByClient.delete(parsed.data.clientId);

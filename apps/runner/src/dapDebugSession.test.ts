@@ -168,6 +168,15 @@ describe("launchArgumentsFor", () => {
     expect(args.args).toEqual(["a", "b"]);
   });
 
+  it("debugs Rust through the same gdb launch shape as C/C++", () => {
+    const args = launchArgumentsFor({ language: "rust", argv: ["x"] });
+    expect(args.type).toBe("gdb");
+    expect(args.program).toBe("/exec/program");
+    expect(args.stopAtBeginningOfMainSubprogram).toBe(true);
+    expect(args).not.toHaveProperty("stopAtEntry");
+    expect(args.args).toEqual(["x"]);
+  });
+
   it("does not send any stop-on-entry flag to debugpy (Python)", () => {
     const args = launchArgumentsFor({ language: "python", argv: ["x"] });
     expect(args).not.toHaveProperty("stopAtBeginningOfMainSubprogram");
