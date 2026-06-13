@@ -206,6 +206,11 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* As a grid item of .app-shell, the topbar defaults to min-width:auto (its
+     min-content), so it nongs the auto column past the viewport and never
+     pressures its flex children to shrink. min-width:0 lets it be clamped to the
+     column width, propagating the deficit down to .args-input/.brand (ISSUE-047). */
+  min-width: 0;
   min-height: 56px;
   padding: 10px 14px;
   border-bottom: none;
