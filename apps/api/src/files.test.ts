@@ -96,6 +96,27 @@ describe("file API", () => {
     expect(files.find((f) => f.name === "a.c")?.content).toBe("AAA");
   });
 
+  it("lists top-level home files when path is empty (root-folder run, ISSUE-053)", async () => {
+    await authed("PUT", "/api/files/content", { path: "main.c", content: "int main(){}" });
+    await authed("PUT", "/api/files/content", { path: "util.h", content: "// h" });
+    await authed("POST", "/api/files/mkdir", { path: "sub" });
+    await authed("PUT", "/api/files/content", { path: "sub/nested.c", content: "// nested" });
+
+    const res = await authed("GET", "/api/files/folder?path=");
+    expect(res.statusCode).toBe(200);
+    const files = res.json().files as { name: string; content: string }[];
+    expect(files.map((f) => f.name).sort()).toEqual(["main.c", "util.h"]);
+    expect(files.find((f) => f.name === "main.c")?.content).toBe("int main(){}");
+
+    // No `path` query at all behaves the same as the home root.
+    const res2 = await authed("GET", "/api/files/folder");
+    expect(res2.statusCode).toBe(200);
+    expect((res2.json().files as { name: string }[]).map((f) => f.name).sort()).toEqual([
+      "main.c",
+      "util.h"
+    ]);
+  });
+
   it.each([
     "../escape.c",
     "a/../../escape.c",

@@ -884,7 +884,15 @@ export function App() {
       return;
     }
 
-    const payload = await buildRunPayload();
+    let payload: Awaited<ReturnType<typeof buildRunPayload>>;
+    try {
+      payload = await buildRunPayload();
+    } catch (error) {
+      setRunStatus("Failed");
+      setIsRunActive(false);
+      appendOutput("system", `${messageFromError(error)}\n`);
+      return;
+    }
     if (!payload.ok) {
       setRunStatus("Failed");
       setIsRunActive(false);
@@ -954,7 +962,15 @@ export function App() {
       return;
     }
 
-    const payload = await buildRunPayload();
+    let payload: Awaited<ReturnType<typeof buildRunPayload>>;
+    try {
+      payload = await buildRunPayload();
+    } catch (error) {
+      setDebugStatus("Failed");
+      setIsDebugActive(false);
+      appendDebug("system", `${messageFromError(error)}\n`);
+      return;
+    }
     if (!payload.ok) {
       setDebugStatus("Failed");
       setIsDebugActive(false);

@@ -53,6 +53,20 @@ function readPathQuery(request: FastifyRequest): string {
 }
 
 /**
+ * Like {@link readPathQuery} but a missing/empty `path` means the home root
+ * (`""`). Used by `/api/files/folder` so "run the whole folder" works for a
+ * top-level file, whose dir is `""` (ISSUE-053). Non-empty paths still go
+ * through the strict `UserPathSchema` shape check.
+ */
+function readOptionalPathQuery(request: FastifyRequest): string {
+  const raw = (request.query as { path?: unknown }).path;
+  if (raw === undefined || raw === "") {
+    return "";
+  }
+  return readPathQuery(request);
+}
+
+/**
  * Per-user file explorer API. Every route is auth-gated; paths are confined to
  * the user's home (resolve + prefix assert + symlink rejection in pathSafety).
  */
@@ -91,8 +105,10 @@ export function registerFiles(app: FastifyInstance, config: ApiConfig): void {
     async (request, reply) => {
       try {
         const root = await userRootFor(request, config);
-        const rel = readPathQuery(request);
-        const abs = await assertSafePath(root, rel);
+        // Empty path = the home root itself (already the trusted jail base, so
+        // no traversal check needed); any other path is shape-checked + jailed.
+        const rel = readOptionalPathQuery(request);
+        const abs = rel === "" ? root : await assertSafePath(root, rel);
         const dirents = await readdir(abs, { withFileTypes: true });
         const files: FolderFilesResponse["files"] = [];
         for (const dirent of dirents) {
