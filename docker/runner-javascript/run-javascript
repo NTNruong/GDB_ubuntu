@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+echo "__RUNNER_PHASE__:run:start" >&2
+run_with_metrics() {
+  local rss_file="/workspace/tmp/run-rss.txt"
+  rm -f "$rss_file"
+
+  local start_ns
+  start_ns=$(date +%s%N)
+
+  set +e
+  /usr/bin/time -f "max_rss_kb=%M" -o "$rss_file" \
+    /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" "$@" < /workspace/stdin.txt
+  local exit_code=$?
+  set -e
+
+  local end_ns elapsed_ms max_rss_kb
+  end_ns=$(date +%s%N)
+  elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+  max_rss_kb="$(sed -n 's/^max_rss_kb=//p' "$rss_file" 2>/dev/null | tail -n 1)"
+
+  if [[ -n "$max_rss_kb" ]]; then
+    printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" \
+      "$(printf "%d.%03d" $((elapsed_ms / 1000)) $((elapsed_ms % 1000)))" "$max_rss_kb" >&2
+  fi
+
+  return "$exit_code"
+}
+
+# Interpreted, like Python — no compile phase. Run main.js from the workspace
+# root so a folder run's main.js can require sibling modules.
+run_with_metrics node /workspace/main.js "$@"

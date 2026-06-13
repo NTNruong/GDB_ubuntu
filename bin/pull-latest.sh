@@ -21,7 +21,10 @@ git pull --ff-only "$REMOTE" "$BRANCH"
 
 if [ "$REBUILD_RUNNER_IMAGES" = "1" ]; then
   echo "Rebuilding runner images..."
-  docker compose --profile runner-images build runner-cpp-image runner-python-image
+  # Build every service in the runner-images profile (cpp, python, javascript,
+  # java, ...) so adding a language never needs a change here. Docker layer cache
+  # makes unchanged images a no-op.
+  docker compose --profile runner-images build
 fi
 
 if [ "$RESTART_APP" = "1" ]; then

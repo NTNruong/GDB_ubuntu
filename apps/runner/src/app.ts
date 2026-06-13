@@ -2,6 +2,7 @@ import websocket from "@fastify/websocket";
 import {
   DebugCommandSchema,
   DebugRequestSchema,
+  LANGUAGE_CAPABILITIES,
   MAX_REQUEST_BODY_BYTES,
   RunRequestSchema,
   type DebugCommand,
@@ -99,6 +100,12 @@ export function createRunnerServer(config: RunnerConfig, dockerRunner = new Dock
       const parsed = DebugRequestSchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send(parsed.error.issues[0]?.message ?? "Invalid debug request");
+      }
+
+      // Run-only languages (debug:false) have no debug entrypoint — reject before
+      // creating a session so we never fall through to a wrong adapter.
+      if (!LANGUAGE_CAPABILITIES.find((capability) => capability.id === parsed.data.language)?.debug) {
+        return reply.code(400).send(`Debugging is not supported for ${parsed.data.language}`);
       }
 
       if (state.debugByClient.has(parsed.data.clientId)) {

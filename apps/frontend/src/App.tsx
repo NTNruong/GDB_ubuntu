@@ -197,7 +197,16 @@ export function App() {
   );
 
   const addFile = useCallback(() => {
-    const ext = language === "cpp" ? ".cpp" : language === "c" ? ".c" : ".py";
+    const ext =
+      language === "cpp"
+        ? ".cpp"
+        : language === "c"
+          ? ".c"
+          : language === "javascript"
+            ? ".js"
+            : language === "java"
+              ? ".java"
+              : ".py";
     let index = 1;
     let name = `untitled${index}${ext}`;
     while (files.some((file) => file.path.toLowerCase() === name.toLowerCase())) {
@@ -1951,6 +1960,12 @@ function languageForFile(path: string): Language | undefined {
   }
   if (ext === ".c") {
     return "c";
+  }
+  if (ext === ".js" || ext === ".mjs") {
+    return "javascript";
+  }
+  if (ext === ".java") {
+    return "java";
   }
   return undefined;
 }

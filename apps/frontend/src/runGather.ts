@@ -60,6 +60,14 @@ export function gatherFolderRun(params: {
     if (!runnable.some((file) => file.name === "main.py")) {
       return { ok: false, error: "Python runs main.py — add a main.py to this folder." };
     }
+  } else if (language === "javascript") {
+    if (!runnable.some((file) => file.name === "main.js")) {
+      return { ok: false, error: "JavaScript runs main.js — add a main.js to this folder." };
+    }
+  } else if (language === "java") {
+    if (!runnable.some((file) => file.name === "Main.java")) {
+      return { ok: false, error: "Java runs Main.java — add a Main.java to this folder." };
+    }
   } else if (!runnable.some((file) => !HEADER_EXTENSIONS.has(fileExtension(file.name)))) {
     return { ok: false, error: "No compilable source (.c/.cpp/.cc) in this folder — only headers." };
   }

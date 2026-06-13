@@ -5,6 +5,8 @@ export type RunnerConfig = {
   port: number;
   cppImage: string;
   pythonImage: string;
+  javascriptImage: string;
+  javaImage: string;
   maxConcurrentJobs: number;
   runTimeoutMs: number;
   debugMaxMs: number;
@@ -42,6 +44,8 @@ export function readConfig(): RunnerConfig {
     port: Number.parseInt(process.env.PORT ?? "4001", 10),
     cppImage: process.env.CPP_IMAGE ?? "internal-code-runner-cpp:0.1.0",
     pythonImage: process.env.PYTHON_IMAGE ?? "internal-code-runner-python:0.1.0",
+    javascriptImage: process.env.JAVASCRIPT_IMAGE ?? "internal-code-runner-javascript:0.1.0",
+    javaImage: process.env.JAVA_IMAGE ?? "internal-code-runner-java:0.1.0",
     maxConcurrentJobs: Number.parseInt(process.env.MAX_CONCURRENT_JOBS ?? "6", 10),
     runTimeoutMs: Number.parseInt(process.env.RUN_TIMEOUT_MS ?? "15000", 10),
     debugMaxMs: Number.parseInt(process.env.DEBUG_MAX_MS ?? "900000", 10),

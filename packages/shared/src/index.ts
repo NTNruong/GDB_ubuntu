@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const LANGUAGES = ["c", "cpp", "python"] as const;
+export const LANGUAGES = ["c", "cpp", "python", "javascript", "java"] as const;
 export type Language = (typeof LANGUAGES)[number];
 
 export const MAX_SOURCE_BYTES = 200_000;
@@ -23,7 +23,9 @@ export const LanguageSchema = z.enum(LANGUAGES);
 export const LANGUAGE_EXTENSIONS: Record<Language, readonly string[]> = {
   c: [".c", ".h"],
   cpp: [".cpp", ".cc", ".hpp", ".hh", ".h"],
-  python: [".py"]
+  python: [".py"],
+  javascript: [".js", ".mjs"],
+  java: [".java"]
 };
 
 /** Workspace files the runner writes itself — user files must not collide. */
@@ -53,6 +55,12 @@ export function defaultFileName(language: Language): string {
   }
   if (language === "cpp") {
     return "main.cpp";
+  }
+  if (language === "javascript") {
+    return "main.js";
+  }
+  if (language === "java") {
+    return "Main.java";
   }
   return "main.py";
 }
@@ -251,6 +259,26 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
     run: true,
     debug: true,
     defaultSource: "print(\"Hello World\")"
+  },
+  {
+    id: "javascript",
+    label: "JavaScript",
+    run: true,
+    debug: false,
+    defaultSource: "console.log(\"Hello World\");"
+  },
+  {
+    id: "java",
+    label: "Java",
+    run: true,
+    debug: false,
+    defaultSource: [
+      "public class Main {",
+      "    public static void main(String[] args) {",
+      "        System.out.println(\"Hello World\");",
+      "    }",
+      "}"
+    ].join("\n")
   }
 ];
 

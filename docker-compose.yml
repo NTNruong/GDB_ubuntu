@@ -46,6 +46,8 @@ services:
       HOST: "0.0.0.0"
       CPP_IMAGE: "internal-code-runner-cpp:0.1.0"
       PYTHON_IMAGE: "internal-code-runner-python:0.1.0"
+      JAVASCRIPT_IMAGE: "internal-code-runner-javascript:0.1.0"
+      JAVA_IMAGE: "internal-code-runner-java:0.1.0"
       MAX_CONCURRENT_JOBS: "6"
       RUN_TIMEOUT_MS: "15000"
       DEBUG_MAX_MS: "900000"
@@ -80,5 +82,19 @@ services:
     image: internal-code-runner-python:0.1.0
     build:
       context: docker/runner-python
+    profiles:
+      - runner-images
+
+  runner-javascript-image:
+    image: internal-code-runner-javascript:0.1.0
+    build:
+      context: docker/runner-javascript
+    profiles:
+      - runner-images
+
+  runner-java-image:
+    image: internal-code-runner-java:0.1.0
+    build:
+      context: docker/runner-java
     profiles:
       - runner-images

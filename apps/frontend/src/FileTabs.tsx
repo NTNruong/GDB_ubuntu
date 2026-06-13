@@ -41,6 +41,11 @@ function iconColorVar(path: string): string {
     case ".hpp":
     case ".hh":
       return "var(--icon-hpp)";
+    case ".js":
+    case ".mjs":
+      return "var(--icon-js)";
+    case ".java":
+      return "var(--icon-java)";
     default:
       return "var(--text-muted)";
   }
@@ -56,6 +61,11 @@ function iconLetter(path: string): string {
     case ".cpp":
     case ".cc":
       return "C+";
+    case ".js":
+    case ".mjs":
+      return "JS";
+    case ".java":
+      return "J";
     default:
       return "C";
   }

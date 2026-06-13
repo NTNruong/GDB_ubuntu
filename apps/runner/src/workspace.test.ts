@@ -28,4 +28,13 @@ describe("assertSafeFileName", () => {
     expect(() => assertSafeFileName("main.c", "python")).toThrow();
     expect(() => assertSafeFileName("legacy.h", "cpp")).not.toThrow();
   });
+
+  it("accepts JavaScript and Java file names", () => {
+    expect(() => assertSafeFileName("main.js", "javascript")).not.toThrow();
+    expect(() => assertSafeFileName("util.mjs", "javascript")).not.toThrow();
+    expect(() => assertSafeFileName("Main.java", "java")).not.toThrow();
+    expect(() => assertSafeFileName("main.py", "javascript")).toThrow();
+    expect(() => assertSafeFileName("Main.java", "javascript")).toThrow();
+    expect(() => assertSafeFileName("main.js", "java")).toThrow();
+  });
 });

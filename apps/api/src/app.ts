@@ -91,6 +91,11 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
         return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid debug request" });
       }
 
+      // Run-only languages (debug:false) have no debug engine — reject up front.
+      if (!LANGUAGE_CAPABILITIES.find((capability) => capability.id === parsed.data.language)?.debug) {
+        return reply.code(400).send({ error: `Debugging is not supported for ${parsed.data.language}` });
+      }
+
       const response = await fetch(`${config.runnerBaseUrl}/debug`, {
         method: "POST",
         headers: { "content-type": "application/json" },

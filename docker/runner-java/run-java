@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp /workspace/classes
+export TMPDIR=/workspace/tmp
+
+echo "__RUNNER_PHASE__:compile:start" >&2
+shopt -s nullglob
+java_sources=(/workspace/*.java)
+shopt -u nullglob
+if [ ${#java_sources[@]} -eq 0 ]; then
+  echo "No Java source file to compile" >&2
+  exit 1
+fi
+javac -d /workspace/classes "${java_sources[@]}"
+echo "__RUNNER_PHASE__:compile:done" >&2
+
+echo "__RUNNER_PHASE__:run:start" >&2
+run_with_metrics() {
+  local rss_file="/workspace/tmp/run-rss.txt"
+  rm -f "$rss_file"
+
+  local start_ns
+  start_ns=$(date +%s%N)
+
+  set +e
+  /usr/bin/time -f "max_rss_kb=%M" -o "$rss_file" \
+    /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" "$@" < /workspace/stdin.txt
+  local exit_code=$?
+  set -e
+
+  local end_ns elapsed_ms max_rss_kb
+  end_ns=$(date +%s%N)
+  elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+  max_rss_kb="$(sed -n 's/^max_rss_kb=//p' "$rss_file" 2>/dev/null | tail -n 1)"
+
+  if [[ -n "$max_rss_kb" ]]; then
+    printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" \
+      "$(printf "%d.%03d" $((elapsed_ms / 1000)) $((elapsed_ms % 1000)))" "$max_rss_kb" >&2
+  fi
+
+  return "$exit_code"
+}
+
+# Entry class is Main (matches the fixed entry file Main.java). The JVM is
+# cgroup-aware, so the container memory limit caps the heap; -XX:-UsePerfData
+# avoids hsperfdata writes under the read-only root filesystem.
+run_with_metrics java -XX:-UsePerfData -cp /workspace/classes Main "$@"

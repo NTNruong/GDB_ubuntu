@@ -89,6 +89,8 @@
   --icon-h: hsl(280, 50%, 65%);
   --icon-cpp: hsl(210, 80%, 50%);
   --icon-hpp: hsl(280, 60%, 60%);
+  --icon-js: hsl(48, 90%, 55%);
+  --icon-java: hsl(18, 80%, 55%);
 
   color: var(--text-primary);
   background: var(--bg-base);

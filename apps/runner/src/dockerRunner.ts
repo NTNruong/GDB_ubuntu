@@ -26,17 +26,23 @@ export class DockerRunner {
     }
   }
 
-  async readiness(): Promise<{ ok: boolean; docker: boolean; images: { cpp: boolean; python: boolean } }> {
+  async readiness(): Promise<{
+    ok: boolean;
+    docker: boolean;
+    images: { cpp: boolean; python: boolean; javascript: boolean; java: boolean };
+  }> {
     const docker = await this.ping();
     const images = docker
       ? {
           cpp: await this.imageExists(this.config.cppImage),
-          python: await this.imageExists(this.config.pythonImage)
+          python: await this.imageExists(this.config.pythonImage),
+          javascript: await this.imageExists(this.config.javascriptImage),
+          java: await this.imageExists(this.config.javaImage)
         }
-      : { cpp: false, python: false };
+      : { cpp: false, python: false, javascript: false, java: false };
 
     return {
-      ok: docker && images.cpp && images.python,
+      ok: docker && images.cpp && images.python && images.javascript && images.java,
       docker,
       images
     };
@@ -196,7 +202,16 @@ export class DockerRunner {
 }
 
 function imageForLanguage(language: Language, config: RunnerConfig): string {
-  return language === "python" ? config.pythonImage : config.cppImage;
+  if (language === "python") {
+    return config.pythonImage;
+  }
+  if (language === "javascript") {
+    return config.javascriptImage;
+  }
+  if (language === "java") {
+    return config.javaImage;
+  }
+  return config.cppImage;
 }
 
 function commandForLanguage(language: Language, argv: string[]): string[] {
@@ -206,6 +221,14 @@ function commandForLanguage(language: Language, argv: string[]): string[] {
 
   if (language === "cpp") {
     return ["/usr/local/bin/run-cpp", ...argv];
+  }
+
+  if (language === "javascript") {
+    return ["/usr/local/bin/run-javascript", ...argv];
+  }
+
+  if (language === "java") {
+    return ["/usr/local/bin/run-java", ...argv];
   }
 
   return ["/usr/local/bin/run-python", ...argv];

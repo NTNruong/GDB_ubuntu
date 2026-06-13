@@ -1,4 +1,8 @@
 *.sh text eol=lf
+# Runner image entrypoints are extensionless bash scripts — force LF so a Windows
+# checkout (core.autocrlf=true) never ships CRLF that breaks the in-container shebang.
+docker/runner-*/run-* text eol=lf
+docker/runner-*/debug-* text eol=lf
 
 # Files excluded from `git archive` (GitHub release ZIP / tarball).
 # Source repo keeps them for development; production archive stays minimal.

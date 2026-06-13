@@ -50,8 +50,28 @@ describe("schemas", () => {
   });
 
   it("uses compact language labels and defaults to C", () => {
-    expect(LANGUAGE_CAPABILITIES.map((language) => language.id)).toEqual(["c", "cpp", "python"]);
-    expect(LANGUAGE_CAPABILITIES.map((language) => language.label)).toEqual(["C", "C++", "Python"]);
+    expect(LANGUAGE_CAPABILITIES.map((language) => language.id)).toEqual([
+      "c",
+      "cpp",
+      "python",
+      "javascript",
+      "java"
+    ]);
+    expect(LANGUAGE_CAPABILITIES.map((language) => language.label)).toEqual([
+      "C",
+      "C++",
+      "Python",
+      "JavaScript",
+      "Java"
+    ]);
+  });
+
+  it("declares JavaScript and Java as run-only (no debugger yet)", () => {
+    for (const id of ["javascript", "java"] as const) {
+      const capability = LANGUAGE_CAPABILITIES.find((language) => language.id === id);
+      expect(capability?.run).toBe(true);
+      expect(capability?.debug).toBe(false);
+    }
   });
 
   it("uses simple Hello World starter sources", () => {
@@ -103,6 +123,11 @@ describe("multi-file validation", () => {
     expect(() => RunRequestSchema.parse({ language: "python", files: cFiles("main.c") })).toThrow();
     // C++ accepts shared headers.
     expect(() => RunRequestSchema.parse({ language: "cpp", files: cFiles("main.cpp", "api.hpp", "legacy.h") })).not.toThrow();
+    // JavaScript + Java accept their own extensions and reject foreign ones.
+    expect(() => RunRequestSchema.parse({ language: "javascript", files: cFiles("main.js", "util.mjs") })).not.toThrow();
+    expect(() => RunRequestSchema.parse({ language: "javascript", files: cFiles("main.py") })).toThrow();
+    expect(() => RunRequestSchema.parse({ language: "java", files: cFiles("Main.java", "Helper.java") })).not.toThrow();
+    expect(() => RunRequestSchema.parse({ language: "java", files: cFiles("main.js") })).toThrow();
   });
 
   it("rejects case-insensitive duplicate file names", () => {
