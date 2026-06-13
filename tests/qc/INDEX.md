@@ -1,7 +1,7 @@
 # QC Capability Test Checklist — INDEX
 
-Bộ test case manual cho GDB_ubuntu (tailnet-only online code runner: C `gnu17`, C++ `gnu++20`, Python 3.12 + DAP debug).
-Phạm vi: phủ **năng lực** của runner + 3 ngôn ngữ, **không thay thế** Playwright e2e tự động.
+Bộ test case manual cho GDB_ubuntu (tailnet-only online code runner: C `gnu17`, C++ `gnu++20`, Python 3.12, JavaScript (Node 22), Java (JDK 17/21/25), Go, Rust — DAP debug cho C/C++/Python/Rust).
+Phạm vi: phủ **năng lực** của runner + 7 ngôn ngữ, **không thay thế** Playwright e2e tự động.
 
 ## Cách dùng
 
@@ -23,6 +23,10 @@ Phạm vi: phủ **năng lực** của runner + 3 ngôn ngữ, **không thay th�
 | [`c-dsa.md`](c-dsa.md) | C classic DSA (array/list/stack/queue/tree/heap/graph/sort/backtrack/DP) | TC-C-DS (051–090) |
 | [`cpp.md`](cpp.md) | C++ STL + gnu++20 + threading + firmware-adjacent | TC-CPP |
 | [`python.md`](python.md) | Python 3.12 smoke + asyncio + showcase | TC-PY |
+| [`javascript.md`](javascript.md) | JavaScript (Node 22) run-only smoke + showcase | TC-JS |
+| [`java.md`](java.md) | Java run-only + version selector 17/21/25 + showcase | TC-JAVA |
+| [`go.md`](go.md) | Go run-only smoke + showcase (debug = Phase 3b) | TC-GO |
+| [`rust.md`](rust.md) | Rust run + DAP debug + showcase | TC-RUST |
 
 ## Convention ID
 
@@ -38,6 +42,10 @@ Phạm vi: phủ **năng lực** của runner + 3 ngôn ngữ, **không thay th�
 | `TC-C-DS-###`  | C — Data structures & algorithms. **001–050** firmware DS/Math/Protocol → [`c-embedded.md`](c-embedded.md); **051–090** classic CS DSA → [`c-dsa.md`](c-dsa.md) |
 | `TC-CPP-###`   | C++ |
 | `TC-PY-###`    | Python |
+| `TC-JS-###`    | JavaScript (Node 22) — run-only |
+| `TC-JAVA-###`  | Java — run-only + version selector (17/21/25) |
+| `TC-GO-###`    | Go — run-only (debug pending Phase 3b) |
+| `TC-RUST-###`  | Rust — run + DAP debug |
 
 Số đánh 3 chữ số (001, 010, 099, 100...) reset theo prefix. **Ngoại lệ:** `TC-C-DS-###` đánh số liên tục xuyên 2 file (c-embedded.md 001–050, c-dsa.md 051–090) — không reset.
 
@@ -107,6 +115,25 @@ Hàng = feature, cột = ngôn ngữ, ô = các scenario ID phủ.
 | Python asyncio | — | — | TC-PY-006..007 |
 | Python typing/dataclass | — | — | TC-PY-004..005 |
 
+## Feature matrix — added languages (JS / Java / Go / Rust)
+
+Hàng = feature, cột = ngôn ngữ, ô = các scenario ID phủ.
+
+| Feature | JavaScript | Java | Go | Rust |
+|---------|-----------|------|----|------|
+| Hello + argv | TC-JS-001 | TC-JAVA-001 | TC-GO-001 | TC-RUST-001 |
+| stdin | TC-JS-002 | TC-JAVA-002 | TC-GO-002 | TC-RUST-002 |
+| stderr split | TC-JS-003 | TC-JAVA-003 | TC-GO-003 | TC-RUST-003 |
+| Exit code 42 | TC-JS-004 | TC-JAVA-004 | TC-GO-004 | TC-RUST-004 |
+| Compile/Syntax error | TC-JS-005 | TC-JAVA-005 | TC-GO-005 | TC-RUST-005 |
+| Runtime crash | TC-JS-006 | TC-JAVA-006 | TC-GO-006 | TC-RUST-006 |
+| Language showcase | TC-JS-007..012 | TC-JAVA-010..013 | TC-GO-007..011 | TC-RUST-007..011 |
+| Network blocked | TC-JS-013 | TC-JAVA-014 | TC-GO-012..013 | TC-RUST-012 |
+| Version selector | — | TC-JAVA-007..009 | — | — |
+| Debug (DAP) | — (hidden) | — (hidden) | — (Phase 3b) | TC-RUST-013..016 |
+
+> Debug khả dụng hôm nay: chỉ **Rust** (gdb DAP). JavaScript/Java run-only; Go debug đến ở Phase 3b (Delve + socat).
+
 ## Related ISSUES → regression scenario
 
 | ISSUE | Status | Regression scenario |
@@ -124,5 +151,9 @@ Hàng = feature, cột = ngôn ngữ, ô = các scenario ID phủ.
 1. Mọi code block C: `gcc -std=gnu17 -O2 -Wall -Wextra -lm <file>` phải compile.
 2. Mọi code block C++: `g++ -std=gnu++20 -O2 -Wall -Wextra <file>` phải compile.
 3. Mọi code block Python: `python3 -I -c "compile(open('<file>').read(), '<file>', 'exec')"` phải parse.
-4. Mỗi prefix có ≥1 scenario.
-5. ID không duplicate, đánh số liên tục trong nhóm.
+4. Mọi code block JavaScript: `node --check <file>` phải parse.
+5. Mọi code block Java: `javac <file>` (JDK 17/21/25) phải compile.
+6. Mọi code block Go: `go vet` / `go build` phải compile.
+7. Mọi code block Rust: `rustc --edition 2021 <file>` phải compile.
+8. Mỗi prefix có ≥1 scenario.
+9. ID không duplicate, đánh số liên tục trong nhóm.
