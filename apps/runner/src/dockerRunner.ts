@@ -4,7 +4,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import Docker from "dockerode";
-import { MAX_OUTPUT_BYTES, type Language, type RunEvent, type RunRequest } from "@internal/shared";
+import { MAX_OUTPUT_BYTES, resolveToolchainVersion, type Language, type RunEvent, type RunRequest } from "@internal/shared";
 import type { RunnerConfig } from "./config.js";
 import type { EventBuffer } from "./eventBuffer.js";
 import { PhaseFilter } from "./phaseFilter.js";
@@ -92,6 +92,12 @@ export class DockerRunner {
       }
 
       const image = imageForLanguage(request.language, this.config);
+      const env = [`RUN_TIMEOUT_SECONDS=${Math.ceil(this.config.runTimeoutMs / 1000)}`];
+      const toolchainVersion = resolveToolchainVersion(request.language, request.toolchainVersion);
+      if (toolchainVersion) {
+        // e.g. Java: the entrypoint reads JAVA_VERSION to pick the JDK.
+        env.push(`JAVA_VERSION=${toolchainVersion}`);
+      }
       container = await this.docker.createContainer({
         Image: image,
         Cmd: commandForLanguage(request.language, request.argv),
@@ -101,7 +107,7 @@ export class DockerRunner {
         AttachStdout: true,
         AttachStderr: true,
         NetworkDisabled: true,
-        Env: [`RUN_TIMEOUT_SECONDS=${Math.ceil(this.config.runTimeoutMs / 1000)}`],
+        Env: env,
         HostConfig: {
           AutoRemove: false,
           Binds: [`${workspace.hostPath}:/workspace:rw`],

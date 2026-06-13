@@ -72,6 +72,9 @@ const initialLanguage = LANGUAGE_CAPABILITIES[0]!;
 
 export function App() {
   const [language, setLanguage] = useState<Language>(initialLanguage.id);
+  // Selected toolchain version for languages that expose one (e.g. Java JDK).
+  // undefined ⇒ no picker / runner uses the capability default.
+  const [toolchainVersion, setToolchainVersion] = useState<string | undefined>(initialLanguage.defaultVersion);
   const [files, setFiles] = useState<ProjectFile[]>(() => [
     { path: defaultFileName(initialLanguage.id), content: initialLanguage.defaultSource }
   ]);
@@ -913,7 +916,7 @@ export function App() {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ language, files: payload.files, stdin, argv })
+        body: JSON.stringify({ language, files: payload.files, stdin, argv, toolchainVersion })
       });
 
       if (!response.ok) {
@@ -1015,6 +1018,7 @@ export function App() {
           files: payload.files,
           stdin,
           argv,
+          toolchainVersion,
           breakpoints: payload.breakpoints,
           clientId: clientIdRef.current
         })
@@ -1337,6 +1341,7 @@ export function App() {
             if (next === language) {
               return;
             }
+            setToolchainVersion(LANGUAGE_CAPABILITIES.find((item) => item.id === next)?.defaultVersion);
             // Logged-in users keep their open files (server tabs persist on the
             // host); the picker only changes how Run/Debug compiles. The
             // clear-on-switch flow stays for the anonymous single-buffer mode.
@@ -1367,6 +1372,19 @@ export function App() {
             </option>
           ))}
         </select>
+        {capability.versions && (
+          <select
+            aria-label="Version"
+            value={toolchainVersion ?? capability.defaultVersion ?? capability.versions[0]}
+            onChange={(event) => setToolchainVersion(event.target.value)}
+          >
+            {capability.versions.map((version) => (
+              <option key={version} value={version}>
+                {`${capability.label} ${version}`}
+              </option>
+            ))}
+          </select>
+        )}
         <input
           aria-label="Arguments"
           className="args-input"

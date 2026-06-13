@@ -3,7 +3,8 @@ import {
   DebugRequestSchema,
   LANGUAGE_CAPABILITIES,
   RunRequestSchema,
-  parseArgv
+  parseArgv,
+  resolveToolchainVersion
 } from "./index.js";
 
 describe("parseArgv", () => {
@@ -72,6 +73,31 @@ describe("schemas", () => {
       expect(capability?.run).toBe(true);
       expect(capability?.debug).toBe(false);
     }
+  });
+
+  it("exposes selectable Java versions with a default", () => {
+    const java = LANGUAGE_CAPABILITIES.find((language) => language.id === "java");
+    expect(java?.versions).toEqual(["17", "21", "25"]);
+    expect(java?.defaultVersion).toBe("21");
+    // Languages without a version picker stay undefined.
+    expect(LANGUAGE_CAPABILITIES.find((language) => language.id === "c")?.versions).toBeUndefined();
+  });
+
+  it("resolves the effective toolchain version (request → valid, else default)", () => {
+    expect(resolveToolchainVersion("java", "17")).toBe("17");
+    expect(resolveToolchainVersion("java", undefined)).toBe("21");
+    expect(resolveToolchainVersion("java", "11")).toBe("21"); // unsupported → default
+    expect(resolveToolchainVersion("c", "21")).toBeUndefined(); // no versions for C
+  });
+
+  it("validates toolchainVersion against the language", () => {
+    const base = { language: "java" as const, files: [{ path: "Main.java", content: "class Main{}" }] };
+    expect(RunRequestSchema.parse({ ...base, toolchainVersion: "25" }).toolchainVersion).toBe("25");
+    expect(() => RunRequestSchema.parse({ ...base, toolchainVersion: "11" })).toThrow();
+    // A version on a language that has no picker is rejected (avoid silent wrong toolchain).
+    expect(() =>
+      RunRequestSchema.parse({ language: "c", files: [{ path: "main.c", content: "int main(){}" }], toolchainVersion: "21" })
+    ).toThrow();
   });
 
   it("uses simple Hello World starter sources", () => {

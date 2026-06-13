@@ -118,19 +118,52 @@ function refineProjectFiles(
   }
 }
 
+/**
+ * Reject a `toolchainVersion` that the requested language does not advertise.
+ * Omitted is always fine — the runner falls back to the capability's default
+ * (see `resolveToolchainVersion`). A version on a language with no `versions`
+ * list is rejected so a typo cannot silently pick the wrong toolchain.
+ */
+function refineToolchainVersion(
+  value: { language: Language; toolchainVersion?: string },
+  ctx: z.RefinementCtx
+): void {
+  if (value.toolchainVersion === undefined) {
+    return;
+  }
+  const versions = LANGUAGE_CAPABILITIES.find((cap) => cap.id === value.language)?.versions;
+  if (!versions?.includes(value.toolchainVersion)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["toolchainVersion"],
+      message: `Unsupported version "${value.toolchainVersion}" for ${value.language}`
+    });
+  }
+}
+
 const RunRequestBaseSchema = z.object({
   language: LanguageSchema,
   files: z.array(ProjectFileSchema).min(1).max(MAX_FILES),
   stdin: z.string().max(MAX_STDIN_BYTES).default(""),
-  argv: z.array(z.string().max(MAX_ARG_BYTES)).max(MAX_ARG_COUNT).default([])
+  argv: z.array(z.string().max(MAX_ARG_BYTES)).max(MAX_ARG_COUNT).default([]),
+  /** Optional toolchain version (e.g. Java "17"/"21"/"25"). Omitted ⇒ default. */
+  toolchainVersion: z.string().max(16).optional()
 });
 
-export const RunRequestSchema = RunRequestBaseSchema.superRefine(refineProjectFiles);
+function refineRunRequest(
+  value: { language: Language; files: ProjectFile[]; toolchainVersion?: string },
+  ctx: z.RefinementCtx
+): void {
+  refineProjectFiles(value, ctx);
+  refineToolchainVersion(value, ctx);
+}
+
+export const RunRequestSchema = RunRequestBaseSchema.superRefine(refineRunRequest);
 
 export const DebugRequestSchema = RunRequestBaseSchema.extend({
   breakpoints: z.array(BreakpointSchema).max(100).default([]),
   clientId: z.string().min(1).max(128)
-}).superRefine(refineProjectFiles);
+}).superRefine(refineRunRequest);
 
 export const DebugCommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("continue") }),
@@ -173,7 +206,28 @@ export type LanguageCapability = {
   run: boolean;
   debug: boolean;
   defaultSource: string;
+  /** Selectable toolchain versions (e.g. Java JDKs). Absent ⇒ no version picker. */
+  versions?: readonly string[];
+  /** Default version when the request omits `toolchainVersion`. */
+  defaultVersion?: string;
 };
+
+/**
+ * Effective toolchain version for a run/debug request: the requested one if the
+ * language advertises it, otherwise the capability's default (or first listed).
+ * Returns `undefined` for languages without a `versions` list. Single source of
+ * truth so the runner does not re-implement the fallback rule.
+ */
+export function resolveToolchainVersion(language: Language, requested?: string): string | undefined {
+  const cap = LANGUAGE_CAPABILITIES.find((item) => item.id === language);
+  if (!cap?.versions?.length) {
+    return undefined;
+  }
+  if (requested && cap.versions.includes(requested)) {
+    return requested;
+  }
+  return cap.defaultVersion ?? cap.versions[0];
+}
 
 export type HealthResponse = {
   ok: boolean;
@@ -272,6 +326,8 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
     label: "Java",
     run: true,
     debug: false,
+    versions: ["17", "21", "25"],
+    defaultVersion: "21",
     defaultSource: [
       "public class Main {",
       "    public static void main(String[] args) {",

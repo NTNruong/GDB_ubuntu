@@ -5,6 +5,15 @@ cd /workspace
 mkdir -p /workspace/tmp /workspace/classes
 export TMPDIR=/workspace/tmp
 
+# Pick the JDK requested via JAVA_VERSION (set by the runner from the request's
+# toolchainVersion). Fall back to 21 if unset or the version dir is missing.
+java_version="${JAVA_VERSION:-21}"
+if [ ! -d "/opt/java/${java_version}" ]; then
+  java_version="21"
+fi
+export JAVA_HOME="/opt/java/${java_version}"
+export PATH="${JAVA_HOME}/bin:${PATH}"
+
 echo "__RUNNER_PHASE__:compile:start" >&2
 shopt -s nullglob
 java_sources=(/workspace/*.java)
