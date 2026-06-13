@@ -23,6 +23,9 @@ services:
       # the deploy .env (openssl rand -hex 32) or sessions reset on every restart.
       USER_HOMES_ROOT: "/user-homes"
       SESSION_SECRET: "${SESSION_SECRET:-}"
+      # Mark the session cookie Secure when served over HTTPS (public Funnel).
+      # Set SESSION_COOKIE_SECURE=1 in the deploy .env (ISSUE-054). Unset → "" → off.
+      SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-}"
     volumes:
       # Host bind-source of the per-user homes. In production (rootless Docker)
       # point USER_HOMES_HOST_ROOT at a dir owned by the service user (ISSUE-044),
