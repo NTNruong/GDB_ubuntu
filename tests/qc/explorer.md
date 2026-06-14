@@ -2,16 +2,18 @@
 
 Scope: app-managed accounts and the per-user file explorer — login, tree CRUD, save, run-the-folder, isolation, and that anonymous run/debug is unchanged. See [`INDEX.md`](INDEX.md) for the field template/conventions.
 
-Pre-req (one-time, server): seed a user with the admin CLI —
-`docker compose exec api node apps/api/dist/cli/users.js add qcuser 'qc-pass'`.
+Pre-req: use the app-managed QC account documented in `AGENTS.md` (username `qc_runner`;
+its password is kept in `AGENTS.md`, not committed here). If it is not seeded yet, an admin
+seeds it once on the server with the CLI —
+`docker compose exec api node apps/api/dist/cli/users.js add qc_runner '<password-from-AGENTS.md>'`.
 
 ---
 
 ## Section AUTH — Login / session (TC-EXP-001 → 004)
 
 ### TC-EXP-001 — Sign in succeeds
-- **Steps**: Click **Sign in** → enter `qcuser` / `qc-pass` → submit.
-- **Expected**: Dialog closes, topbar shows the username + a left **Explorer** sidebar rooted at `/home/qcuser`.
+- **Steps**: Click **Sign in** → enter the `qc_runner` credentials from `AGENTS.md` → submit.
+- **Expected**: Dialog closes, topbar shows the username + a left **Explorer** sidebar rooted at `/home/qc_runner`.
 - **Pass**: [ ] sidebar visible [ ] no console errors
 
 ### TC-EXP-002 — Wrong password

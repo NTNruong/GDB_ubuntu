@@ -1,5 +1,7 @@
-# rust:1-bookworm floats to the latest stable 1.x toolchain.
-FROM rust:1-bookworm
+# rust:1-trixie: latest stable 1.x toolchain on Debian 13 (trixie), whose apt gdb
+# (>= 16) ships the DAP interpreter that debug-dap-rust needs. Bookworm's gdb 13.1
+# lacks `--interpreter=dap` ("Interpreter dap unrecognized") — see ISSUE-055.
+FROM rust:1-trixie
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash coreutils ca-certificates time gdb \
