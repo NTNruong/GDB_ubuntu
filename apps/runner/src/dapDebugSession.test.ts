@@ -177,6 +177,16 @@ describe("launchArgumentsFor", () => {
     expect(args.args).toEqual(["x"]);
   });
 
+  it("debugs Go through Delve's exec launch with stopOnEntry", () => {
+    const args = launchArgumentsFor({ language: "go", argv: ["x"] });
+    expect(args.type).toBe("go");
+    expect(args.mode).toBe("exec");
+    expect(args.program).toBe("/exec/program");
+    expect(args.stopOnEntry).toBe(true);
+    expect(args).not.toHaveProperty("stopAtBeginningOfMainSubprogram");
+    expect(args.args).toEqual(["x"]);
+  });
+
   it("does not send any stop-on-entry flag to debugpy (Python)", () => {
     const args = launchArgumentsFor({ language: "python", argv: ["x"] });
     expect(args).not.toHaveProperty("stopAtBeginningOfMainSubprogram");

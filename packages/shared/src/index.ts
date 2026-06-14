@@ -348,7 +348,7 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
     id: "go",
     label: "Go",
     run: true,
-    debug: false,
+    debug: true,
     defaultSource: [
       "package main",
       "",

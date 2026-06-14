@@ -1,11 +1,11 @@
 # tests/qc/go.md — Go capability checklist
 
-Scope: run-only smoke + language showcase + sandbox. Go is currently **run-only**; debugging
-(Delve `dlv dap`) is **planned for Phase 3b**, so the Debug button is hidden today
-(`LANGUAGE_CAPABILITIES.debug=false`).
-Runner: synthesizes a `go.mod`, keeps the build cache on `/workspace`, then `go build -o /exec/program .`
-and runs it — see [`docker/runner-go/run-go`](../../docker/runner-go/run-go).
-Image: `golang:1-bookworm` (latest stable). Entry: `main.go` with `package main`.
+Scope: run smoke + language showcase + sandbox + **DAP debugging** (Phase 3b). Go is **run + debug**:
+debugging uses Delve (`dlv dap`) bridged to stdio with `socat` inside the container.
+Runner — run: synthesizes a `go.mod`, keeps the build cache on `/workspace`, then `go build -o /exec/program .`
+([`docker/runner-go/run-go`](../../docker/runner-go/run-go)); debug: `go build -gcflags="-N -l"` then
+`dlv dap` + `socat` ([`docker/runner-go/debug-dap-go`](../../docker/runner-go/debug-dap-go)).
+Image: `golang:1-bookworm` (latest stable) + `dlv` + `socat`. Entry: `main.go` with `package main`.
 
 > 12-field template, compact form. Sandbox: `NetworkMode: none` ⇒ stdlib-only; no external modules.
 
@@ -316,18 +316,88 @@ Pass: [ ] build fails · [ ] program never runs.
 
 ---
 
-### TC-GO-014 — Debug button hidden (run-only; debug = Phase 3b)
+### TC-GO-014 — Debug available (Delve)
 
 Tags: go, ui, capability · Source: n/a.
 
 UI Steps: select **Go**.
-Expected: the **Debug** button is disabled/hidden (capability `debug:false`). Go debugging arrives in Phase 3b (Delve `dlv dap` + socat bridge).
-Pass: [ ] Debug not actionable for Go.
+Expected: the **Debug** button is enabled (capability `debug:true`); Go debug runs through Delve `dlv dap` bridged by `socat`.
+Pass: [ ] Debug actionable for Go.
+
+---
+
+### TC-GO-DBG-001 — Breakpoint + step over
+
+Tags: go, debug, breakpoint · Stdin/Argv: empty.
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+	total := 0
+	for i := 1; i <= 5; i++ {
+		total += i // breakpoint here
+	}
+	fmt.Printf("total=%d\n", total)
+}
+```
+
+UI Steps: set a breakpoint on `total += i`, click **Debug**. The entry stop auto-continues; expect a stop on the breakpoint line. **Step Over** a few times, then **Continue**.
+Expected: stops on the breakpoint line; stepping advances; final stdout `total=15`.
+Pass: [ ] stops at the user line · [ ] stepping advances · [ ] output `total=15`.
+
+---
+
+### TC-GO-DBG-002 — Inspect locals
+
+Tags: go, debug, variables · Stdin/Argv: empty. Source: same as TC-GO-DBG-001.
+
+UI Steps: at the breakpoint, open the **Variables** panel.
+Expected: locals `total` and `i` are listed with current values that change as you step (Delve renders Go values natively).
+Pass: [ ] `total`/`i` shown · [ ] values update while stepping.
+
+---
+
+### TC-GO-DBG-003 — Call stack + continue
+
+Tags: go, debug, stack · Stdin/Argv: empty.
+
+```go
+package main
+
+import "fmt"
+
+func square(n int) int {
+	r := n * n // breakpoint here
+	return r
+}
+
+func main() {
+	fmt.Println(square(6))
+}
+```
+
+UI Steps: breakpoint on `r := n * n`, **Debug**, inspect the **Call Stack**, then **Continue**.
+Expected: the stack shows `square` (top) called from `main`; Continue prints `36`.
+Pass: [ ] stack shows square + main · [ ] continue prints `36`.
+
+---
+
+### TC-GO-DBG-004 — Evaluate / watch expression
+
+Tags: go, debug, watch · Stdin/Argv: empty. Source: same as TC-GO-DBG-003.
+
+UI Steps: at the breakpoint, evaluate `n * 2` (or watch `r`).
+Expected: evaluating `n * 2` returns `12`; a watch on `r` updates after the assignment line.
+Pass: [ ] evaluate returns `12` · [ ] watch shows a value.
+
+> Known limitation: a program that reads **stdin while being debugged** does not receive it under Delve in this cut (plain Run handles stdin fine). Pick debug scenarios that don't block on stdin.
 
 ---
 
 ## Summary go.md
 
-- 14 scenarios (TC-GO-001..014): IO basics, compile + panic errors, showcase (goroutines/channels/slices/maps/interface/stdlib/multi-file), network-blocked + stdlib-only sandbox, and the run-only Debug-hidden check.
+- 14 run scenarios (TC-GO-001..014) + 4 debug scenarios (TC-GO-DBG-001..004): IO basics, compile + panic errors, showcase (goroutines/channels/slices/maps/interface/stdlib/multi-file), network-blocked + stdlib-only sandbox, and **DAP debugging** (breakpoint/step, locals, call stack + continue, evaluate/watch) via Delve + socat.
 - Self-verification before commit: every Source block builds with `go build` / `go vet` on `golang:1`.
-- **Future:** when Phase 3b lands, add `TC-GO-DBG-###` (breakpoint/step/locals/stack via Delve) and flip TC-GO-014.

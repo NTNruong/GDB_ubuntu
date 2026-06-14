@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp
+export TMPDIR=/workspace/tmp
+
+# Same cache setup as run-go (caches on the writable /workspace bind, seeded from the
+# image's pre-warmed cache) so the debug build stays inside the compile budget.
+export HOME=/workspace/tmp
+export GOPATH=/workspace/tmp/go
+export GOCACHE=/workspace/tmp/go-build
+export GOFLAGS=-mod=mod
+mkdir -p "$GOCACHE" "$GOPATH"
+cp -a /opt/gocache/. "$GOCACHE/" 2>/dev/null || true
+
+echo "__RUNNER_PHASE__:compile:start" >&2
+shopt -s nullglob
+go_sources=(/workspace/*.go)
+shopt -u nullglob
+if [ ${#go_sources[@]} -eq 0 ]; then
+  echo "No Go source file to compile" >&2
+  exit 1
+fi
+# Users can't upload go.mod (.mod isn't an allowed extension) — synthesize a module.
+[ -f go.mod ] || go mod init runnerapp >/dev/null 2>&1
+# -N -l (main package only) disables optimization/inlining for faithful stepping;
+# std stays optimized so the pre-warmed cache still hits.
+go build -gcflags="-N -l" -o /exec/program .
+echo "__RUNNER_PHASE__:compile:done" >&2
+
+# Delve DAP only listens on TCP, but the debug container has no external network
+# (loopback only) and the runner attaches over stdio. Start dlv on loopback, wait for
+# the listener, then bridge the container's stdio to it with socat. dlv's own logs go
+# to a file so they never corrupt the DAP byte stream on stdout.
+PORT=4711
+dlv dap --listen=127.0.0.1:${PORT} --log --log-output=dap >/workspace/tmp/dlv.log 2>&1 &
+for _ in $(seq 1 200); do
+  if (exec 3<>/dev/tcp/127.0.0.1/${PORT}) 2>/dev/null; then
+    exec 3>&-
+    break
+  fi
+  sleep 0.05
+done
+exec socat - TCP:127.0.0.1:${PORT}

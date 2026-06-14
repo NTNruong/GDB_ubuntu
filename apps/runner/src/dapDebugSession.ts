@@ -242,7 +242,8 @@ export class DapDebugSession {
         {
           clientID: "gdb-ubuntu-runner",
           clientName: "GDB Ubuntu Runner",
-          adapterID: this.request.language === "python" ? "debugpy" : "gdb",
+          adapterID:
+            this.request.language === "python" ? "debugpy" : this.request.language === "go" ? "go" : "gdb",
           pathFormat: "path",
           linesStartAt1: true,
           columnsStartAt1: true,
@@ -322,6 +323,12 @@ export class DapDebugSession {
     }
 
     await withTimeout(compileDone, 30_000, "Timed out compiling debug program");
+    if (this.request.language === "go") {
+      // Delve starts only after the build; give it a moment to bind the loopback DAP
+      // port and let the in-container socat bridge connect before the handshake.
+      await delay(1_000);
+      return;
+    }
     await delay(100);
   }
 
@@ -958,6 +965,21 @@ export function launchArgumentsFor(request: Pick<DebugRequest, "language" | "arg
     };
   }
 
+  if (request.language === "go") {
+    // Delve DAP launches a prebuilt binary (mode "exec"); stopOnEntry halts so user
+    // breakpoints install before any code runs (the entry stop auto-continues).
+    return {
+      name: "Go",
+      type: "go",
+      request: "launch",
+      mode: "exec",
+      program: "/exec/program",
+      args: request.argv,
+      cwd: "/workspace",
+      stopOnEntry: true
+    };
+  }
+
   return {
     name: request.language === "c" ? "C" : request.language === "rust" ? "Rust" : "C++",
     type: "gdb",
@@ -1007,6 +1029,10 @@ function commandForLanguage(language: Language, argv: string[]): string[] {
     return ["/usr/local/bin/debug-dap-rust", ...argv];
   }
 
+  if (language === "go") {
+    return ["/usr/local/bin/debug-dap-go", ...argv];
+  }
+
   return ["/usr/local/bin/debug-dap-python", ...argv];
 }
 
@@ -1016,6 +1042,9 @@ function imageForLanguage(language: Language, config: RunnerConfig): string {
   }
   if (language === "rust") {
     return config.rustImage;
+  }
+  if (language === "go") {
+    return config.goImage;
   }
   return config.cppImage;
 }
