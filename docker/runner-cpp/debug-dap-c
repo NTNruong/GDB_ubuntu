@@ -16,7 +16,21 @@ fi
 gcc -std=gnu17 -g -O0 -Wall -Wextra "${c_sources[@]}" -o /exec/program -lm
 echo "__RUNNER_PHASE__:compile:done" >&2
 
-cat > /tmp/gdb-stdin.gdb << 'GDBEOF'
-set exec-wrapper sh -c 'exec stdbuf -o0 -e0 "$@" </workspace/stdin.txt >/workspace/tmp/program.out 2>&1' --
+# Unbuffer the inferior WITHOUT adding an intermediate executable: running `stdbuf` as
+# the exec-wrapper target inserts a second execve (sh->stdbuf->program) and gdb/DAP then
+# fails to deliver the entry/user stop reliably -- even though the breakpoint still binds
+# -- so no `stopped` arrives (ISSUE-060). Preload libstdbuf.so directly instead: one
+# execve (sh->program), like the original working wrapper.
+STDBUF_LIB="$(stdbuf -o0 printenv LD_PRELOAD 2>/dev/null || true)"
+if [ -z "$STDBUF_LIB" ]; then
+  for cand in /usr/libexec/coreutils/libstdbuf.so \
+              /usr/lib/x86_64-linux-gnu/coreutils/libstdbuf.so \
+              /usr/lib/coreutils/libstdbuf.so; do
+    [ -e "$cand" ] && STDBUF_LIB="$cand" && break
+  done
+fi
+
+cat > /tmp/gdb-stdin.gdb <<GDBEOF
+set exec-wrapper sh -c 'export LD_PRELOAD="${STDBUF_LIB}" _STDBUF_O=0 _STDBUF_E=0; exec "\$@" </workspace/stdin.txt >/workspace/tmp/program.out 2>&1' --
 GDBEOF
 exec gdb --interpreter=dap --quiet --init-command=/tmp/gdb-stdin.gdb

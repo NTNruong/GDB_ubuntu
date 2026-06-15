@@ -87,6 +87,46 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(vars.find((v) => v.name === "result")?.value).toBe("36");
   });
 
+  // ISSUE-060 regression: unbuffering the inferior must NOT break the stop, and program
+  // stdout printed before the breakpoint must reach the client BEFORE exit (proves both
+  // the LD_PRELOAD unbuffer and the incremental pump — a buffered fallback would fail the
+  // stdout assertion even though the stop assertion still passes).
+  it("streams C stdout before exit and still stops (ISSUE-060)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugUntilStopped({
+      language: "c",
+      files: [{
+        path: "main.c",
+        content:
+          '#include <stdio.h>\nint main(){\n  printf("hello\\n");\n  int x = 1;\n  x = x + 1;\n  return 0;\n}'
+      }],
+      stdin: "",
+      argv: [],
+      breakpoints: [{ path: "main.c", line: 5 }],
+      clientId: `test-c-unbuffer-${Date.now()}`
+    });
+
+    expect(events.find((event): event is Extract<DebugEvent, { type: "stopped" }> => event.type === "stopped")?.line).toBe(5);
+    expect(events.some((event) => event.type === "stdout" && event.data.includes("hello"))).toBe(true);
+  });
+
+  it("streams C++ stdout before exit and still stops (ISSUE-060)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugUntilStopped({
+      language: "cpp",
+      files: [{
+        path: "main.cpp",
+        content:
+          '#include <iostream>\nint main(){\n  std::cout << "hello\\n";\n  int x = 1;\n  x = x + 1;\n  return 0;\n}'
+      }],
+      stdin: "",
+      argv: [],
+      breakpoints: [{ path: "main.cpp", line: 5 }],
+      clientId: `test-cpp-unbuffer-${Date.now()}`
+    });
+
+    expect(events.find((event): event is Extract<DebugEvent, { type: "stopped" }> => event.type === "stopped")?.line).toBe(5);
+    expect(events.some((event) => event.type === "stdout" && event.data.includes("hello"))).toBe(true);
+  });
+
   it("stops Python at a breakpoint", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "python",

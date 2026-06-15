@@ -85,6 +85,11 @@ export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("output");
   const [runStatus, setRunStatus] = useState("Idle");
   const [debugStatus, setDebugStatus] = useState("Idle");
+  // True only between a real `stopped` event and the next resume/exit. Drives the
+  // step/continue controls — `Ready` is NOT stopped, so they stay disabled until the
+  // adapter actually halts (otherwise an early click hits a running adapter → notStopped,
+  // ISSUE-060).
+  const [debugStopped, setDebugStopped] = useState(false);
   const [output, setOutput] = useState<TerminalLine[]>([]);
   const [diagnostics, setDiagnostics] = useState<Diagnostic[]>([]);
   const [debugConsole, setDebugConsole] = useState<TerminalLine[]>([]);
@@ -290,7 +295,7 @@ export function App() {
   );
 
   const isDebugRunning = isDebugActive && debugStatus === "Running";
-  const isDebugStopped = isDebugActive && debugStatus !== "Running" && debugStatus !== "Starting";
+  const isDebugStopped = isDebugActive && debugStopped;
 
   const statusClass = useMemo(() => {
     const status = activeTab === "debug" ? debugStatus : runStatus;
@@ -662,6 +667,7 @@ export function App() {
       debugSocket.current?.close();
       debugSocket.current = null;
       setDebugStatus("Stopped");
+      setDebugStopped(false);
       setIsDebugActive(false);
       appendDebug("system", "\nStopped by user\n");
     }
@@ -778,6 +784,17 @@ export function App() {
   const sendDebug = useCallback((command: DebugCommand) => {
     if (debugSocket.current?.readyState === WebSocket.OPEN) {
       debugSocket.current.send(JSON.stringify(command));
+      // Optimistically leave the stopped state the instant we dispatch a resume/step, so a
+      // fast double-click can't fire a second command before the `running` event returns —
+      // that second command would hit the adapter mid-run → notStopped (ISSUE-060).
+      if (
+        command.type === "continue" ||
+        command.type === "stepOver" ||
+        command.type === "stepInto" ||
+        command.type === "stepOut"
+      ) {
+        setDebugStopped(false);
+      }
     }
   }, []);
 
@@ -967,6 +984,7 @@ export function App() {
     setWatches([]);
     setStoppedLine(undefined);
     setDebugStatus("Starting");
+    setDebugStopped(false);
 
     let argv: string[];
     try {
@@ -1121,6 +1139,7 @@ export function App() {
     (event: DebugEvent) => {
       if (event.type === "ready") {
         setDebugStatus("Ready");
+        setDebugStopped(false);
         return;
       }
       if (event.type === "compile") {
@@ -1133,10 +1152,12 @@ export function App() {
       }
       if (event.type === "running") {
         setDebugStatus("Running");
+        setDebugStopped(false);
         return;
       }
       if (event.type === "stopped") {
         setDebugStatus(event.reason ?? "Stopped");
+        setDebugStopped(true);
         setStoppedLine(event.line);
         const base = basenameFromWorkspace(event.file);
         const resolved = resolveStopped(base, debugFileMapRef.current, filesRef.current.map((file) => file.path));
@@ -1189,12 +1210,14 @@ export function App() {
       }
       if (event.type === "exit") {
         setIsDebugActive(false);
+        setDebugStopped(false);
         setDebugStatus(event.timedOut ? "Timed out" : "Exited");
         appendDebug("system", `\ndebug session exited${event.code === null ? "" : ` with code ${event.code}`}\n`);
         return;
       }
       if (event.type === "error") {
         setIsDebugActive(false);
+        setDebugStopped(false);
         setDebugStatus("Error");
         appendDebug("system", `${event.message}\n`);
       }
