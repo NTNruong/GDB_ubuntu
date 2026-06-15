@@ -23,12 +23,12 @@ describe("PhaseFilter", () => {
     const filter = new PhaseFilter(
       (chunk) => data.push(chunk),
       () => undefined,
-      (metric) => metrics.push(`${metric.elapsedMs}:${metric.memoryBytes}`)
+      (metric) => metrics.push(`${metric.cpuMs}:${metric.cpuScope}:${metric.memoryBytes}`)
     );
 
-    filter.write("partial stderr__RUNNER_METRIC__:run:elapsed_seconds=0.123:max_rss_kb=4\n");
+    filter.write("partial stderr__RUNNER_METRIC__:run:cpu_seconds=0.123:max_rss_kb=4:scope=user-code\n");
 
     expect(data).toEqual(["partial stderr"]);
-    expect(metrics).toEqual([`123:${4 * 1024}`]);
+    expect(metrics).toEqual([`123:user-code:${4 * 1024}`]);
   });
 });

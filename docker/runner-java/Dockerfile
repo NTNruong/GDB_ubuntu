@@ -15,6 +15,12 @@ COPY --from=jdk17 /opt/java/openjdk /opt/java/17
 COPY --from=jdk21 /opt/java/openjdk /opt/java/21
 COPY --from=jdk25 /opt/java/openjdk /opt/java/25
 
+# Compile the CPU-time launcher with the lowest bundled JDK (17) so its bytecode
+# loads under whichever JDK (17/21/25) a request selects. com.sun.management is
+# part of the supported jdk.management module — no extra flags needed.
+COPY _RunnerMain.java /opt/runner/_RunnerMain.java
+RUN /opt/java/17/bin/javac -d /opt/runner /opt/runner/_RunnerMain.java
+
 COPY run-java /usr/local/bin/run-java
 RUN chmod +x /usr/local/bin/run-java
 

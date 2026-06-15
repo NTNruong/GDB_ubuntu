@@ -145,7 +145,13 @@ export class DockerRunner {
           }
         },
         (metric) => {
-          events.emit({ type: "metric", phase: metric.phase, elapsedMs: metric.elapsedMs, memoryBytes: metric.memoryBytes });
+          events.emit({
+            type: "metric",
+            phase: metric.phase,
+            cpuMs: metric.cpuMs,
+            cpuScope: metric.cpuScope,
+            memoryBytes: metric.memoryBytes
+          });
         }
       );
 

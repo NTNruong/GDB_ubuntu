@@ -29,27 +29,40 @@ go build -o /exec/program .
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 echo "__RUNNER_PHASE__:run:start" >&2
+# Report CPU time (user+sys), not wall-clock: it is independent of scheduler
+# jitter / cgroup CPU throttling, so the number is reproducible. Compiled
+# languages have no runtime warmup to exclude, so the whole-process CPU time
+# (%U+%S from /usr/bin/time) is reported with scope=process.
 run_with_metrics() {
   local rss_file="/workspace/tmp/run-rss.txt"
-  rm -f "$rss_file"
-
-  local start_ns
-  start_ns=$(date +%s%N)
+  local cpu_file="/workspace/tmp/run-cpu.txt"
+  rm -f "$rss_file" "$cpu_file"
 
   set +e
-  /usr/bin/time -f "max_rss_kb=%M" -o "$rss_file" \
+  /usr/bin/time -f "max_rss_kb=%M user_s=%U sys_s=%S" -o "$rss_file" \
     /usr/bin/timeout --signal=KILL "${RUN_TIMEOUT_SECONDS:-30}s" "$@" < /workspace/stdin.txt
   local exit_code=$?
   set -e
 
-  local end_ns elapsed_ms max_rss_kb
-  end_ns=$(date +%s%N)
-  elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
-  max_rss_kb="$(sed -n 's/^max_rss_kb=//p' "$rss_file" 2>/dev/null | tail -n 1)"
+  local max_rss_kb cpu_seconds scope
+  max_rss_kb="$(sed -n 's/.*max_rss_kb=\([0-9]*\).*/\1/p' "$rss_file" 2>/dev/null | tail -n 1)"
 
-  if [[ -n "$max_rss_kb" ]]; then
-    printf "__RUNNER_METRIC__:run:elapsed_seconds=%s:max_rss_kb=%s\n" \
-      "$(printf "%d.%03d" $((elapsed_ms / 1000)) $((elapsed_ms % 1000)))" "$max_rss_kb" >&2
+  # Prefer the in-process user-code CPU time (Java/Python/JS write run-cpu.txt);
+  # else fall back to the whole-process CPU time (%U+%S) from /usr/bin/time.
+  if [[ -s "$cpu_file" ]]; then
+    cpu_seconds="$(tail -n 1 "$cpu_file")"
+    scope="user-code"
+  else
+    local user_s sys_s
+    user_s="$(sed -n 's/.*user_s=\([0-9.]*\).*/\1/p' "$rss_file" 2>/dev/null | tail -n 1)"
+    sys_s="$(sed -n 's/.*sys_s=\([0-9.]*\).*/\1/p' "$rss_file" 2>/dev/null | tail -n 1)"
+    cpu_seconds="$(awk -v u="${user_s:-0}" -v s="${sys_s:-0}" 'BEGIN { printf "%.6f", u + s }')"
+    scope="process"
+  fi
+
+  if [[ -n "$max_rss_kb" && -n "$cpu_seconds" ]]; then
+    printf "__RUNNER_METRIC__:run:cpu_seconds=%s:max_rss_kb=%s:scope=%s\n" \
+      "$cpu_seconds" "$max_rss_kb" "$scope" >&2
   fi
 
   return "$exit_code"

@@ -1,18 +1,22 @@
 export type RunMetricView = {
-  elapsedMs: number;
+  cpuMs: number;
+  cpuScope: "user-code" | "process";
   memoryBytes: number;
 };
 
 export function formatRunMetric(metric: RunMetricView): string {
-  return `Runtime: ${formatRuntime(metric.elapsedMs)}, Memory: ${formatMemory(metric.memoryBytes)}`;
+  // "code only" flags that interpreter/JVM startup was excluded (Java/Python/JS);
+  // compiled languages report whole-process CPU (no warmup to exclude).
+  const scopeNote = metric.cpuScope === "user-code" ? " (code only)" : "";
+  return `CPU time: ${formatCpu(metric.cpuMs)}${scopeNote}, Memory: ${formatMemory(metric.memoryBytes)}`;
 }
 
-export function formatRuntime(elapsedMs: number): string {
-  if (elapsedMs < 1000) {
-    return `${Math.max(0, Math.round(elapsedMs))} ms`;
+export function formatCpu(cpuMs: number): string {
+  if (cpuMs < 1000) {
+    return `${Math.max(0, Math.round(cpuMs))} ms`;
   }
 
-  return `${(elapsedMs / 1000).toFixed(2)} s`;
+  return `${(cpuMs / 1000).toFixed(2)} s`;
 }
 
 export function formatMemory(memoryBytes: number): string {

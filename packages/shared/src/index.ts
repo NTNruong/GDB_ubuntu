@@ -250,7 +250,7 @@ export type RunEvent =
   | { type: "ready"; id: string }
   | { type: "compile"; status: "start" | "done" }
   | { type: "run"; status: "start" }
-  | { type: "metric"; phase: "run"; elapsedMs: number; memoryBytes: number }
+  | { type: "metric"; phase: "run"; cpuMs: number; cpuScope: "user-code" | "process"; memoryBytes: number }
   | { type: "stdout"; data: string }
   | { type: "stderr"; data: string }
   | { type: "exit"; code: number | null; signal?: string | null; timedOut: boolean; outputTruncated: boolean; cancelled?: boolean }

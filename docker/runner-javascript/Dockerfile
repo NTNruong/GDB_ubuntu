@@ -7,6 +7,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY run-javascript /usr/local/bin/run-javascript
+COPY measure.cjs /usr/local/lib/measure.cjs
 RUN chmod +x /usr/local/bin/run-javascript
 
 WORKDIR /workspace
