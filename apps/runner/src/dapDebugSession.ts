@@ -70,7 +70,14 @@ export class DapDebugSession {
   private adapterSpoke = false;
   private startupComplete = false;
   private outputBytes = 0;
-  private programOutputFlushed = false;
+  // Incremental capture of the inferior's stdout/stderr (redirected to
+  // /workspace/tmp/program.out by the C/C++ debug exec-wrapper). We track how many
+  // bytes were already streamed and pump the new tail at every stop so printf output
+  // appears as the user steps — not only once at exit. `pumpChain` serializes reads
+  // because DAP events are dispatched without awaiting (handleDapEvent is fire-and-
+  // forget), so two pumps could otherwise read the same offset concurrently.
+  private programOutputOffset = 0;
+  private pumpChain: Promise<void> = Promise.resolve();
   private exitEmitted = false;
   private pendingExitCode: number | null = null;
   private closed = false;
@@ -231,7 +238,7 @@ export class DapDebugSession {
     this.onCloseStart();
     clearTimeout(this.idleTimer);
     clearTimeout(this.maxTimer);
-    await this.flushProgramOutput();
+    await this.pumpProgramOutput();
     await this.dap?.request("disconnect", { terminateDebuggee: true }).catch(() => undefined);
     this.dap?.close();
     this.dap = undefined;
@@ -507,7 +514,7 @@ export class DapDebugSession {
 
     if (event.event === "exited") {
       this.pendingExitCode = asNumber(body.exitCode) ?? null;
-      await this.flushProgramOutput();
+      await this.pumpProgramOutput();
       return;
     }
 
@@ -556,6 +563,13 @@ export class DapDebugSession {
   ): Promise<void> {
     if (!this.dap) {
       return;
+    }
+
+    // Stream inferior stdout produced since the previous stop so printf output shows
+    // up as the user steps (C/C++ only — its exec-wrapper redirects to program.out;
+    // other languages deliver output via DAP `output` events). (ISSUE: step-time output)
+    if (this.request.language === "c" || this.request.language === "cpp") {
+      await this.pumpProgramOutput();
     }
 
     const frames = prefetchedFrames ?? (await this.fetchFrames(threadId));
@@ -905,26 +919,43 @@ export class DapDebugSession {
     }, this.config.debugIdleMs);
   }
 
-  private async flushProgramOutput(): Promise<void> {
-    if (this.programOutputFlushed || !this.workspace) {
+  /**
+   * Stream any new bytes appended to program.out since the last pump. Safe to call
+   * repeatedly: at every stop (so output appears while stepping) and at exit/close
+   * (to drain the final tail). Reads are serialized through `pumpChain` so concurrent
+   * DAP events can't read the same offset twice.
+   */
+  private pumpProgramOutput(): Promise<void> {
+    this.pumpChain = this.pumpChain.then(() => this.drainProgramOutput());
+    return this.pumpChain;
+  }
+
+  private async drainProgramOutput(): Promise<void> {
+    if (!this.workspace) {
       return;
     }
 
-    this.programOutputFlushed = true;
     const file = path.join(this.workspace.containerPath, "tmp", "program.out");
     try {
       const handle = await open(file, "r");
       try {
-        const buffer = Buffer.alloc(MAX_OUTPUT_BYTES);
-        const { bytesRead } = await handle.read(buffer, 0, MAX_OUTPUT_BYTES, 0);
+        const { size } = await handle.stat();
+        const available = size - this.programOutputOffset;
+        if (available <= 0) {
+          return;
+        }
+        const length = Math.min(available, MAX_OUTPUT_BYTES);
+        const buffer = Buffer.alloc(length);
+        const { bytesRead } = await handle.read(buffer, 0, length, this.programOutputOffset);
         if (bytesRead > 0) {
+          this.programOutputOffset += bytesRead;
           await this.emitLimitedOutput("stdout", buffer.subarray(0, bytesRead).toString("utf8"));
         }
       } finally {
         await handle.close();
       }
     } catch {
-      // file may not exist (program never launched) — nothing to flush
+      // file may not exist yet (program never launched) or was removed on close
     }
   }
 

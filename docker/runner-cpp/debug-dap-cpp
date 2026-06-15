@@ -17,6 +17,6 @@ g++ -std=gnu++20 -g -O0 -Wall -Wextra "${cpp_sources[@]}" -o /exec/program
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 cat > /tmp/gdb-stdin.gdb << 'GDBEOF'
-set exec-wrapper sh -c 'exec "$@" </workspace/stdin.txt >/workspace/tmp/program.out 2>&1' --
+set exec-wrapper sh -c 'exec stdbuf -o0 -e0 "$@" </workspace/stdin.txt >/workspace/tmp/program.out 2>&1' --
 GDBEOF
 exec gdb --interpreter=dap --quiet --init-command=/tmp/gdb-stdin.gdb
