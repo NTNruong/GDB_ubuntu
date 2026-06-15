@@ -161,6 +161,41 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(lastVariables?.variables.find((variable) => variable.name === "result")?.value).toBe("88");
   });
 
+  // Step-time output (Rust): breakpoint ON the println! line, step over it, and the
+  // program output must reach the client BETWEEN that stop and the next — proving the
+  // gdb→program.out pump fires per step. This is a blocker for the Rust line-buffering
+  // assumption: if Rust didn't flush to program.out while stopped, the stdout never lands
+  // between the two stops.
+  it("streams Rust stdout right after stepping over println! (step-time)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugAcrossStepOver({
+      language: "rust",
+      files: [{
+        path: "main.rs",
+        content: 'fn main() {\n    let x = 1;\n    println!("hello");\n    let y = x + 1;\n    println!("{}", y);\n}'
+      }],
+      stdin: "",
+      argv: [],
+      breakpoints: [{ path: "main.rs", line: 3 }],
+      clientId: `test-rust-step-${Date.now()}`
+    });
+    assertStdoutBetweenStops(events, "hello");
+  });
+
+  // Step-time output (Python): breakpoint ON the print() line, step over it, and the
+  // output must appear between the two stops — proving `-u` keeps the debuggee unbuffered
+  // so debugpy forwards it promptly via DAP output events.
+  it("streams Python stdout right after stepping over print() (step-time)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugAcrossStepOver({
+      language: "python",
+      files: [{ path: "main.py", content: 'x = 1\nprint("hello")\ny = x + 1\nprint(y)' }],
+      stdin: "",
+      argv: [],
+      breakpoints: [{ path: "main.py", line: 2 }],
+      clientId: `test-python-step-${Date.now()}`
+    });
+    assertStdoutBetweenStops(events, "hello");
+  });
+
   async function debugUntilStopped(request: DebugRequest): Promise<DebugEvent[]> {
     const runner = new DockerRunner(config);
     const events = new EventBuffer<DebugEvent>();
@@ -217,6 +252,69 @@ maybeDescribe("DapDebugSession integration", () => {
         new Promise<void>((resolve) => setTimeout(resolve, CLEANUP_TIMEOUT_MS))
       ]);
     }
+  }
+
+  // Start a session, wait for the first user stop (breakpoint), issue one stepOver, and
+  // collect events through the second stop. Lets a test assert what the inferior printed
+  // as a direct result of stepping over a print line.
+  async function debugAcrossStepOver(request: DebugRequest): Promise<DebugEvent[]> {
+    const runner = new DockerRunner(config);
+    const events = new EventBuffer<DebugEvent>();
+    const collected: DebugEvent[] = [];
+    const session = new DapDebugSession(runner.docker, config, request, events, () => undefined, () => undefined);
+    const done = new Promise<void>((resolve, reject) => {
+      let stoppedCount = 0;
+      const timeout = setTimeout(() => {
+        reject(new Error(`Timed out across stepOver after ${INTERNAL_WAIT_MS}ms. Collected events: ${collected.map(summarizeEvent).join(" | ")}`));
+      }, INTERNAL_WAIT_MS);
+      events.subscribe((event) => {
+        collected.push(event);
+        if (event.type === "stopped") {
+          stoppedCount += 1;
+          if (stoppedCount === 1) {
+            session.handleCommand({ type: "stepOver" });
+          } else if (stoppedCount >= 2) {
+            clearTimeout(timeout);
+            resolve();
+          }
+        }
+        if (event.type === "error") {
+          clearTimeout(timeout);
+          reject(new Error(`Session emitted error: ${event.message}. Collected events: ${collected.map(summarizeEvent).join(" | ")}`));
+        }
+        if (event.type === "exit") {
+          // Exited before a second stop — resolve and let the assertion report what landed.
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+    });
+
+    try {
+      await session.start();
+      await done;
+      return collected;
+    } finally {
+      await Promise.race([
+        session.close(false),
+        new Promise<void>((resolve) => setTimeout(resolve, CLEANUP_TIMEOUT_MS))
+      ]);
+    }
+  }
+
+  // Assert `needle` appears on a stdout event positioned strictly between the first and
+  // second stop — i.e. produced by the stepOver, not merely present somewhere in the run.
+  function assertStdoutBetweenStops(collected: DebugEvent[], needle: string): void {
+    const stops = collected
+      .map((event, index) => ({ event, index }))
+      .filter((entry) => entry.event.type === "stopped");
+    expect(stops.length, `expected two stops (breakpoint + after stepOver); collected: ${collected.map(summarizeEvent).join(" | ")}`).toBeGreaterThanOrEqual(2);
+    const idx1 = stops[0]!.index;
+    const idx2 = stops[1]!.index;
+    const out = collected.findIndex(
+      (event, index) => index > idx1 && index < idx2 && event.type === "stdout" && event.data.includes(needle)
+    );
+    expect(out, `expected "${needle}" stdout between the two stops; collected: ${collected.map(summarizeEvent).join(" | ")}`).toBeGreaterThan(-1);
   }
 
   function summarizeEvent(event: DebugEvent): string {

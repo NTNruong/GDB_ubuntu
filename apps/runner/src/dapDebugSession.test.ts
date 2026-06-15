@@ -194,6 +194,8 @@ describe("launchArgumentsFor", () => {
     expect(args).not.toHaveProperty("stopOnEntry");
     expect(args.type).toBe("python");
     expect(args.args).toEqual(["/workspace/main.py", "x"]);
+    // -u keeps debuggee stdout unbuffered so print() streams while stepping.
+    expect(args.python).toContain("-u");
   });
 });
 

@@ -565,10 +565,10 @@ export class DapDebugSession {
       return;
     }
 
-    // Stream inferior stdout produced since the previous stop so printf output shows
-    // up as the user steps (C/C++ only — its exec-wrapper redirects to program.out;
-    // other languages deliver output via DAP `output` events). (ISSUE: step-time output)
-    if (this.request.language === "c" || this.request.language === "cpp") {
+    // Stream inferior stdout produced since the previous stop so program output shows up
+    // as the user steps. C/C++/Rust use the gdb exec-wrapper → program.out file; Python/Go
+    // deliver output via DAP `output` events instead. (step-time output)
+    if (this.request.language === "c" || this.request.language === "cpp" || this.request.language === "rust") {
       await this.pumpProgramOutput();
     }
 
@@ -1007,7 +1007,9 @@ export function launchArgumentsFor(request: Pick<DebugRequest, "language" | "arg
       args: ["/workspace/main.py", ...request.argv],
       cwd: "/workspace",
       console: "internalConsole",
-      python: ["python3", "-I"],
+      // -u: unbuffered stdout/stderr so print() output reaches the DAP output events (and
+      // the client) as the user steps, instead of sitting in the block buffer until exit.
+      python: ["python3", "-I", "-u"],
       justMyCode: false,
       subProcess: false,
       redirectOutput: true
