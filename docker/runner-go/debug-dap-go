@@ -30,16 +30,15 @@ go build -gcflags="-N -l" -o /exec/program .
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 # Delve DAP only listens on TCP, but the debug container has no external network
-# (loopback only) and the runner attaches over stdio. Start dlv on loopback, wait for
-# the listener, then bridge the container's stdio to it with socat. dlv's own logs go
-# to a file so they never corrupt the DAP byte stream on stdout.
+# (loopback only) and the runner attaches over stdio. Start dlv on loopback, then bridge
+# the container's stdio to it with socat. dlv's own logs go to a file so they never
+# corrupt the DAP byte stream on stdout.
+#
+# Do NOT pre-probe the port with /dev/tcp: `dlv dap` is single-client, so a probe that
+# opens+closes a connection is consumed as THE client and makes Delve tear the server
+# down — after which socat gets `Connection refused` (or connects to a dying socket and
+# exits 0 with no DAP traffic). Instead let socat itself retry the connect until Delve
+# binds, so socat is the one and only DAP client. (ISSUE-058)
 PORT=4711
 dlv dap --listen=127.0.0.1:${PORT} --log --log-output=dap >/workspace/tmp/dlv.log 2>&1 &
-for _ in $(seq 1 200); do
-  if (exec 3<>/dev/tcp/127.0.0.1/${PORT}) 2>/dev/null; then
-    exec 3>&-
-    break
-  fi
-  sleep 0.05
-done
-exec socat - TCP:127.0.0.1:${PORT}
+exec socat - TCP:127.0.0.1:${PORT},retry=50,interval=0.1

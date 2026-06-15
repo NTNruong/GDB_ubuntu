@@ -62,6 +62,13 @@ export class DapDebugSession {
   private currentFrameId: number | undefined;
   private stopped = false;
   private autoContinueOnInitialStop = true;
+  // Startup-failure detection (ISSUE-058): a debug container that exits before the
+  // adapter ever produced a DAP message — and before `ready` — is a startup failure
+  // (e.g. the Go socat/Delve bridge never came up), not a clean run. Surface an error
+  // instead of a silent exit. gdb/Delve always emit an entry stop before exiting, so a
+  // legitimate run-to-completion (ISSUE-041) always sets adapterSpoke first.
+  private adapterSpoke = false;
+  private startupComplete = false;
   private outputBytes = 0;
   private programOutputFlushed = false;
   private exitEmitted = false;
@@ -167,6 +174,7 @@ export class DapDebugSession {
 
     this.dap = new DapClient(stdout, stream);
     this.dap.onEvent((event) => {
+      this.adapterSpoke = true;
       resolveFirstAdapterEvent?.();
       resolveFirstAdapterEvent = undefined;
       void this.handleDapEvent(event).catch((error) => this.emitError(error));
@@ -181,6 +189,15 @@ export class DapDebugSession {
         return;
       }
       stderrFilter.flush();
+      // Container died before the adapter ever spoke and before `ready`: the debugger
+      // failed to launch (e.g. the Delve/socat bridge never came up). Report it as an
+      // error rather than a silent clean exit. (ISSUE-058)
+      if (!this.startupComplete && !this.adapterSpoke && !this.exitEmitted) {
+        this.events.emit({
+          type: "error",
+          message: "Debug adapter exited during startup before it was ready (the debugger failed to launch)"
+        });
+      }
       this.emitExit(typeof result.StatusCode === "number" ? result.StatusCode : this.pendingExitCode, false);
       void this.close(false);
     });
@@ -196,6 +213,7 @@ export class DapDebugSession {
       }
       throw error;
     }
+    this.startupComplete = true;
     this.events.emit({ type: "ready", id: this.id });
   }
 
