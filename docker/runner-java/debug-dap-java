@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd /workspace
+mkdir -p /workspace/tmp /workspace/classes
+export TMPDIR=/workspace/tmp
+export HOME=/workspace/tmp
+
+# Debuggee uses the requested JDK (17/21/25); jdt.ls itself runs under Java >=21
+# (pinned to /opt/java/21 inside the bridge). Fall back to 21 if unset/missing.
+java_version="${JAVA_VERSION:-21}"
+if [ ! -d "/opt/java/${java_version}" ]; then
+  java_version="21"
+fi
+
+echo "__RUNNER_PHASE__:compile:start" >&2
+shopt -s nullglob
+java_sources=(/workspace/*.java)
+shopt -u nullglob
+if [ ${#java_sources[@]} -eq 0 ]; then
+  echo "No Java source file to compile" >&2
+  exit 1
+fi
+# -g: full debug info (line tables + locals + params) for faithful stepping.
+"/opt/java/${java_version}/bin/javac" -g -d /workspace/classes "${java_sources[@]}"
+echo "__RUNNER_PHASE__:compile:done" >&2
+
+# The bridge boots jdt.ls (Java 21), does the LSP handshake to obtain a java-debug
+# DAP port, and relays this container's stdio <-> that port. The runner then speaks
+# plain DAP over stdio, exactly like the other languages.
+exec python3 /opt/runner/jdtls_debug_bridge.py

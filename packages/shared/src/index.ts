@@ -333,7 +333,7 @@ export const LANGUAGE_CAPABILITIES: LanguageCapability[] = [
     id: "java",
     label: "Java",
     run: true,
-    debug: false,
+    debug: true,
     versions: ["17", "21", "25"],
     defaultVersion: "21",
     defaultSource: [

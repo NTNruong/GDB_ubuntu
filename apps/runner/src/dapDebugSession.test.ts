@@ -197,6 +197,23 @@ describe("launchArgumentsFor", () => {
     // -u keeps debuggee stdout unbuffered so print() streams while stepping.
     expect(args.python).toContain("-u");
   });
+
+  it("debugs Java through java-debug with _DebugMain, sourcePaths and versioned javaExec", () => {
+    const args = launchArgumentsFor({ language: "java", argv: ["x"], toolchainVersion: "17" });
+    expect(args.type).toBe("java");
+    expect(args.mainClass).toBe("_DebugMain");
+    expect(args.classPaths).toEqual(["/workspace/classes", "/opt/runner"]);
+    expect(args.sourcePaths).toEqual(["/workspace"]);
+    // Debuggee runs under the requested JDK (jdt.ls itself runs under Java >=21).
+    expect(args.javaExec).toBe("/opt/java/17/bin/java");
+    expect(args.stopOnEntry).toBe(true);
+    expect(args.args).toEqual(["x"]);
+  });
+
+  it("defaults Java debuggee to JDK 21 when no version is requested", () => {
+    const args = launchArgumentsFor({ language: "java", argv: [] });
+    expect(args.javaExec).toBe("/opt/java/21/bin/java");
+  });
 });
 
 describe("boundSummary", () => {

@@ -5,6 +5,7 @@ import { PassThrough } from "node:stream";
 import Docker from "dockerode";
 import {
   MAX_OUTPUT_BYTES,
+  resolveToolchainVersion,
   type Breakpoint,
   type DebugCommand,
   type DebugEvent,
@@ -112,11 +113,20 @@ export class DapDebugSession {
       resolveFirstAdapterEvent = resolve;
     });
 
+    // Java debug picks the JDK from JAVA_VERSION (like the run path does in
+    // dockerRunner) — for other languages resolveToolchainVersion returns undefined.
+    const toolchainVersion = resolveToolchainVersion(this.request.language, this.request.toolchainVersion);
+    // Java debug runs TWO JVMs (jdt.ls + the debuggee), each with many threads; the
+    // cgroup pids controller counts threads as tasks, so 128 is too low. Give Java a
+    // larger budget; other languages keep the tight default.
+    const pidsLimit = this.request.language === "java" ? 512 : 128;
+
     this.container = await withTimeout(
       this.docker.createContainer({
         Image: imageForLanguage(this.request.language, this.config),
         Cmd: commandForLanguage(this.request.language, this.request.argv),
         WorkingDir: "/workspace",
+        Env: toolchainVersion ? [`JAVA_VERSION=${toolchainVersion}`] : [],
         OpenStdin: true,
         StdinOnce: false,
         Tty: false,
@@ -132,7 +142,7 @@ export class DapDebugSession {
           MemorySwap: this.config.memoryBytes,
           NanoCpus: this.config.nanoCpus,
           NetworkMode: "none",
-          PidsLimit: 128,
+          PidsLimit: pidsLimit,
           ReadonlyRootfs: true,
           SecurityOpt: ["no-new-privileges"],
           Tmpfs: {
@@ -268,7 +278,13 @@ export class DapDebugSession {
           clientID: "gdb-ubuntu-runner",
           clientName: "GDB Ubuntu Runner",
           adapterID:
-            this.request.language === "python" ? "debugpy" : this.request.language === "go" ? "go" : "gdb",
+            this.request.language === "python"
+              ? "debugpy"
+              : this.request.language === "go"
+                ? "go"
+                : this.request.language === "java"
+                  ? "java"
+                  : "gdb",
           pathFormat: "path",
           linesStartAt1: true,
           columnsStartAt1: true,
@@ -352,6 +368,13 @@ export class DapDebugSession {
       // Delve starts only after the build; give it a moment to bind the loopback DAP
       // port and let the in-container socat bridge connect before the handshake.
       await delay(1_000);
+      return;
+    }
+    if (this.request.language === "java") {
+      // The entrypoint must boot jdt.ls, import /workspace, run the startDebugSession
+      // command, then bridge the java-debug DAP port with socat — far slower than gdb.
+      // Give it a generous, tunable budget before the DAP handshake.
+      await delay(Number.parseInt(process.env.DAP_JAVA_STARTUP_MS ?? "8000", 10));
       return;
     }
     await delay(100);
@@ -997,7 +1020,9 @@ export class DapDebugSession {
  * exact parameter names — gdb's DAP silently ignores unknown launch parameters
  * (they land in the handler's `**extra`), so a misnamed flag is an invisible no-op.
  */
-export function launchArgumentsFor(request: Pick<DebugRequest, "language" | "argv">): Record<string, unknown> {
+export function launchArgumentsFor(
+  request: Pick<DebugRequest, "language" | "argv" | "toolchainVersion">
+): Record<string, unknown> {
   if (request.language === "python") {
     return {
       name: "Python",
@@ -1027,6 +1052,29 @@ export function launchArgumentsFor(request: Pick<DebugRequest, "language" | "arg
       program: "/exec/program",
       args: request.argv,
       cwd: "/workspace",
+      stopOnEntry: true
+    };
+  }
+
+  if (request.language === "java") {
+    // java-debug launch. jdt.ls itself runs under Java >=21 (the entrypoint pins
+    // /opt/java/21), but the debuggee runs under the requested JDK via `javaExec`.
+    // `_DebugMain` redirects System.in from stdin.txt then calls Main.main, so the
+    // debuggee reads stdin and breakpoints in Main.java still resolve (sourcePaths).
+    // stopOnEntry installs breakpoints before user code runs (the entry stop
+    // auto-continues, like Go/gdb).
+    const version = resolveToolchainVersion("java", request.toolchainVersion) ?? "21";
+    return {
+      name: "Java",
+      type: "java",
+      request: "launch",
+      mainClass: "_DebugMain",
+      classPaths: ["/workspace/classes", "/opt/runner"],
+      sourcePaths: ["/workspace"],
+      javaExec: `/opt/java/${version}/bin/java`,
+      args: request.argv,
+      cwd: "/workspace",
+      console: "internalConsole",
       stopOnEntry: true
     };
   }
@@ -1084,6 +1132,10 @@ function commandForLanguage(language: Language, argv: string[]): string[] {
     return ["/usr/local/bin/debug-dap-go", ...argv];
   }
 
+  if (language === "java") {
+    return ["/usr/local/bin/debug-dap-java", ...argv];
+  }
+
   return ["/usr/local/bin/debug-dap-python", ...argv];
 }
 
@@ -1096,6 +1148,9 @@ function imageForLanguage(language: Language, config: RunnerConfig): string {
   }
   if (language === "go") {
     return config.goImage;
+  }
+  if (language === "java") {
+    return config.javaImage;
   }
   return config.cppImage;
 }

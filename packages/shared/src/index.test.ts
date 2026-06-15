@@ -71,16 +71,14 @@ describe("schemas", () => {
     ]);
   });
 
-  it("declares JavaScript and Java as run-only (no debugger)", () => {
-    for (const id of ["javascript", "java"] as const) {
-      const capability = LANGUAGE_CAPABILITIES.find((language) => language.id === id);
-      expect(capability?.run).toBe(true);
-      expect(capability?.debug).toBe(false);
-    }
+  it("declares JavaScript as run-only (no debugger)", () => {
+    const capability = LANGUAGE_CAPABILITIES.find((language) => language.id === "javascript");
+    expect(capability?.run).toBe(true);
+    expect(capability?.debug).toBe(false);
   });
 
-  it("declares Rust (gdb DAP) and Go (Delve DAP) as debuggable", () => {
-    for (const id of ["rust", "go"] as const) {
+  it("declares Rust (gdb DAP), Go (Delve DAP) and Java (jdt.ls + java-debug) as debuggable", () => {
+    for (const id of ["rust", "go", "java"] as const) {
       const capability = LANGUAGE_CAPABILITIES.find((language) => language.id === id);
       expect(capability?.run).toBe(true);
       expect(capability?.debug).toBe(true);

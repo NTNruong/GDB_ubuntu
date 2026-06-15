@@ -161,6 +161,34 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(lastVariables?.variables.find((variable) => variable.name === "result")?.value).toBe("88");
   });
 
+  // Java debug end-to-end (jdt.ls + java-debug): stop at a breakpoint and read locals
+  // derived from stdin. Proves the whole bridge works (LSP handshake → DAP port → relay,
+  // _DebugMain stdin redirect, source lookup). jdt.ls boots slowly, so this may need a
+  // larger INTERNAL_WAIT_MS than the gdb/debugpy cases when validated on the host.
+  it("populates Java Variables with stdin-derived locals", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugUntilStopped({
+      language: "java",
+      files: [{
+        path: "Main.java",
+        content:
+          "import java.util.Scanner;\npublic class Main {\n  public static void main(String[] args) {\n    Scanner sc = new Scanner(System.in);\n    int n = sc.nextInt();\n    int result = n * n;\n    System.out.println(result);\n  }\n}"
+      }],
+      stdin: "6\n",
+      argv: [],
+      breakpoints: [{ path: "Main.java", line: 7 }],
+      clientId: `test-java-${Date.now()}`
+    });
+
+    expect(events.find((event): event is Extract<DebugEvent, { type: "stopped" }> => event.type === "stopped")?.line).toBe(7);
+    const lastVariables = [...events].reverse().find(
+      (event): event is Extract<DebugEvent, { type: "variables" }> => event.type === "variables"
+    );
+    expect(lastVariables, "expected a variables event").toBeDefined();
+    const vars = lastVariables!.variables;
+    expect(vars.find((v) => v.name === "n")?.value).toBe("6");
+    expect(vars.find((v) => v.name === "result")?.value).toBe("36");
+  });
+
   // Step-time output (Rust): breakpoint ON the println! line, step over it, and the
   // program output must reach the client BETWEEN that stop and the next — proving the
   // gdb→program.out pump fires per step. This is a blocker for the Rust line-buffering
