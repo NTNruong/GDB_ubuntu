@@ -85,6 +85,9 @@ export class DapDebugSession {
   private readonly watchExpressions = new Set<string>();
   private breakpointFiles = new Set<string>();
   private watchRefreshSeq = 0;
+  // Flips at the compile:done phase marker; after it, a Java debug container's raw stderr is
+  // pure jdt.ls/java-debug/bridge infra noise (ISSUE-061) — gated out of the user console.
+  private compileFinished = false;
   private readonly verbose = process.env.DEBUG_VERBOSE === "1";
   // One-time gdb/debugpy startup handshake under a loaded (rootless) host can
   // exceed the 10s steady-state DAP request timeout; give startup its own,
@@ -178,12 +181,19 @@ export class DapDebugSession {
 
     const stderrFilter = new PhaseFilter(
       (data) => {
+        // Drop Java debugger infra noise (jdt.ls/java-debug/bridge) once compilation is done;
+        // the user's program output arrives via DAP `output` events, not this stream. Returning
+        // early also keeps the noise off the 5MB output budget. (ISSUE-061)
+        if (shouldSuppressDebuggerStderr(this.request.language, this.compileFinished, this.verbose)) {
+          return;
+        }
         void this.emitLimitedOutput("stderr", data);
       },
       (marker) => {
         if (marker.phase === "compile") {
           this.events.emit({ type: "compile", status: marker.status });
           if (marker.status === "done") {
+            this.compileFinished = true;
             resolveCompileDone?.();
             resolveCompileDone = undefined;
           }
@@ -1116,6 +1126,20 @@ export function launchArgumentsFor(
     // The initial entry stop is auto-continued by the stopped handler. (ISSUE-041)
     stopAtBeginningOfMainSubprogram: true
   };
+}
+
+/**
+ * Java debug floods the container's raw stderr with jdt.ls/java-debug/bridge startup logs once
+ * compilation is done (ISSUE-061); the user's own program output comes via DAP `output` events,
+ * not this stream. Hide that infra noise from the user console unless DEBUG_VERBOSE is set.
+ * Compile-phase stderr (javac errors, before compile:done) and non-Java languages are unaffected.
+ */
+export function shouldSuppressDebuggerStderr(
+  language: Language,
+  compileFinished: boolean,
+  verbose: boolean
+): boolean {
+  return language === "java" && compileFinished && !verbose;
 }
 
 /**

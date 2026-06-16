@@ -5,6 +5,7 @@ import {
   launchArgumentsFor,
   normalizeChildNames,
   parseInfoLocals,
+  shouldSuppressDebuggerStderr,
   summarizeChildren
 } from "./dapDebugSession.js";
 
@@ -233,5 +234,23 @@ describe("boundSummary", () => {
     const result = boundSummary("x".repeat(250));
     expect(result.length).toBe(200);
     expect(result.endsWith("…")).toBe(true);
+  });
+});
+
+describe("shouldSuppressDebuggerStderr", () => {
+  it("suppresses Java infra stderr once compilation is done (ISSUE-061)", () => {
+    expect(shouldSuppressDebuggerStderr("java", true, false)).toBe(true);
+  });
+
+  it("keeps Java compile-phase stderr (javac errors) visible", () => {
+    expect(shouldSuppressDebuggerStderr("java", false, false)).toBe(false);
+  });
+
+  it("shows the infra logs under DEBUG_VERBOSE", () => {
+    expect(shouldSuppressDebuggerStderr("java", true, true)).toBe(false);
+  });
+
+  it("does not touch other languages' stderr", () => {
+    expect(shouldSuppressDebuggerStderr("cpp", true, false)).toBe(false);
   });
 });
