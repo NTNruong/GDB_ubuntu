@@ -141,6 +141,34 @@ maybeDescribe("DapDebugSession integration", () => {
     expect(events.some((event) => event.type === "variables")).toBe(true);
   });
 
+  // Go debug end-to-end (Delve `dlv dap` via socat bridge): stop at a user breakpoint
+  // and read locals. Regression for ISSUE-058 — Delve's stopOnEntry stop is too early
+  // for a stack trace ("Unable to produce stack trace"), which previously aborted the
+  // auto-continue and left the session paused so it never reached the breakpoint.
+  it("stops Go at a breakpoint and populates variables (ISSUE-058)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
+    const events = await debugUntilStopped({
+      language: "go",
+      files: [{
+        path: "main.go",
+        content:
+          'package main\n\nimport "fmt"\n\nfunc main() {\n\tn := 6\n\tresult := n * n\n\tfmt.Println(result)\n}\n'
+      }],
+      stdin: "",
+      argv: [],
+      breakpoints: [{ path: "main.go", line: 8 }],
+      clientId: `test-go-${Date.now()}`
+    });
+
+    expect(events.find((event): event is Extract<DebugEvent, { type: "stopped" }> => event.type === "stopped")?.line).toBe(8);
+    const lastVariables = [...events].reverse().find(
+      (event): event is Extract<DebugEvent, { type: "variables" }> => event.type === "variables"
+    );
+    expect(lastVariables, "expected a variables event").toBeDefined();
+    const vars = lastVariables!.variables;
+    expect(vars.find((v) => v.name === "n")?.value).toBe("6");
+    expect(vars.find((v) => v.name === "result")?.value).toBe("36");
+  });
+
   it("imports sibling modules in a python folder debug (ISSUE-051)", { timeout: PER_TEST_TIMEOUT_MS }, async () => {
     const events = await debugUntilStopped({
       language: "python",

@@ -512,7 +512,21 @@ export class DapDebugSession {
 
       if (this.autoContinueOnInitialStop) {
         this.autoContinueOnInitialStop = false;
-        const initialFrames = await this.fetchFrames(threadId);
+        // Delve's stopOnEntry stop sits in the Go runtime before the main goroutine's
+        // stack exists, so stackTrace there fails with "Unable to produce stack trace"
+        // (ISSUE-058). An unframeable initial stop IS the entry stop by definition, so
+        // fall through to the re-apply-breakpoints + continue path below instead of
+        // letting the throw abort the handler (which left the inferior paused → no
+        // breakpoint stop → timeout). gdb/debugpy/java-debug produce frames at entry.
+        const initialFrames = await this.fetchFrames(threadId).catch((error) => {
+          if (this.verbose) {
+            this.events.emit({
+              type: "console",
+              data: `[entry] stackTrace unavailable at initial stop: ${error instanceof Error ? error.message : String(error)}\n`
+            });
+          }
+          return [] as DapStackFrame[];
+        });
         // The first stop is the entry stop (stopAtBeginningOfMainSubprogram for
         // C/C++, or the debugpy bootstrap for Python) unless it already landed on
         // a user breakpoint. Decide by LOCATION, not reason: gdb reports the entry
