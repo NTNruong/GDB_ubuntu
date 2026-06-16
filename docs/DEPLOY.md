@@ -4,9 +4,9 @@ Operational detail for deploying GDB_ubuntu. `CLAUDE.md` keeps only the essentia
 
 ## How deploy happens
 
-`commit → push main` → a self-hosted GitHub Actions runner on the Ubuntu 24.04 LTS host (`/opt/apps/GDB_ubuntu`) runs `bash bin/pull-latest.sh`: `git pull --ff-only` → `docker compose up --build -d` for the app services. The workflow ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)) auto-detects `docker/` changes via `git diff HEAD origin/main` and sets `REBUILD_RUNNER_IMAGES=1` so the compiler base images rebuild before the app services restart.
+`commit → push main` → a self-hosted GitHub Actions runner on the Ubuntu 24.04 LTS host (`/opt/apps/GDB_ubuntu`) runs `bash bin/pull-latest.sh`: `git pull --ff-only` → `docker compose --profile runner-images build` (always) → `docker compose up --build -d` for the app services. The workflow ([.github/workflows/deploy.yml](../.github/workflows/deploy.yml)) **always** sets `REBUILD_RUNNER_IMAGES=1`; `pull-latest.sh` also defaults it to `1`. This is deliberate: Docker layer cache no-ops unchanged images, and always rebuilding removes the old `git diff HEAD origin/main` race where a `git pull` advanced HEAD before the build, leaving the diff empty so the app advertised a new capability with a stale runner image (ISSUE-059). A runner-images build failure makes `set -e` abort before the app comes up (fail-safe).
 
-`bin/pull-latest.sh` flags (for a rare manual SSH deploy): `RESTART_APP=1`, `REBUILD_RUNNER_IMAGES=1`. (Same table in README §Deployment.)
+`bin/pull-latest.sh` flags (for a rare manual SSH deploy): `RESTART_APP=1` (rebuild+restart app), `REBUILD_RUNNER_IMAGES=0` (opt **out** of the now-default image rebuild). (Same table in README §Deployment.)
 
 ## What rebuilds when (dir → service)
 
@@ -14,7 +14,7 @@ Operational detail for deploying GDB_ubuntu. `CLAUDE.md` keeps only the essentia
 - TypeScript in `apps/api/src/**` → rebuild `api`
 - Frontend (`apps/frontend/src/**`, `apps/frontend/index.html`, Vite config) → rebuild `frontend`
 - Multiple of the above → `docker compose up --build -d` rebuilds all app services (what the auto-deploy always does via `RESTART_APP=1`)
-- Anything under [docker/runner-cpp/](../docker/runner-cpp/) or [docker/runner-python/](../docker/runner-python/) (Dockerfile, `run-*`, `debug-*`, `debug-dap-*`) → **must also** run `docker compose --profile runner-images build runner-cpp-image runner-python-image` *before* `docker compose up --build -d` so child containers pick up the new image. The auto-deploy handles this when it detects `docker/` changes; if deploying by hand, skipping it is the most common mistake.
+- Anything under any `docker/runner-*/` dir (Dockerfile, `run-*`, `debug-*`, `debug-dap-*`) → the runner image must rebuild *before* `docker compose up --build -d` so child containers pick up the new image. The auto-deploy **always** does this (`docker compose --profile runner-images build`, whole profile); manual SSH deploys rebuild by default too (`pull-latest.sh` defaults `REBUILD_RUNNER_IMAGES=1`), so the once-common "forgot to rebuild the image" mistake no longer applies unless you explicitly pass `REBUILD_RUNNER_IMAGES=0`.
 - `docker-compose.yml` env-var changes → `docker compose up -d` (no `--build` needed unless code also changed).
 
 ## Rootless Docker isolation (ISSUE-044)
@@ -103,4 +103,4 @@ Check the Actions run is green, then `docker compose logs --tail=50 <service>` o
 
 ## LOG.md "Deploy status" block
 
-Note that the change deploys automatically on push to `main`, and call out explicitly whether the runner-images rebuild is triggered (i.e. whether anything under `docker/runner-cpp/` or `docker/runner-python/` changed). Past entries in `LOG.md` are the canonical examples of the expected format.
+Note that the change deploys automatically on push to `main`. The runner-images rebuild now **always** runs (layer cache no-ops unchanged images), so a `docker/` change is no longer a prerequisite — just state that the relevant image rebuilds with the new content. Past entries in `LOG.md` are the canonical examples of the expected format.

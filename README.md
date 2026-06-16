@@ -4,7 +4,7 @@
   <strong><img src="https://flagcdn.com/24x18/gb.png" width="20" alt="EN"> English</strong> &nbsp;·&nbsp; <a href="README.vi.md"><img src="https://flagcdn.com/24x18/vn.png" width="20" alt="VI"> Tiếng Việt</a>
 </p>
 
-A high-performance internal code runner with visual debugging for C, C++, and Python — built on the Debug Adapter Protocol (DAP) and isolated inside a secure Tailnet.
+A high-performance internal code runner with visual debugging for C, C++, Python, JavaScript, Java, Go, and Rust — built on the Debug Adapter Protocol (DAP) and isolated inside a secure Tailnet. Every language runs; debugging is available for all but JavaScript.
 
 <p align="center">
   <img src="https://img.shields.io/badge/Tailnet-Isolated-10b981?style=for-the-badge&logo=tailscale&logoColor=white" alt="Tailnet Isolated" />
@@ -28,8 +28,8 @@ The run-and-debug experience is built on strict security and performance princip
 |---|---|---|
 | 🔒 **Ephemeral Run Jobs** | Anonymous run/debug keeps no database and no long-lived source: source/stdin/argv exist only transiently in each job's workspace, cleaned up after the job ends and redacted from logs. | **No DB · Ephemeral jobs** |
 | 🗂️ **Accounts + File Explorer** | Optional app-managed accounts (bcrypt, cookie sessions) unlock a VSCode-like left sidebar over a per-user home directory (full CRUD, save, run-the-folder). Anonymous use is unchanged. | **App-managed auth · Per-user homes** |
-| 🚀 **Multi-Language Runner** | Compiles and runs C `gnu17`, C++ `gnu++20`, and Python 3.12. | **GCC / Python 3.12** |
-| 🔍 **DAP-Bridged Debugging** | Real-time interactive debugging via GDB (C/C++) and debugpy (Python), bridged straight into the Monaco editor over the Debug Adapter Protocol. | **GDB / debugpy / GDB-MI** |
+| 🚀 **Multi-Language Runner** | Compiles and runs C `gnu17`, C++ `gnu++20`, Python 3.12, JavaScript (Node), Java (JDK 17/21/25), Go, and Rust. | **7 languages** |
+| 🔍 **DAP-Bridged Debugging** | Real-time interactive debugging for C/C++/Rust (GDB), Python (debugpy), Go (Delve), and Java (jdt.ls + java-debug), bridged straight into the Monaco editor over the Debug Adapter Protocol. JavaScript is run-only. | **GDB / debugpy / Delve / jdt.ls** |
 | 🛡️ **Docker Sandbox Isolation** | Fully isolated execution: no outbound network access, with strict CPU, memory, run-time, and output limits. | **CapDrop / PidsLimit** |
 | 👁️ **Metadata-Only Logging** | Privacy by default: only performance metadata is stored. Source, stdin, and output are dropped. | **No code/stdout stored** |
 
@@ -38,7 +38,7 @@ The run-and-debug experience is built on strict security and performance princip
 ## 🔐 Security Model & Disclaimer
 
 > [!WARNING]
-> This tool **executes arbitrary code** (C/C++/Python). Each job runs in a hardened Docker sandbox (`NetworkDisabled`, `CapDrop: ALL`, `ReadonlyRootfs`, `no-new-privileges`, CPU/RAM/PID/time/output limits), but a sandbox only **mitigates** risk — it does not eliminate it.
+> This tool **executes arbitrary code** (C/C++/Python/JavaScript/Java/Go/Rust). Each job runs in a hardened Docker sandbox (`NetworkDisabled`, `CapDrop: ALL`, `ReadonlyRootfs`, `no-new-privileges`, CPU/RAM/PID/time/output limits), but a sandbox only **mitigates** risk — it does not eliminate it.
 
 * **Anonymous run is open; the file explorer requires an account.** Run/debug stay login-free and unthrottled — anyone who can reach the endpoint can run code. The per-user file explorer is gated behind app-managed accounts (bcrypt-hashed `users.json`, signed HttpOnly cookie sessions, a lightweight login lockout). There is **no public self-registration** — an admin seeds users with the [`users` CLI](docs/DEPLOY.md).
 * **For trusted environments.** Designed to run **inside a private tailnet**. Do **not** place it directly on the public internet without adding your own rate limiting (reverse proxy / API gateway / Tailscale identity). Set a stable `SESSION_SECRET` and serve over HTTPS (`SESSION_COOKIE_SECURE=1`) before exposing accounts more widely.
@@ -79,8 +79,9 @@ npm run dev
 > [!IMPORTANT]
 > Docker is required to build the runner images used as isolated sandboxes:
 > ```bash
-> docker compose --profile runner-images build runner-cpp-image runner-python-image
+> docker compose --profile runner-images build
 > ```
+> Builds every per-language sandbox image (cpp, python, javascript, java, go, rust). Docker layer cache makes unchanged images a no-op.
 
 ---
 
@@ -90,7 +91,7 @@ Production deployment on an Ubuntu host with Tailscale installed:
 
 | Step | Command | Description |
 |---|---|---|
-| **1. Build Images** | `docker compose --profile runner-images build runner-cpp-image runner-python-image` | Build the isolated GCC/Python sandbox images. |
+| **1. Build Images** | `docker compose --profile runner-images build` | Build every per-language sandbox image (cpp/python/javascript/java/go/rust). |
 | **2. Run Services** | `docker compose up --build -d frontend api runner` | Start the app services in detached mode. |
 | **3. Tailnet Access** | Expose `http://<tailscale-ip>:8080` | Tailnet only. Do not expose to the public internet without auth. |
 | **4. Shared Space** | Mounts `/tmp/gdb-ubuntu-runner-workspaces` | Temporary file-exchange area for child containers. |
@@ -126,9 +127,9 @@ Deployment auto-syncs on every push to `main` via a self-hosted GitHub Actions r
 
 | Update scenario | Command | Scope |
 |---|---|---|
-| **Code only** | `bash bin/pull-latest.sh` | Pull the latest code onto the host. |
-| **Restart the app** | `RESTART_APP=1 bash bin/pull-latest.sh` | Rebuild & restart the app containers. |
-| **Sandbox Dockerfile changed** | `REBUILD_RUNNER_IMAGES=1 RESTART_APP=1 bash bin/pull-latest.sh` | Rebuild the sandbox images + app. |
+| **Pull + rebuild images** | `bash bin/pull-latest.sh` | Pull code and rebuild runner images (default; layer cache no-ops unchanged ones). |
+| **Pull + rebuild + restart app** | `RESTART_APP=1 bash bin/pull-latest.sh` | Same, plus rebuild & restart the app containers (what auto-deploy runs). |
+| **Skip image rebuild** | `REBUILD_RUNNER_IMAGES=0 RESTART_APP=1 bash bin/pull-latest.sh` | Pull + restart app without touching runner images. |
 
 ---
 

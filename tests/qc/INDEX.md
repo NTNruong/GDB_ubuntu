@@ -1,6 +1,6 @@
 # QC Capability Test Checklist — INDEX
 
-Bộ test case manual cho GDB_ubuntu (tailnet-only online code runner: C `gnu17`, C++ `gnu++20`, Python 3.12, JavaScript (Node 22), Java (JDK 17/21/25), Go, Rust — DAP debug cho C/C++/Python/Rust).
+Bộ test case manual cho GDB_ubuntu (tailnet-only online code runner: C `gnu17`, C++ `gnu++20`, Python 3.12, JavaScript (Node 22), Java (JDK 17/21/25), Go, Rust — DAP debug cho C/C++/Python/Go/Rust/Java; chỉ JavaScript run-only).
 Phạm vi: phủ **năng lực** của runner + 7 ngôn ngữ, **không thay thế** Playwright e2e tự động.
 
 ## Cách dùng
@@ -24,7 +24,7 @@ Phạm vi: phủ **năng lực** của runner + 7 ngôn ngữ, **không thay th�
 | [`cpp.md`](cpp.md) | C++ STL + gnu++20 + threading + firmware-adjacent | TC-CPP |
 | [`python.md`](python.md) | Python 3.12 smoke + asyncio + showcase | TC-PY |
 | [`javascript.md`](javascript.md) | JavaScript (Node 22) run-only smoke + showcase | TC-JS |
-| [`java.md`](java.md) | Java run-only + version selector 17/21/25 + showcase | TC-JAVA |
+| [`java.md`](java.md) | Java run + DAP debug (jdt.ls + java-debug) + version selector 17/21/25 + showcase | TC-JAVA, TC-JAVA-DBG |
 | [`go.md`](go.md) | Go run + DAP debug (Delve) + showcase | TC-GO, TC-GO-DBG |
 | [`rust.md`](rust.md) | Rust run + DAP debug + showcase | TC-RUST |
 
@@ -43,7 +43,7 @@ Phạm vi: phủ **năng lực** của runner + 7 ngôn ngữ, **không thay th�
 | `TC-CPP-###`   | C++ |
 | `TC-PY-###`    | Python |
 | `TC-JS-###`    | JavaScript (Node 22) — run-only |
-| `TC-JAVA-###`  | Java — run-only + version selector (17/21/25) |
+| `TC-JAVA-###`  | Java — run + version selector (17/21/25); `TC-JAVA-DBG-###` = jdt.ls + java-debug DAP debug |
 | `TC-GO-###`    | Go — run; `TC-GO-DBG-###` = Delve DAP debug |
 | `TC-RUST-###`  | Rust — run + DAP debug |
 
@@ -130,9 +130,9 @@ Hàng = feature, cột = ngôn ngữ, ô = các scenario ID phủ.
 | Language showcase | TC-JS-007..012 | TC-JAVA-010..013 | TC-GO-007..011 | TC-RUST-007..011 |
 | Network blocked | TC-JS-013 | TC-JAVA-014 | TC-GO-012..013 | TC-RUST-012 |
 | Version selector | — | TC-JAVA-007..009 | — | — |
-| Debug (DAP) | — (hidden) | — (hidden) | TC-GO-DBG-001..004 | TC-RUST-013..016 |
+| Debug (DAP) | — (hidden) | TC-JAVA-DBG-001..* (follow-up) | TC-GO-DBG-001..004 | TC-RUST-013..016 |
 
-> Debug khả dụng: **Rust** (gdb DAP) và **Go** (Delve `dlv dap` + socat). JavaScript/Java vẫn run-only.
+> Debug khả dụng: **Rust** (gdb DAP), **Go** (Delve `dlv dap` + socat), **Java** (jdt.ls + java-debug). Chỉ **JavaScript** còn run-only. Java debug test cases là follow-up sau khi QC validate bridge handshake.
 
 ## Related ISSUES → regression scenario
 

@@ -1,8 +1,12 @@
 # tests/qc/java.md — Java capability checklist
 
-Scope: run-only smoke + **version selector (17 / 21 / 25)** + language showcase + sandbox. Java is
-**run-only** (no debugger); the Debug button is hidden via `LANGUAGE_CAPABILITIES.debug=false`.
-Runner: `javac *.java -d classes` then `java -cp classes Main`, JDK chosen by `JAVA_VERSION` — see
+Scope: run smoke + **version selector (17 / 21 / 25)** + language showcase + sandbox. Java is now
+**debuggable** (`LANGUAGE_CAPABILITIES.debug=true`) via DAP — Eclipse JDT LS + Microsoft java-debug
+behind an in-container bridge ([`docker/runner-java/jdtls_debug_bridge.py`](../../docker/runner-java/jdtls_debug_bridge.py)).
+Debug-path entry: [`docker/runner-java/debug-dap-java`](../../docker/runner-java/debug-dap-java) (`javac -g` then bridge);
+the debuggee runs under the selected JDK while jdt.ls itself runs under Java ≥21.
+Detailed debug test cases (breakpoint/step/vars) are a **follow-up** to be added once QC validates the bridge handshake on the rootless host.
+Runner (run path): `javac *.java -d classes` then `java -cp classes Main`, JDK chosen by `JAVA_VERSION` — see
 [`docker/runner-java/run-java`](../../docker/runner-java/run-java).
 Image: one `runner-java` image bundling **Temurin JDK 17 / 21 / 25** (default 21). Entry: `Main.java`
 with `public class Main`.

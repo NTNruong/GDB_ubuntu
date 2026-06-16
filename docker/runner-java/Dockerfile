@@ -27,7 +27,7 @@ ARG JDTLS_TARBALL=https://download.eclipse.org/jdtls/snapshots/jdt-language-serv
 ARG JAVA_DEBUG_VSIX=https://open-vsx.org/api/vscjava/vscode-java-debug/0.58.1/file/vscjava.vscode-java-debug-0.58.1.vsix
 RUN mkdir -p /opt/jdtls /opt/java-debug \
   && curl -fsSL "$JDTLS_TARBALL" -o /tmp/jdtls.tar.gz \
-  && tar -xzf /tmp/jdtls.tar.gz -C /opt/jdtls \
+  && tar --no-same-owner -xzf /tmp/jdtls.tar.gz -C /opt/jdtls \
   && curl -fsSL "$JAVA_DEBUG_VSIX" -o /tmp/java-debug.vsix \
   && unzip -q /tmp/java-debug.vsix -d /tmp/java-debug-vsix \
   && cp /tmp/java-debug-vsix/extension/server/com.microsoft.java.debug.plugin-*.jar /opt/java-debug/ \

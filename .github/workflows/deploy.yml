@@ -23,13 +23,11 @@ jobs:
         run: |
           cd /opt/apps/GDB_ubuntu
           git fetch origin main
-          
-          if git diff --name-only HEAD origin/main | grep -q "^docker/"; then
-            echo "Detected changes in docker/ directory. Setting REBUILD_RUNNER_IMAGES=1"
-            export REBUILD_RUNNER_IMAGES=1
-          else
-            export REBUILD_RUNNER_IMAGES=0
-          fi
-          
+
+          # Always rebuild runner images: Docker layer cache no-ops unchanged ones, and
+          # this removes the git-diff/HEAD-advance race that let the app advertise a
+          # capability before its runner image was rebuilt (ISSUE-059). A build failure
+          # makes `set -e` in pull-latest.sh abort before the app services come up.
+          export REBUILD_RUNNER_IMAGES=1
           export RESTART_APP=1
           bash bin/pull-latest.sh
