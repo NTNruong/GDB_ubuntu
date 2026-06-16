@@ -37,7 +37,9 @@ RUN mkdir -p /opt/jdtls /opt/java-debug \
 # bundled JDK (17) so their bytecode loads under whichever JDK (17/21/25) is selected.
 COPY _RunnerMain.java /opt/runner/_RunnerMain.java
 COPY _DebugMain.java /opt/runner/_DebugMain.java
-RUN /opt/java/17/bin/javac -d /opt/runner /opt/runner/_RunnerMain.java /opt/runner/_DebugMain.java
+# -encoding UTF-8: the image has no locale set, so javac defaults to US-ASCII and
+# chokes on non-ASCII comment chars (em dash, arrows). Pin UTF-8 explicitly.
+RUN /opt/java/17/bin/javac -encoding UTF-8 -d /opt/runner /opt/runner/_RunnerMain.java /opt/runner/_DebugMain.java
 
 COPY jdtls_debug_bridge.py /opt/runner/jdtls_debug_bridge.py
 COPY run-java /usr/local/bin/run-java

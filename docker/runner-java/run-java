@@ -22,7 +22,9 @@ if [ ${#java_sources[@]} -eq 0 ]; then
   echo "No Java source file to compile" >&2
   exit 1
 fi
-javac -d /workspace/classes "${java_sources[@]}"
+# -encoding UTF-8: no locale in the image → javac defaults to US-ASCII and fails on
+# non-ASCII source (e.g. UTF-8 string literals in user code).
+javac -encoding UTF-8 -d /workspace/classes "${java_sources[@]}"
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 echo "__RUNNER_PHASE__:run:start" >&2

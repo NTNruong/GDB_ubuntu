@@ -22,7 +22,9 @@ if [ ${#java_sources[@]} -eq 0 ]; then
   exit 1
 fi
 # -g: full debug info (line tables + locals + params) for faithful stepping.
-"/opt/java/${java_version}/bin/javac" -g -d /workspace/classes "${java_sources[@]}"
+# -encoding UTF-8: no locale in the image → javac defaults to US-ASCII and fails on
+# non-ASCII source (e.g. UTF-8 string literals in user code).
+"/opt/java/${java_version}/bin/javac" -g -encoding UTF-8 -d /workspace/classes "${java_sources[@]}"
 echo "__RUNNER_PHASE__:compile:done" >&2
 
 # The bridge boots jdt.ls (Java 21), does the LSP handshake to obtain a java-debug
