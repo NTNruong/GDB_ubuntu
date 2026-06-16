@@ -207,12 +207,20 @@ describe("launchArgumentsFor", () => {
     // Debuggee runs under the requested JDK (jdt.ls itself runs under Java >=21).
     expect(args.javaExec).toBe("/opt/java/17/bin/java");
     expect(args.stopOnEntry).toBe(true);
-    expect(args.args).toEqual(["x"]);
+    // java-debug wants `args` as a command-line STRING, not an array (ISSUE-059).
+    expect(args.args).toBe("x");
   });
 
-  it("defaults Java debuggee to JDK 21 when no version is requested", () => {
+  it("joins Java debuggee argv into a quoted command-line string", () => {
+    const args = launchArgumentsFor({ language: "java", argv: ["a b", "c"] });
+    expect(args.args).toBe('"a b" c');
+  });
+
+  it("defaults Java debuggee to JDK 21 and omits args when none are requested", () => {
     const args = launchArgumentsFor({ language: "java", argv: [] });
     expect(args.javaExec).toBe("/opt/java/21/bin/java");
+    // Empty argv → omit `args` entirely (java-debug rejects an array; empty string is moot).
+    expect(args).not.toHaveProperty("args");
   });
 });
 

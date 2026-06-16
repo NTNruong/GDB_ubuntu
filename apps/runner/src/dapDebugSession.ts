@@ -1020,6 +1020,17 @@ export class DapDebugSession {
  * exact parameter names — gdb's DAP silently ignores unknown launch parameters
  * (they land in the handler's `**extra`), so a misnamed flag is an invisible no-op.
  */
+/**
+ * java-debug deserializes launch `args` as a single command-line STRING (unlike gdb/
+ * debugpy/Delve, which take a string[]); it tokenizes the string on whitespace, honoring
+ * double-quoted spans. Wrap any token with whitespace (or an empty token) in double quotes;
+ * leave bare tokens as-is. (Tokens containing embedded double quotes/newlines are a known
+ * edge this parser cannot round-trip — out of scope for judging argv.)
+ */
+function javaDebugArgsString(argv: readonly string[]): string {
+  return argv.map((a) => (a === "" || /\s/.test(a) ? `"${a}"` : a)).join(" ");
+}
+
 export function launchArgumentsFor(
   request: Pick<DebugRequest, "language" | "argv" | "toolchainVersion">
 ): Record<string, unknown> {
@@ -1072,7 +1083,11 @@ export function launchArgumentsFor(
       classPaths: ["/workspace/classes", "/opt/runner"],
       sourcePaths: ["/workspace"],
       javaExec: `/opt/java/${version}/bin/java`,
-      args: request.argv,
+      // Unlike gdb/debugpy/Delve (which take a string[]), java-debug deserializes `args`
+      // as a single command-line STRING and tokenizes it itself — sending an array makes
+      // it reject the launch (`Expected STRING but was BEGIN_ARRAY at path $.args`,
+      // ISSUE-059). Omit `args` entirely when there are none.
+      ...(request.argv.length > 0 ? { args: javaDebugArgsString(request.argv) } : {}),
       cwd: "/workspace",
       console: "internalConsole",
       stopOnEntry: true
