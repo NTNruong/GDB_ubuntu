@@ -15,6 +15,8 @@ export type RunnerConfig = {
   debugIdleMs: number;
   memoryBytes: number;
   nanoCpus: number;
+  debugJavaNanoCpus: number;
+  debugJavaMemoryBytes: number;
   dockerSocketPath: string;
   workspaceContainerRoot: string;
   workspaceHostRoot: string;
@@ -56,6 +58,11 @@ export function readConfig(): RunnerConfig {
     debugIdleMs: Number.parseInt(process.env.DEBUG_IDLE_MS ?? "300000", 10),
     memoryBytes: Number.parseInt(process.env.MEMORY_BYTES ?? String(1024 * 1024 * 1024), 10),
     nanoCpus: Number.parseInt(process.env.NANO_CPUS ?? "1000000000", 10),
+    // Java debug cold-starts jdt.ls (an OSGi app) whose ServiceReady time is CPU-bound on
+    // workspace import; the tight 1-CPU/1-GiB run limits make it crawl (~20s). Give the Java
+    // debug container its own, larger budget (other languages + the run path stay tight).
+    debugJavaNanoCpus: Number.parseInt(process.env.DEBUG_JAVA_NANO_CPUS ?? "4000000000", 10),
+    debugJavaMemoryBytes: Number.parseInt(process.env.DEBUG_JAVA_MEMORY_BYTES ?? String(2 * 1024 * 1024 * 1024), 10),
     dockerSocketPath: resolveDockerSocketPath(),
     workspaceContainerRoot: process.env.WORKSPACE_CONTAINER_ROOT ?? tmpdir(),
     workspaceHostRoot: process.env.WORKSPACE_HOST_ROOT ?? process.env.WORKSPACE_CONTAINER_ROOT ?? tmpdir(),

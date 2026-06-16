@@ -120,6 +120,12 @@ export class DapDebugSession {
     // cgroup pids controller counts threads as tasks, so 128 is too low. Give Java a
     // larger budget; other languages keep the tight default.
     const pidsLimit = this.request.language === "java" ? 512 : 128;
+    // Java debug cold-starts jdt.ls (OSGi) whose ServiceReady is CPU-bound on workspace
+    // import; the tight 1-CPU/1-GiB run budget makes it take ~20s. Give the Java debug
+    // container a larger CPU/memory budget (other languages keep the tight defaults).
+    const isJava = this.request.language === "java";
+    const nanoCpus = isJava ? this.config.debugJavaNanoCpus : this.config.nanoCpus;
+    const memoryBytes = isJava ? this.config.debugJavaMemoryBytes : this.config.memoryBytes;
 
     this.container = await withTimeout(
       this.docker.createContainer({
@@ -138,9 +144,9 @@ export class DapDebugSession {
           Binds: [`${this.workspace.hostPath}:/workspace:rw`],
           CapDrop: ["ALL"],
           CapAdd: ["SYS_PTRACE"],
-          Memory: this.config.memoryBytes,
-          MemorySwap: this.config.memoryBytes,
-          NanoCpus: this.config.nanoCpus,
+          Memory: memoryBytes,
+          MemorySwap: memoryBytes,
+          NanoCpus: nanoCpus,
           NetworkMode: "none",
           PidsLimit: pidsLimit,
           ReadonlyRootfs: true,

@@ -56,6 +56,11 @@ services:
       DEBUG_IDLE_MS: "300000"
       DEBUG_ENGINE: "dap"
       DEBUG_VERBOSE: "0"
+      # Java debug cold-starts jdt.ls (CPU-bound on workspace import); the tight run limits
+      # make the first breakpoint take ~20s. Give the Java debug container a larger budget.
+      # Lower these if a small host gets starved under concurrent debug sessions.
+      DEBUG_JAVA_NANO_CPUS: "${DEBUG_JAVA_NANO_CPUS:-4000000000}"
+      DEBUG_JAVA_MEMORY_BYTES: "${DEBUG_JAVA_MEMORY_BYTES:-2147483648}"
       WORKSPACE_CONTAINER_ROOT: "/runner-workspaces"
       # Must equal the host bind-source below (the child containers' bind paths are
       # resolved by the daemon on the host). Override in production to a path owned

@@ -985,6 +985,11 @@ export function App() {
     setStoppedLine(undefined);
     setDebugStatus("Starting");
     setDebugStopped(false);
+    if (language === "java") {
+      // Java debug cold-starts jdt.ls before the first breakpoint; set expectations so the
+      // ~10-15s wait reads as progress, not a hang.
+      appendDebug("system", "Booting Java debugger (jdt.ls)… first start can take ~10-15s.\n");
+    }
 
     let argv: string[];
     try {

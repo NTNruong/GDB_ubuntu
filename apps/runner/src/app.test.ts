@@ -19,6 +19,8 @@ describe("runner app", () => {
     debugIdleMs: 1_000,
     memoryBytes: 64 * 1024 * 1024,
     nanoCpus: 100_000_000,
+    debugJavaNanoCpus: 200_000_000,
+    debugJavaMemoryBytes: 128 * 1024 * 1024,
     dockerSocketPath: "/var/run/docker.sock",
     workspaceContainerRoot: "/tmp",
     workspaceHostRoot: "/tmp",

@@ -90,7 +90,15 @@ def start_jdtls():
         "-Dosgi.sharedConfiguration.area.readOnly=true",
         "-Dosgi.configuration.cascaded=true",
         "-Djava.io.tmpdir=/workspace/tmp",
-        "-Xmx512m",
+        # jdt.ls is short-lived (one debug session) and CPU-bound at startup: skip the C2
+        # JIT, use ParallelGC, pre-size the heap to avoid grow-pauses, and drop perf-data
+        # files. The container now has more CPU/RAM (debugJavaNanoCpus/MemoryBytes), so raise
+        # -Xmx for fewer GC pauses during import.
+        "-XX:TieredStopAtLevel=1",
+        "-XX:+UseParallelGC",
+        "-XX:-UsePerfData",
+        "-Xms256m",
+        "-Xmx768m",
         "--add-modules=ALL-SYSTEM",
         "--add-opens", "java.base/java.util=ALL-UNNAMED",
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
@@ -115,7 +123,16 @@ def handshake_for_port(proc):
             "initializationOptions": {
                 "bundles": [java_debug_jar],
                 "extendedClientCapabilities": {"progressReportProvider": False, "classFileContentsSupport": True},
-                "settings": {"java": {"autobuild": {"enabled": True}}},
+                # Reach ServiceReady sooner: the slow part is jdt.ls's workspace import +
+                # build. We compile the user code ourselves (javac -> /workspace/classes) and
+                # pass explicit classPaths/sourcePaths in the DAP launch, so jdt.ls's own build
+                # output is not on the critical path — disable autobuild + Maven/Gradle import
+                # probing (the upstream-recommended way to cut ServiceReady time).
+                "settings": {"java": {
+                    "autobuild": {"enabled": False},
+                    "import": {"gradle": {"enabled": False}, "maven": {"enabled": False}},
+                    "maxConcurrentBuilds": 1,
+                }},
             },
         },
     })
