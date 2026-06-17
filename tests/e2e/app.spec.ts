@@ -62,6 +62,25 @@ test("runs a C++ hello world snippet", async ({ page }) => {
   await expect(page.locator(".terminal")).toContainText("Hello World", { timeout: 30_000 });
 });
 
+test("advanced suggestions toggle: default on, toggles, not persisted, C/C++ only", async ({ page }) => {
+  await page.goto("/");
+  const toggle = page.getByTestId("btn-suggest-toggle");
+  // Default language is C++ → toggle visible and ON by default.
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+  // Not persisted: a reload returns to the default ON state.
+  await page.reload();
+  await expect(page.getByTestId("btn-suggest-toggle")).toHaveAttribute("aria-pressed", "true");
+
+  // Only offered for C/C++: the button is gone for other languages.
+  await page.getByLabel("Language").selectOption("python");
+  await expect(page.getByTestId("btn-suggest-toggle")).toBeHidden();
+});
+
 test("requires a breakpoint before debugging", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("btn-debug").click();

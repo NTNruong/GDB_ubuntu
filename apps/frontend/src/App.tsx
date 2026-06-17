@@ -13,6 +13,7 @@ import {
   Play,
   RotateCcw,
   SkipForward,
+  Sparkles,
   Square,
   Terminal,
   TriangleAlert,
@@ -36,6 +37,7 @@ import {
   type TreeNode
 } from "@internal/shared";
 import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
+import { registerCSuggestions } from "./cCompletions";
 import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
 import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
@@ -112,6 +114,11 @@ export function App() {
   const [isDraggingX, setIsDraggingX] = useState(false);
   const [variablesHeight, setVariablesHeight] = useState<number | undefined>(undefined);
   const [isDraggingVSplit, setIsDraggingVSplit] = useState(false);
+  // Advanced C/C++ suggestions switch — default ON, not persisted (always ON on
+  // load). `monacoReady` flips on editor mount so the registration effect re-runs
+  // (monacoRef alone doesn't trigger a render).
+  const [suggestEnabled, setSuggestEnabled] = useState(true);
+  const [monacoReady, setMonacoReady] = useState(false);
 
   // --- Accounts + file explorer (Phase 2) ---------------------------------
   const [user, setUser] = useState<string | null>(null);
@@ -1233,6 +1240,7 @@ export function App() {
   const onEditorMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    setMonacoReady(true);
     (window as unknown as { __monacoEditor?: typeof editor }).__monacoEditor = editor;
 
     editor.onMouseDown((event) => {
@@ -1244,6 +1252,17 @@ export function App() {
       setActiveBreakpointText((current) => toggleBreakpointText(current, line));
     });
   };
+
+  // Register static C/C++ stdlib completion + signature help while the switch is
+  // ON and the language is C/C++. Disposing on toggle-off or language change
+  // returns the editor to Monaco's default word-based suggestions.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco || !monacoReady) return;
+    if (!suggestEnabled || (language !== "c" && language !== "cpp")) return;
+    const disposable = registerCSuggestions(monaco);
+    return () => disposable.dispose();
+  }, [suggestEnabled, language, monacoReady]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -1416,6 +1435,19 @@ export function App() {
               </option>
             ))}
           </select>
+        )}
+        {(language === "c" || language === "cpp") && (
+          <button
+            type="button"
+            className="topbar-icon-btn"
+            data-testid="btn-suggest-toggle"
+            aria-label="Advanced suggestions"
+            title={`Advanced suggestions (C/C++): ${suggestEnabled ? "on" : "off"}`}
+            aria-pressed={suggestEnabled}
+            onClick={() => setSuggestEnabled((value) => !value)}
+          >
+            <Sparkles size={16} />
+          </button>
         )}
         <input
           aria-label="Arguments"
