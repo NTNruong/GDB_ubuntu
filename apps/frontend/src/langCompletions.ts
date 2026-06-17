@@ -5,7 +5,7 @@ import type { Language } from "@internal/shared";
 type Monaco = Parameters<OnMount>[1];
 type IDisposable = { dispose(): void };
 
-type SymbolKind = "function" | "keyword" | "type" | "macro" | "constant";
+type SymbolKind = "function" | "keyword" | "type" | "macro" | "constant" | "snippet";
 
 export interface LangSymbol {
   /** Text shown in the list and used to match (members like `cout`, not `std::cout`). */
@@ -47,6 +47,14 @@ const fn = (label: string, detail: string, params: string[], documentation?: str
 const kw = (label: string): LangSymbol => ({ label, insertText: label, kind: "keyword", detail: label });
 const ty = (label: string, detail = label): LangSymbol => ({ label, insertText: label, kind: "type", detail });
 const ct = (label: string, detail = label): LangSymbol => ({ label, insertText: label, kind: "constant", detail });
+// A live-template-style abbreviation (no dots in the label, so the default word range
+// works) whose insertText is a full snippet — e.g. `sout` → `System.out.println(...)`.
+const snip = (label: string, insertText: string, detail: string): LangSymbol => ({
+  label,
+  insertText,
+  kind: "snippet",
+  detail
+});
 
 // --- C standard library (shared by `c` and `cpp`) --------------------------
 const C_SYMBOLS: LangSymbol[] = [
@@ -164,6 +172,114 @@ const PYTHON_SYMBOLS: LangSymbol[] = [
     "continue", "global", "nonlocal", "in", "is", "not", "and", "or", "del", "assert"].map(kw)
 ];
 
+// --- Java standard library -------------------------------------------------
+// Member methods use BARE labels (e.g. `println`, not `System.out.println`) so they
+// complete after the user types the receiver + dot — Monaco's word range splits on `.`,
+// exactly like the C++ `cout` convention. Labels must be UNIQUE (the provider maps the
+// whole array with no dedup), so methods that exist on several classes appear once with
+// a representative signature.
+const JAVA_SYMBOLS: LangSymbol[] = [
+  // PrintStream (System.out / System.err)
+  fn("println", "void println(Object x)", ["Object x"], "Print a line to the stream."),
+  fn("print", "void print(Object x)", ["Object x"]),
+  fn("printf", "PrintStream printf(String format, Object... args)", ["String format", "Object... args"]),
+  fn("format", "String format(String format, Object... args)", ["String format", "Object... args"]),
+  // Scanner
+  fn("nextInt", "int nextInt()", []),
+  fn("nextLine", "String nextLine()", []),
+  fn("next", "String next()", []),
+  fn("nextDouble", "double nextDouble()", []),
+  fn("nextLong", "long nextLong()", []),
+  fn("hasNext", "boolean hasNext()", []),
+  fn("hasNextInt", "boolean hasNextInt()", []),
+  fn("hasNextLine", "boolean hasNextLine()", []),
+  fn("close", "void close()", []),
+  // String
+  fn("length", "int length()", []),
+  fn("charAt", "char charAt(int index)", ["int index"]),
+  fn("substring", "String substring(int beginIndex, int endIndex)", ["int beginIndex", "int endIndex"]),
+  fn("indexOf", "int indexOf(String str)", ["String str"]),
+  fn("equals", "boolean equals(Object other)", ["Object other"]),
+  fn("equalsIgnoreCase", "boolean equalsIgnoreCase(String other)", ["String other"]),
+  fn("compareTo", "int compareTo(T other)", ["T other"]),
+  fn("toUpperCase", "String toUpperCase()", []),
+  fn("toLowerCase", "String toLowerCase()", []),
+  fn("trim", "String trim()", []),
+  fn("split", "String[] split(String regex)", ["String regex"]),
+  fn("replace", "String replace(CharSequence target, CharSequence replacement)", ["CharSequence target", "CharSequence replacement"]),
+  fn("contains", "boolean contains(CharSequence s)", ["CharSequence s"]),
+  fn("startsWith", "boolean startsWith(String prefix)", ["String prefix"]),
+  fn("endsWith", "boolean endsWith(String suffix)", ["String suffix"]),
+  fn("isEmpty", "boolean isEmpty()", []),
+  // Integer / Double (static)
+  fn("parseInt", "int Integer.parseInt(String s)", ["String s"]),
+  fn("parseDouble", "double Double.parseDouble(String s)", ["String s"]),
+  fn("parseLong", "long Long.parseLong(String s)", ["String s"]),
+  fn("valueOf", "T valueOf(String s)", ["String s"]),
+  fn("toBinaryString", "String Integer.toBinaryString(int i)", ["int i"]),
+  fn("toHexString", "String Integer.toHexString(int i)", ["int i"]),
+  // Math (static)
+  fn("abs", "int Math.abs(int a)", ["int a"]),
+  fn("max", "int Math.max(int a, int b)", ["int a", "int b"]),
+  fn("min", "int Math.min(int a, int b)", ["int a", "int b"]),
+  fn("sqrt", "double Math.sqrt(double a)", ["double a"]),
+  fn("pow", "double Math.pow(double a, double b)", ["double a", "double b"]),
+  fn("floor", "double Math.floor(double a)", ["double a"]),
+  fn("ceil", "double Math.ceil(double a)", ["double a"]),
+  fn("round", "long Math.round(double a)", ["double a"]),
+  fn("random", "double Math.random()", []),
+  // Arrays / Collections (static; one owner per label)
+  fn("sort", "void Arrays.sort(T[] a)", ["T[] a"]),
+  fn("toString", "String toString()", []),
+  fn("asList", "List<T> Arrays.asList(T... a)", ["T... a"]),
+  fn("fill", "void Arrays.fill(T[] a, T val)", ["T[] a", "T val"]),
+  fn("binarySearch", "int Arrays.binarySearch(T[] a, T key)", ["T[] a", "T key"]),
+  fn("reverse", "void Collections.reverse(List<?> list)", ["List<?> list"]),
+  // Collection / Map instance
+  fn("add", "boolean add(E e)", ["E e"]),
+  fn("get", "E get(int index)", ["int index"]),
+  fn("set", "E set(int index, E element)", ["int index", "E element"]),
+  fn("remove", "boolean remove(Object o)", ["Object o"]),
+  fn("size", "int size()", []),
+  fn("clear", "void clear()", []),
+  fn("put", "V put(K key, V value)", ["K key", "V value"]),
+  fn("containsKey", "boolean containsKey(Object key)", ["Object key"]),
+  fn("getOrDefault", "V getOrDefault(Object key, V defaultValue)", ["Object key", "V defaultValue"]),
+  fn("keySet", "Set<K> keySet()", []),
+  fn("values", "Collection<V> values()", []),
+  // StringBuilder
+  fn("append", "StringBuilder append(Object obj)", ["Object obj"]),
+  fn("insert", "StringBuilder insert(int offset, Object obj)", ["int offset", "Object obj"]),
+  fn("deleteCharAt", "StringBuilder deleteCharAt(int index)", ["int index"]),
+  // Object
+  fn("hashCode", "int hashCode()", []),
+  fn("getClass", "Class<?> getClass()", []),
+  // live-template abbreviations (no dots → default range works)
+  snip("sout", "System.out.println(${1});", "System.out.println(...)"),
+  snip("souf", 'System.out.printf(${1:"%s%n"}, ${2:args});', "System.out.printf(...)"),
+  snip("serr", "System.err.println(${1});", "System.err.println(...)"),
+  snip("scanner", "Scanner ${1:sc} = new Scanner(System.in);", "new Scanner(System.in)"),
+  snip("fori", "for (int ${1:i} = 0; ${1:i} < ${2:n}; ${1:i}++) {\n\t${3}\n}", "for-loop with index"),
+  snip("psvm", "public static void main(String[] args) {\n\t${1}\n}", "public static void main"),
+  // top-level types / objects (bare)
+  ty("String"), ty("Integer"), ty("Double"), ty("Long"), ty("Boolean"), ty("Character"),
+  ty("System"), ty("Math"), ty("Scanner"), ty("Arrays"), ty("Collections"),
+  ty("List"), ty("ArrayList"), ty("LinkedList"), ty("Map"), ty("HashMap"), ty("TreeMap"),
+  ty("Set"), ty("HashSet"), ty("TreeSet"), ty("StringBuilder"), ty("Object"), ty("Optional"),
+  ty("Comparator"), ty("Comparable"), ty("Iterator"), ty("Exception"), ty("RuntimeException"),
+  ty("Stream"), ty("Thread"), ty("Runnable"),
+  // members / static fields (bare)
+  ct("out", "System.out"), ct("err", "System.err"), ct("in", "System.in"),
+  ct("MAX_VALUE", "Integer.MAX_VALUE"), ct("MIN_VALUE", "Integer.MIN_VALUE"),
+  ct("PI", "Math.PI"), ct("E", "Math.E"),
+  // keywords
+  ...["public", "private", "protected", "class", "interface", "enum", "extends", "implements",
+    "static", "final", "abstract", "void", "int", "double", "float", "long", "short", "byte",
+    "char", "boolean", "return", "if", "else", "for", "while", "do", "switch", "case", "default",
+    "break", "continue", "new", "this", "super", "try", "catch", "finally", "throw", "throws",
+    "import", "package", "null", "true", "false", "instanceof", "synchronized", "var", "record"].map(kw)
+];
+
 export interface SignatureContext {
   /** Identifier of the enclosing (innermost) open call. */
   name: string;
@@ -235,6 +351,8 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
         return K.Keyword;
       case "type":
         return K.Class;
+      case "snippet":
+        return K.Snippet;
       default:
         return K.Constant;
     }
@@ -257,7 +375,7 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
           documentation: sym.documentation,
           insertText: sym.insertText,
           insertTextRules:
-            sym.kind === "function"
+            sym.kind === "function" || sym.kind === "snippet"
               ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
               : undefined,
           command: sym.command,
@@ -301,8 +419,9 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
 const SYMBOLS_BY_LANGUAGE: Partial<Record<Language, LangSymbol[]>> = {
   c: C_SYMBOLS,
   cpp: [...C_SYMBOLS, ...CPP_EXTRA_SYMBOLS],
-  python: PYTHON_SYMBOLS
-  // wave 2: go, rust  |  wave 3: java  |  wave 4: javascript (gate the built-in TS worker)
+  python: PYTHON_SYMBOLS,
+  java: JAVA_SYMBOLS
+  // wave 2: go, rust  |  wave 4: javascript (gate the built-in TS worker)
 };
 
 /** Whether a static stdlib symbol table exists for this language. */
@@ -328,4 +447,4 @@ export function registerSuggestions(monaco: Monaco, language: Language): IDispos
 }
 
 // Exposed for tests.
-export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, fnSnippet };
+export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, JAVA_SYMBOLS, fnSnippet };

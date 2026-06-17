@@ -31,6 +31,31 @@ describe("symbol table", () => {
     expect(byName.get("None")?.kind).toBe("constant");
     expect(byName.get("def")?.kind).toBe("keyword");
   });
+
+  it("includes core Java members with detail + params", () => {
+    const byName = new Map(__test.JAVA_SYMBOLS.map((s) => [s.label, s]));
+    for (const name of ["println", "nextInt", "parseInt"]) {
+      const sym = byName.get(name);
+      expect(sym, name).toBeDefined();
+      expect(sym?.kind).toBe("function");
+      expect(Array.isArray(sym?.params)).toBe(true);
+    }
+    expect(byName.get("System")?.kind).toBe("type");
+    expect(byName.get("out")?.detail).toBe("System.out");
+    expect(byName.get("class")?.kind).toBe("keyword");
+  });
+
+  it("keeps Java labels unique (provider maps the whole array with no dedup)", () => {
+    const labels = __test.JAVA_SYMBOLS.map((s) => s.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("exposes Java live-template abbreviations as dot-free snippets", () => {
+    const sout = __test.JAVA_SYMBOLS.find((s) => s.label === "sout");
+    expect(sout?.kind).toBe("snippet");
+    expect(sout?.label).not.toContain(".");
+    expect(sout?.insertText).toContain("System.out.println");
+  });
 });
 
 describe("ISSUE-063: accepting a function surfaces its parameters", () => {
@@ -78,6 +103,10 @@ describe("computeSignatureHelp", () => {
   it("works for Python calls too", () => {
     expect(computeSignatureHelp("print(")).toEqual({ name: "print", activeParameter: 0 });
     expect(computeSignatureHelp("range(0, ")).toEqual({ name: "range", activeParameter: 1 });
+  });
+
+  it("resolves a Java dotted receiver to the bare method label", () => {
+    expect(computeSignatureHelp("System.out.println(")).toEqual({ name: "println", activeParameter: 0 });
   });
 
   it("ignores commas inside string literals", () => {
