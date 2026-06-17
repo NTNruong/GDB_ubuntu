@@ -445,6 +445,105 @@ const RUST_SYMBOLS: LangSymbol[] = [
     "super", "in"].map(kw)
 ];
 
+// --- JavaScript (Node) -----------------------------------------------------
+// JS uses a curated static table like the other languages instead of Monaco's built-in
+// TypeScript worker — the worker's completion/signature providers register once and cannot
+// be torn down at runtime, so the advanced-suggestions toggle could not turn them off
+// (ISSUE-066). The worker's completion/signatureHelp are disabled up front (see
+// `disableJavascriptWorkerCompletions`); syntax highlighting + diagnostics stay on.
+// Member methods use BARE labels (e.g. `stringify`, not `JSON.stringify`) so they complete
+// after the receiver + dot — Monaco's word range splits on `.`. Labels must be UNIQUE
+// (provider has no dedup), so a method shared by several objects appears once.
+const JS_SYMBOLS: LangSymbol[] = [
+  // console
+  fn("log", "console.log(...data: any[]): void", ["...data"], "Print to stdout."),
+  fn("error", "console.error(...data: any[]): void", ["...data"]),
+  fn("warn", "console.warn(...data: any[]): void", ["...data"]),
+  fn("info", "console.info(...data: any[]): void", ["...data"]),
+  // JSON
+  fn("stringify", "JSON.stringify(value, replacer?, space?): string", ["value", "replacer", "space"], "Serialize a value to JSON."),
+  fn("parse", "JSON.parse(text, reviver?): any", ["text", "reviver"], "Parse JSON text into a value."),
+  // Object (static)
+  fn("keys", "Object.keys(obj): string[]", ["obj"]),
+  fn("values", "Object.values(obj): any[]", ["obj"]),
+  fn("entries", "Object.entries(obj): [string, any][]", ["obj"]),
+  fn("assign", "Object.assign(target, ...sources): object", ["target", "...sources"]),
+  fn("freeze", "Object.freeze(obj): object", ["obj"]),
+  fn("fromEntries", "Object.fromEntries(entries): object", ["entries"]),
+  // Array instance methods (String shares split/replace/etc. below — keep labels unique)
+  fn("map", "Array#map(callback, thisArg?): any[]", ["callback", "thisArg"]),
+  fn("filter", "Array#filter(callback, thisArg?): any[]", ["callback", "thisArg"]),
+  fn("reduce", "Array#reduce(callback, initialValue?): any", ["callback", "initialValue"]),
+  fn("forEach", "Array#forEach(callback, thisArg?): void", ["callback", "thisArg"]),
+  fn("push", "Array#push(...items): number", ["...items"]),
+  fn("pop", "Array#pop(): any", []),
+  fn("shift", "Array#shift(): any", []),
+  fn("unshift", "Array#unshift(...items): number", ["...items"]),
+  fn("slice", "slice(start?, end?): any", ["start", "end"]),
+  fn("splice", "Array#splice(start, deleteCount?, ...items): any[]", ["start", "deleteCount", "...items"]),
+  fn("indexOf", "indexOf(searchElement, fromIndex?): number", ["searchElement", "fromIndex"]),
+  fn("includes", "includes(searchElement, fromIndex?): boolean", ["searchElement", "fromIndex"]),
+  fn("join", "Array#join(separator?): string", ["separator"]),
+  fn("find", "Array#find(callback, thisArg?): any", ["callback", "thisArg"]),
+  fn("findIndex", "Array#findIndex(callback, thisArg?): number", ["callback", "thisArg"]),
+  fn("sort", "Array#sort(compareFn?): any[]", ["compareFn"]),
+  fn("concat", "concat(...items): any", ["...items"]),
+  fn("flat", "Array#flat(depth?): any[]", ["depth"]),
+  fn("some", "Array#some(callback, thisArg?): boolean", ["callback", "thisArg"]),
+  fn("every", "Array#every(callback, thisArg?): boolean", ["callback", "thisArg"]),
+  fn("isArray", "Array.isArray(value): boolean", ["value"]),
+  fn("from", "Array.from(iterable, mapFn?): any[]", ["iterable", "mapFn"]),
+  // String instance methods
+  fn("split", "String#split(separator, limit?): string[]", ["separator", "limit"]),
+  fn("replace", "String#replace(pattern, replacement): string", ["pattern", "replacement"]),
+  fn("replaceAll", "String#replaceAll(pattern, replacement): string", ["pattern", "replacement"]),
+  fn("toUpperCase", "String#toUpperCase(): string", []),
+  fn("toLowerCase", "String#toLowerCase(): string", []),
+  fn("trim", "String#trim(): string", []),
+  fn("charAt", "String#charAt(index): string", ["index"]),
+  fn("charCodeAt", "String#charCodeAt(index): number", ["index"]),
+  fn("padStart", "String#padStart(targetLength, padString?): string", ["targetLength", "padString"]),
+  fn("padEnd", "String#padEnd(targetLength, padString?): string", ["targetLength", "padString"]),
+  fn("repeat", "String#repeat(count): string", ["count"]),
+  fn("startsWith", "String#startsWith(searchString, position?): boolean", ["searchString", "position"]),
+  fn("endsWith", "String#endsWith(searchString, endPosition?): boolean", ["searchString", "endPosition"]),
+  fn("substring", "String#substring(start, end?): string", ["start", "end"]),
+  // Number / Math
+  fn("parseInt", "parseInt(string, radix?): number", ["string", "radix"]),
+  fn("parseFloat", "parseFloat(string): number", ["string"]),
+  fn("isNaN", "isNaN(value): boolean", ["value"]),
+  fn("isInteger", "Number.isInteger(value): boolean", ["value"]),
+  fn("toFixed", "Number#toFixed(digits?): string", ["digits"]),
+  fn("round", "Math.round(x): number", ["x"]),
+  fn("floor", "Math.floor(x): number", ["x"]),
+  fn("ceil", "Math.ceil(x): number", ["x"]),
+  fn("abs", "Math.abs(x): number", ["x"]),
+  fn("max", "Math.max(...values): number", ["...values"]),
+  fn("min", "Math.min(...values): number", ["...values"]),
+  fn("pow", "Math.pow(base, exponent): number", ["base", "exponent"]),
+  fn("sqrt", "Math.sqrt(x): number", ["x"]),
+  fn("random", "Math.random(): number", []),
+  // Promise / async + timers
+  fn("resolve", "Promise.resolve(value): Promise", ["value"]),
+  fn("reject", "Promise.reject(reason): Promise", ["reason"]),
+  fn("all", "Promise.all(iterable): Promise", ["iterable"]),
+  fn("then", "Promise#then(onFulfilled, onRejected?): Promise", ["onFulfilled", "onRejected"]),
+  fn("catch", "Promise#catch(onRejected): Promise", ["onRejected"]),
+  fn("setTimeout", "setTimeout(callback, delay?, ...args): number", ["callback", "delay", "...args"]),
+  fn("setInterval", "setInterval(callback, delay?, ...args): number", ["callback", "delay", "...args"]),
+  fn("structuredClone", "structuredClone(value): any", ["value"]),
+  // global objects / receivers (bare types so they list before a dot)
+  ty("console"), ty("JSON"), ty("Object"), ty("Array"), ty("Math"), ty("Number"), ty("String"),
+  ty("Boolean"), ty("Promise"), ty("Map"), ty("Set"), ty("Date"), ty("RegExp"), ty("Symbol"),
+  // constants
+  ct("true"), ct("false"), ct("null"), ct("undefined"), ct("NaN"), ct("Infinity"),
+  // keywords
+  ...["const", "let", "var", "function", "return", "if", "else", "for", "while", "do", "switch",
+    "case", "default", "break", "continue", "class", "extends", "new", "this", "super", "typeof",
+    "instanceof", "in", "of", "delete", "void", "try", "catch", "finally", "throw", "async",
+    "await", "yield", "import", "export", "from", "as"].map(kw)
+];
+
 export interface SignatureContext {
   /** Identifier of the enclosing (innermost) open call. */
   name: string;
@@ -645,8 +744,8 @@ const SYMBOLS_BY_LANGUAGE: Partial<Record<Language, LangSymbol[]>> = {
   python: PYTHON_SYMBOLS,
   java: JAVA_SYMBOLS,
   go: GO_SYMBOLS,
-  rust: RUST_SYMBOLS
-  // wave 4: javascript (gate the built-in TS worker)
+  rust: RUST_SYMBOLS,
+  javascript: JS_SYMBOLS
 };
 
 /** Whether a static stdlib symbol table exists for this language. */
@@ -673,26 +772,26 @@ export function registerSuggestions(monaco: Monaco, language: Language): IDispos
 
 /**
  * Whether the advanced-suggestions switch should be shown for this language. True for any
- * language with a static table, plus JavaScript (which gates Monaco's built-in TS worker
- * instead of a static table — see `setJavascriptSuggestions`).
+ * language with a static table (every supported language now has one, including JavaScript).
  */
 export function supportsSuggestionToggle(language: Language): boolean {
-  return languageHasSuggestions(language) || language === "javascript";
+  return languageHasSuggestions(language);
 }
 
 /**
- * Gate Monaco's built-in TypeScript worker for JavaScript. `enabled` true restores full
- * IntelliSense; false disables the TS completion + signature-help providers so the editor
- * falls back to word-based suggestions. Returns a disposable that restores the captured
- * config on switch/language change or unmount. Null when the TS worker is unavailable.
+ * Disable Monaco's built-in TypeScript worker completion + signature help for JavaScript so
+ * the curated `JS_SYMBOLS` table is the only IntelliSense source (gated by the toggle like
+ * every other language). The worker registers its providers once at setup and cannot be torn
+ * down at runtime, so this must run BEFORE the first JavaScript model is created (e.g. from
+ * the editor's `beforeMount`); setting the config first makes the worker skip registering
+ * those providers. Syntax highlighting and `diagnostics` are left untouched. Returns a
+ * disposable that restores the captured config on unmount. Null when the worker is absent.
  */
-export function setJavascriptSuggestions(monaco: Monaco, enabled: boolean): IDisposable | null {
+export function disableJavascriptWorkerCompletions(monaco: Monaco): IDisposable | null {
   const defaults = monaco.languages.typescript?.javascriptDefaults;
   if (!defaults) return null;
-  // React runs effect cleanup before re-running, so the current config is the restored
-  // default here — capture it per-call (no module-global state, keeps unit tests pure).
   const original = defaults.modeConfiguration;
-  defaults.setModeConfiguration({ ...original, completionItems: enabled, signatureHelp: enabled });
+  defaults.setModeConfiguration({ ...original, completionItems: false, signatureHelp: false });
   return {
     dispose() {
       defaults.setModeConfiguration(original);
@@ -708,6 +807,7 @@ export const __test = {
   JAVA_SYMBOLS,
   GO_SYMBOLS,
   RUST_SYMBOLS,
+  JS_SYMBOLS,
   fnSnippet,
   extractIdentifiers,
   collectUserIdentifiers,

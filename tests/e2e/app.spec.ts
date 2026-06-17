@@ -91,7 +91,11 @@ test("accepting a function completion inserts its parameters (ISSUE-063)", async
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
-  await page.keyboard.type("printf");
+  // Per-keystroke delay so Monaco receives the full token (raw fast `type` dropped chars,
+  // e.g. `printf`→`ptf`, leaving the suggest widget hidden — ISSUE-064). Assert the typed
+  // text landed before triggering suggestions to keep this deterministic.
+  await page.keyboard.type("printf", { delay: 30 });
+  await expect(editor).toContainText("printf");
   await page.keyboard.press("Control+Space");
   await expect(page.locator(".suggest-widget")).toBeVisible();
   await page.keyboard.press("Enter");
@@ -116,26 +120,34 @@ test("Java live-template abbreviation expands on accept (Wave 3)", async ({ page
   await expect(editor).toContainText("System.out.println");
 });
 
-test("Go and Rust advanced suggestions accept on the static table (Wave 2)", async ({ page }) => {
+// Split Go and Rust into separate tests: each selects its language on a fresh, pristine
+// page so the "Switching language will clear all files. Continue?" confirm never fires
+// (combining them in one dirty session left the editor stuck on Go — ISSUE-065).
+test("Go advanced suggestions accept on the static table (Wave 2)", async ({ page }) => {
   await page.goto("/");
   const editor = page.locator(".monaco-editor").first();
-
-  // Go: the `iferr` abbreviation expands to the err-check block.
+  // Pristine default buffer → switching language does not prompt the clear-all confirm.
   await page.getByLabel("Language").selectOption("go");
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
+  // The `iferr` abbreviation expands to the err-check block.
   await page.keyboard.type("iferr", { delay: 30 });
   await page.keyboard.press("Control+Space");
   await expect(page.locator(".suggest-widget")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(editor).toContainText("if err != nil");
+});
 
-  // Rust: accepting the `println!` macro keeps the bang and inserts the format snippet.
+test("Rust advanced suggestions accept on the static table (Wave 2)", async ({ page }) => {
+  await page.goto("/");
+  const editor = page.locator(".monaco-editor").first();
+  // Pristine default buffer → switching language does not prompt the clear-all confirm.
   await page.getByLabel("Language").selectOption("rust");
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
+  // Accepting the `println!` macro keeps the bang and inserts the format snippet.
   await page.keyboard.type("println", { delay: 30 });
   await page.keyboard.press("Control+Space");
   await expect(page.locator(".suggest-widget")).toBeVisible();
@@ -150,10 +162,36 @@ test("JavaScript IntelliSense is gated by the switch (Wave 4)", async ({ page })
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
-  // Switch ON (default): the built-in TS worker offers `JSON.stringify`.
+  // Switch ON (default): the curated JS table offers `JSON.stringify` after the dot.
   await page.keyboard.type("JSON.", { delay: 30 });
   await page.keyboard.press("Control+Space");
   await expect(page.locator(".suggest-widget")).toContainText("stringify");
+});
+
+test("JavaScript suggestions OFF hides TS worker IntelliSense (ISSUE-066)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("javascript");
+  const toggle = page.getByTestId("btn-suggest-toggle");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  // Turn the advanced-suggestions switch OFF.
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+  const editor = page.locator(".monaco-editor").first();
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  // OFF disposes the static provider and the TS worker completion is disabled up front, so
+  // `JSON.` no longer offers `stringify`/`parse` — only word-based fallback remains.
+  await page.keyboard.type("JSON.", { delay: 30 });
+  await page.keyboard.press("Control+Space");
+  // Either no widget at all, or a widget that does not contain the TS-worker members.
+  await page.waitForTimeout(300);
+  const widget = page.locator(".suggest-widget");
+  if (await widget.isVisible()) {
+    await expect(widget).not.toContainText("stringify");
+    await expect(widget).not.toContainText("parse");
+  }
 });
 
 test("advanced suggestions still surface the user's own identifiers (Fix A)", async ({ page }) => {

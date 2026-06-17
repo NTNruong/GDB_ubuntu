@@ -41,7 +41,7 @@ import {
   registerSuggestions,
   languageHasSuggestions,
   supportsSuggestionToggle,
-  setJavascriptSuggestions
+  disableJavascriptWorkerCompletions
 } from "./langCompletions";
 import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
 import { Explorer } from "./Explorer";
@@ -1269,16 +1269,6 @@ export function App() {
     return () => disposable?.dispose();
   }, [suggestEnabled, language, monacoReady]);
 
-  // JavaScript uses Monaco's built-in TypeScript worker for IntelliSense (no static table).
-  // The switch gates that worker instead: OFF disables TS completion + signature help so the
-  // editor falls back to word-based suggestions; ON (or leaving JS) restores it.
-  useEffect(() => {
-    const monaco = monacoRef.current;
-    if (!monaco || !monacoReady || language !== "javascript") return;
-    const disposable = setJavascriptSuggestions(monaco, suggestEnabled);
-    return () => disposable?.dispose();
-  }, [suggestEnabled, language, monacoReady]);
-
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -1587,6 +1577,7 @@ export function App() {
             path={activePath}
             value={activeContent}
             onChange={(value) => setActiveContent(value ?? "")}
+            beforeMount={(monaco) => disableJavascriptWorkerCompletions(monaco)}
             onMount={onEditorMount}
             options={{
               minimap: { enabled: false },

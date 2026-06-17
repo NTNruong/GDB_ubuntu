@@ -2,11 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   computeSignatureHelp,
   supportsSuggestionToggle,
-  setJavascriptSuggestions,
+  languageHasSuggestions,
+  disableJavascriptWorkerCompletions,
   __test
 } from "./langCompletions";
 
-type MonacoArg = Parameters<typeof setJavascriptSuggestions>[0];
+type MonacoArg = Parameters<typeof disableJavascriptWorkerCompletions>[0];
 
 // Minimal fake of the `monaco.languages.typescript.javascriptDefaults` surface.
 function fakeMonaco(modeConfiguration: Record<string, boolean>, setSpy: (c: unknown) => void) {
@@ -209,32 +210,36 @@ describe("computeSignatureHelp", () => {
   });
 });
 
-describe("JavaScript: gate the built-in TS worker (Wave 4)", () => {
-  it("offers the toggle for JavaScript and static-table languages", () => {
+describe("JavaScript: static table replaces the TS worker (ISSUE-066)", () => {
+  it("offers the toggle and a static table for JavaScript like the other languages", () => {
     expect(supportsSuggestionToggle("javascript")).toBe(true);
+    expect(languageHasSuggestions("javascript")).toBe(true);
     expect(supportsSuggestionToggle("c")).toBe(true);
   });
 
-  it("disables only TS completion + signature help when turned off, preserving the rest", () => {
+  it("includes common JS members so ON still surfaces JSON/console/array helpers", () => {
+    const labels = new Set(__test.JS_SYMBOLS.map((s) => s.label));
+    for (const name of ["stringify", "parse", "log", "map", "filter"]) {
+      expect(labels.has(name), name).toBe(true);
+    }
+    const stringify = __test.JS_SYMBOLS.find((s) => s.label === "stringify");
+    expect(stringify?.kind).toBe("function");
+    expect(stringify?.params?.length).toBeGreaterThan(0);
+  });
+
+  it("disables only TS completion + signature help, preserving the rest of the config", () => {
     const setSpy = vi.fn();
     const monaco = fakeMonaco({ completionItems: true, signatureHelp: true, hovers: true }, setSpy);
-    const disposable = setJavascriptSuggestions(monaco, false);
+    const disposable = disableJavascriptWorkerCompletions(monaco);
     expect(setSpy).toHaveBeenCalledWith({ completionItems: false, signatureHelp: false, hovers: true });
-    // Disposing restores the captured original config (back to full IntelliSense).
+    // Disposing restores the captured original config (e.g. on unmount).
     disposable?.dispose();
     expect(setSpy).toHaveBeenLastCalledWith({ completionItems: true, signatureHelp: true, hovers: true });
   });
 
-  it("restores TS completion + signature help when turned on", () => {
-    const setSpy = vi.fn();
-    const monaco = fakeMonaco({ completionItems: false, signatureHelp: false, hovers: true }, setSpy);
-    setJavascriptSuggestions(monaco, true);
-    expect(setSpy).toHaveBeenCalledWith({ completionItems: true, signatureHelp: true, hovers: true });
-  });
-
   it("returns null when the TypeScript worker is unavailable", () => {
     const monaco = { languages: { typescript: undefined } } as unknown as MonacoArg;
-    expect(setJavascriptSuggestions(monaco, false)).toBeNull();
+    expect(disableJavascriptWorkerCompletions(monaco)).toBeNull();
   });
 });
 
