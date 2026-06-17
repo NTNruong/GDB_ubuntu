@@ -280,6 +280,171 @@ const JAVA_SYMBOLS: LangSymbol[] = [
     "import", "package", "null", "true", "false", "instanceof", "synchronized", "var", "record"].map(kw)
 ];
 
+// --- Go standard library ---------------------------------------------------
+// Package members use BARE labels (e.g. `Println`, not `fmt.Println`) so they complete
+// after the user types the package + dot — Monaco's word range splits on `.`. Builtins
+// (`len`, `make`, ...) are unqualified. Labels must be UNIQUE (provider has no dedup).
+const GO_SYMBOLS: LangSymbol[] = [
+  // fmt
+  fn("Println", "func fmt.Println(a ...any) (n int, err error)", ["a ...any"], "Print with spaces and a newline."),
+  fn("Printf", "func fmt.Printf(format string, a ...any) (n int, err error)", ["format string", "a ...any"]),
+  fn("Print", "func fmt.Print(a ...any) (n int, err error)", ["a ...any"]),
+  fn("Sprintf", "func fmt.Sprintf(format string, a ...any) string", ["format string", "a ...any"]),
+  fn("Sprint", "func fmt.Sprint(a ...any) string", ["a ...any"]),
+  fn("Sprintln", "func fmt.Sprintln(a ...any) string", ["a ...any"]),
+  fn("Scanln", "func fmt.Scanln(a ...any) (n int, err error)", ["a ...any"]),
+  fn("Scan", "func fmt.Scan(a ...any) (n int, err error)", ["a ...any"]),
+  fn("Scanf", "func fmt.Scanf(format string, a ...any) (n int, err error)", ["format string", "a ...any"]),
+  fn("Errorf", "func fmt.Errorf(format string, a ...any) error", ["format string", "a ...any"]),
+  fn("Fprintln", "func fmt.Fprintln(w io.Writer, a ...any) (n int, err error)", ["w io.Writer", "a ...any"]),
+  // strings
+  fn("Split", "func strings.Split(s, sep string) []string", ["s string", "sep string"]),
+  fn("Join", "func strings.Join(elems []string, sep string) string", ["elems []string", "sep string"]),
+  fn("Contains", "func strings.Contains(s, substr string) bool", ["s string", "substr string"]),
+  fn("HasPrefix", "func strings.HasPrefix(s, prefix string) bool", ["s string", "prefix string"]),
+  fn("HasSuffix", "func strings.HasSuffix(s, suffix string) bool", ["s string", "suffix string"]),
+  fn("ToUpper", "func strings.ToUpper(s string) string", ["s string"]),
+  fn("ToLower", "func strings.ToLower(s string) string", ["s string"]),
+  fn("TrimSpace", "func strings.TrimSpace(s string) string", ["s string"]),
+  fn("ReplaceAll", "func strings.ReplaceAll(s, old, new string) string", ["s string", "old string", "new string"]),
+  fn("Index", "func strings.Index(s, substr string) int", ["s string", "substr string"]),
+  fn("Repeat", "func strings.Repeat(s string, count int) string", ["s string", "count int"]),
+  fn("Fields", "func strings.Fields(s string) []string", ["s string"]),
+  // strconv
+  fn("Atoi", "func strconv.Atoi(s string) (int, error)", ["s string"]),
+  fn("Itoa", "func strconv.Itoa(i int) string", ["i int"]),
+  fn("ParseInt", "func strconv.ParseInt(s string, base, bitSize int) (int64, error)", ["s string", "base int", "bitSize int"]),
+  fn("ParseFloat", "func strconv.ParseFloat(s string, bitSize int) (float64, error)", ["s string", "bitSize int"]),
+  fn("FormatInt", "func strconv.FormatInt(i int64, base int) string", ["i int64", "base int"]),
+  // os
+  fn("Exit", "func os.Exit(code int)", ["code int"]),
+  fn("Open", "func os.Open(name string) (*os.File, error)", ["name string"]),
+  fn("Create", "func os.Create(name string) (*os.File, error)", ["name string"]),
+  fn("Getenv", "func os.Getenv(key string) string", ["key string"]),
+  // math
+  fn("Abs", "func math.Abs(x float64) float64", ["x float64"]),
+  fn("Max", "func math.Max(x, y float64) float64", ["x float64", "y float64"]),
+  fn("Min", "func math.Min(x, y float64) float64", ["x float64", "y float64"]),
+  fn("Sqrt", "func math.Sqrt(x float64) float64", ["x float64"]),
+  fn("Pow", "func math.Pow(x, y float64) float64", ["x float64", "y float64"]),
+  fn("Floor", "func math.Floor(x float64) float64", ["x float64"]),
+  fn("Ceil", "func math.Ceil(x float64) float64", ["x float64"]),
+  fn("Round", "func math.Round(x float64) float64", ["x float64"]),
+  // sort
+  fn("Ints", "func sort.Ints(a []int)", ["a []int"]),
+  fn("Strings", "func sort.Strings(a []string)", ["a []string"]),
+  fn("Float64s", "func sort.Float64s(a []float64)", ["a []float64"]),
+  fn("Slice", "func sort.Slice(slice any, less func(i, j int) bool)", ["slice any", "less func(i, j int) bool"]),
+  // bufio
+  fn("NewReader", "func bufio.NewReader(rd io.Reader) *bufio.Reader", ["rd io.Reader"]),
+  fn("NewScanner", "func bufio.NewScanner(r io.Reader) *bufio.Scanner", ["r io.Reader"]),
+  fn("NewWriter", "func bufio.NewWriter(w io.Writer) *bufio.Writer", ["w io.Writer"]),
+  // builtins (unqualified)
+  fn("len", "builtin len(v Type) int", ["v"]),
+  fn("cap", "builtin cap(v Type) int", ["v"]),
+  fn("make", "builtin make(t Type, size ...int) Type", ["t Type", "size ...int"]),
+  fn("new", "builtin new(Type) *Type", ["Type"]),
+  fn("append", "builtin append(slice []Type, elems ...Type) []Type", ["slice []Type", "elems ...Type"]),
+  fn("copy", "builtin copy(dst, src []Type) int", ["dst []Type", "src []Type"]),
+  fn("delete", "builtin delete(m map[Type]Type1, key Type)", ["m map", "key"]),
+  fn("panic", "builtin panic(v any)", ["v any"]),
+  fn("recover", "builtin recover() any", []),
+  fn("close", "builtin close(c chan<- Type)", ["c chan"]),
+  // members / static fields (bare)
+  ct("Args", "os.Args"), ct("Stdin", "os.Stdin"), ct("Stdout", "os.Stdout"), ct("Stderr", "os.Stderr"),
+  ct("Pi", "math.Pi"), ct("MaxInt", "math.MaxInt"),
+  // types
+  ty("string"), ty("int"), ty("int64"), ty("float64"), ty("bool"), ty("byte"), ty("rune"),
+  ty("error"), ty("any"), ty("map"), ty("chan"), ty("struct"), ty("interface"),
+  ty("Reader"), ty("Writer"), ty("Builder"), ty("WaitGroup"),
+  // constants
+  ct("true"), ct("false"), ct("nil"), ct("iota"),
+  // live-template abbreviations (dot-free)
+  snip("iferr", "if err != nil {\n\t${1}\n}", "if err != nil { ... }"),
+  snip("forr", "for ${1:i}, ${2:v} := range ${3:items} {\n\t${4}\n}", "for ... range"),
+  snip("funcmain", "func main() {\n\t${1}\n}", "func main"),
+  // keywords
+  ...["func", "var", "const", "type", "package", "import", "return", "if", "else", "for",
+    "range", "switch", "case", "default", "break", "continue", "go", "defer", "select",
+    "fallthrough", "goto"].map(kw)
+];
+
+// --- Rust standard library -------------------------------------------------
+// Methods/associated fns use BARE labels (`push`, `new`) so they complete after `.` or
+// `::` (Monaco splits the word on both). Macros keep their `!` in the label. Labels must
+// be UNIQUE (provider has no dedup).
+const RUST_SYMBOLS: LangSymbol[] = [
+  // macros (label keeps the `!`; identifierBefore now captures the bang for signature help)
+  fn("println!", "macro println!(fmt: &str, args: ...)", ['"{}"', "value"], "Print with a trailing newline."),
+  fn("print!", "macro print!(fmt: &str, args: ...)", ['"{}"', "value"]),
+  fn("eprintln!", "macro eprintln!(fmt: &str, args: ...)", ['"{}"', "value"]),
+  fn("format!", "macro format!(fmt: &str, args: ...) -> String", ['"{}"', "value"]),
+  fn("vec!", "macro vec![elem; n] / vec![a, b, c]", ["elems"]),
+  fn("panic!", "macro panic!(fmt: &str, args: ...)", ['"{}"', "value"]),
+  fn("assert!", "macro assert!(cond, fmt?, args?)", ["cond"]),
+  fn("assert_eq!", "macro assert_eq!(left, right)", ["left", "right"]),
+  fn("write!", "macro write!(dst, fmt: &str, args: ...)", ["dst", '"{}"', "value"]),
+  fn("writeln!", "macro writeln!(dst, fmt: &str, args: ...)", ["dst", '"{}"', "value"]),
+  fn("dbg!", "macro dbg!(expr)", ["expr"]),
+  fn("todo!", "macro todo!()", []),
+  // methods / associated functions (bare)
+  fn("len", "fn len(&self) -> usize", []),
+  fn("push", "fn push(&mut self, value: T)", ["value: T"]),
+  fn("pop", "fn pop(&mut self) -> Option<T>", []),
+  fn("insert", "fn insert(&mut self, index: usize, element: T)", ["index: usize", "element: T"]),
+  fn("remove", "fn remove(&mut self, index: usize) -> T", ["index: usize"]),
+  fn("get", "fn get(&self, index: usize) -> Option<&T>", ["index: usize"]),
+  fn("iter", "fn iter(&self) -> Iter<T>", []),
+  fn("into_iter", "fn into_iter(self) -> IntoIter<T>", []),
+  fn("collect", "fn collect<B>(self) -> B", []),
+  fn("map", "fn map<B, F>(self, f: F) -> Map<Self, F>", ["f"]),
+  fn("filter", "fn filter<P>(self, predicate: P) -> Filter<Self, P>", ["predicate"]),
+  fn("unwrap", "fn unwrap(self) -> T", []),
+  fn("unwrap_or", "fn unwrap_or(self, default: T) -> T", ["default: T"]),
+  fn("expect", "fn expect(self, msg: &str) -> T", ["msg: &str"]),
+  fn("clone", "fn clone(&self) -> Self", []),
+  fn("to_string", "fn to_string(&self) -> String", []),
+  fn("as_str", "fn as_str(&self) -> &str", []),
+  fn("parse", "fn parse<F>(&self) -> Result<F, F::Err>", []),
+  fn("contains", "fn contains(&self, x: &T) -> bool", ["x: &T"]),
+  fn("is_empty", "fn is_empty(&self) -> bool", []),
+  fn("trim", "fn trim(&self) -> &str", []),
+  fn("split", "fn split<P>(&self, pat: P) -> Split<P>", ["pat: P"]),
+  fn("chars", "fn chars(&self) -> Chars", []),
+  fn("next", "fn next(&mut self) -> Option<Item>", []),
+  fn("sum", "fn sum<S>(self) -> S", []),
+  fn("sort", "fn sort(&mut self)", []),
+  fn("enumerate", "fn enumerate(self) -> Enumerate<Self>", []),
+  fn("zip", "fn zip<U>(self, other: U) -> Zip<Self, U>", ["other: U"]),
+  fn("read_line", "fn read_line(&self, buf: &mut String) -> io::Result<usize>", ["buf: &mut String"]),
+  fn("new", "fn new() -> Self", []),
+  fn("with_capacity", "fn with_capacity(capacity: usize) -> Self", ["capacity: usize"]),
+  fn("from", "fn from(value: T) -> Self", ["value: T"]),
+  fn("as_bytes", "fn as_bytes(&self) -> &[u8]", []),
+  fn("starts_with", "fn starts_with<P>(&self, pat: P) -> bool", ["pat: P"]),
+  fn("ends_with", "fn ends_with<P>(&self, pat: P) -> bool", ["pat: P"]),
+  fn("replace", "fn replace<P>(&self, from: P, to: &str) -> String", ["from: P", "to: &str"]),
+  fn("to_uppercase", "fn to_uppercase(&self) -> String", []),
+  fn("to_lowercase", "fn to_lowercase(&self) -> String", []),
+  // enum-variant constructors
+  fn("Some", "Some(value: T) -> Option<T>", ["value: T"]),
+  fn("Ok", "Ok(value: T) -> Result<T, E>", ["value: T"]),
+  fn("Err", "Err(error: E) -> Result<T, E>", ["error: E"]),
+  ct("None", "Option::None"),
+  // types
+  ty("String"), ty("Vec"), ty("Option"), ty("Result"), ty("Box"), ty("HashMap"), ty("HashSet"),
+  ty("BTreeMap"), ty("Rc"), ty("Arc"), ty("RefCell"), ty("str"), ty("i32"), ty("i64"),
+  ty("u32"), ty("u64"), ty("usize"), ty("f64"), ty("bool"), ty("char"),
+  // live-template abbreviations (dot-free)
+  snip("fnmain", "fn main() {\n\t${1}\n}", "fn main"),
+  snip("forr", "for ${1:item} in ${2:iter} {\n\t${3}\n}", "for ... in"),
+  // keywords
+  ...["fn", "let", "mut", "const", "static", "struct", "enum", "trait", "impl", "pub", "use",
+    "mod", "match", "if", "else", "for", "while", "loop", "return", "break", "continue",
+    "where", "as", "ref", "move", "dyn", "async", "await", "unsafe", "self", "crate",
+    "super", "in"].map(kw)
+];
+
 export interface SignatureContext {
   /** Identifier of the enclosing (innermost) open call. */
   name: string;
@@ -290,7 +455,8 @@ export interface SignatureContext {
 function identifierBefore(text: string, openParenIndex: number): string {
   let j = openParenIndex - 1;
   while (j >= 0 && /\s/.test(text[j] ?? "")) j--;
-  const end = j + 1;
+  const end = j + 1; // exclusive end, after an optional Rust macro `!`
+  if (j >= 0 && text[j] === "!") j--; // include the bang so `println!(` resolves to `println!`
   while (j >= 0 && /[A-Za-z0-9_]/.test(text[j] ?? "")) j--;
   return text.slice(j + 1, end);
 }
@@ -420,8 +586,10 @@ const SYMBOLS_BY_LANGUAGE: Partial<Record<Language, LangSymbol[]>> = {
   c: C_SYMBOLS,
   cpp: [...C_SYMBOLS, ...CPP_EXTRA_SYMBOLS],
   python: PYTHON_SYMBOLS,
-  java: JAVA_SYMBOLS
-  // wave 2: go, rust  |  wave 4: javascript (gate the built-in TS worker)
+  java: JAVA_SYMBOLS,
+  go: GO_SYMBOLS,
+  rust: RUST_SYMBOLS
+  // wave 4: javascript (gate the built-in TS worker)
 };
 
 /** Whether a static stdlib symbol table exists for this language. */
@@ -447,4 +615,4 @@ export function registerSuggestions(monaco: Monaco, language: Language): IDispos
 }
 
 // Exposed for tests.
-export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, JAVA_SYMBOLS, fnSnippet };
+export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, JAVA_SYMBOLS, GO_SYMBOLS, RUST_SYMBOLS, fnSnippet };

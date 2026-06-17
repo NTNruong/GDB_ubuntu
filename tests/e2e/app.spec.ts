@@ -76,14 +76,14 @@ test("advanced suggestions toggle: default on, toggles, not persisted, supported
   await page.reload();
   await expect(page.getByTestId("btn-suggest-toggle")).toHaveAttribute("aria-pressed", "true");
 
-  // Python and Java have static tables now → toggle still offered.
-  await page.getByLabel("Language").selectOption("python");
-  await expect(page.getByTestId("btn-suggest-toggle")).toBeVisible();
-  await page.getByLabel("Language").selectOption("java");
-  await expect(page.getByTestId("btn-suggest-toggle")).toBeVisible();
+  // Python, Java, Go and Rust all have static tables now → toggle still offered.
+  for (const lang of ["python", "java", "go", "rust"]) {
+    await page.getByLabel("Language").selectOption(lang);
+    await expect(page.getByTestId("btn-suggest-toggle")).toBeVisible();
+  }
 
-  // A language without a static table (Go, until a later wave) hides the button.
-  await page.getByLabel("Language").selectOption("go");
+  // JavaScript has no static table (it uses Monaco's built-in TS worker) → button hidden.
+  await page.getByLabel("Language").selectOption("javascript");
   await expect(page.getByTestId("btn-suggest-toggle")).toBeHidden();
 });
 
@@ -117,6 +117,33 @@ test("Java live-template abbreviation expands on accept (Wave 3)", async ({ page
   await page.keyboard.press("Enter");
   // `sout` abbreviation expands to the full println statement.
   await expect(editor).toContainText("System.out.println");
+});
+
+test("Go and Rust advanced suggestions accept on the static table (Wave 2)", async ({ page }) => {
+  await page.goto("/");
+  const editor = page.locator(".monaco-editor").first();
+
+  // Go: the `iferr` abbreviation expands to the err-check block.
+  await page.getByLabel("Language").selectOption("go");
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("iferr", { delay: 30 });
+  await page.keyboard.press("Control+Space");
+  await expect(page.locator(".suggest-widget")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(editor).toContainText("if err != nil");
+
+  // Rust: accepting the `println!` macro keeps the bang and inserts the format snippet.
+  await page.getByLabel("Language").selectOption("rust");
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("println", { delay: 30 });
+  await page.keyboard.press("Control+Space");
+  await expect(page.locator(".suggest-widget")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(editor).toContainText("println!");
 });
 
 test("requires a breakpoint before debugging", async ({ page }) => {

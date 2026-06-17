@@ -56,6 +56,38 @@ describe("symbol table", () => {
     expect(sout?.label).not.toContain(".");
     expect(sout?.insertText).toContain("System.out.println");
   });
+
+  it("includes core Go members + builtins with detail + params", () => {
+    const byName = new Map(__test.GO_SYMBOLS.map((s) => [s.label, s]));
+    for (const name of ["Println", "Split", "Atoi", "len"]) {
+      const sym = byName.get(name);
+      expect(sym, name).toBeDefined();
+      expect(sym?.kind).toBe("function");
+      expect(Array.isArray(sym?.params)).toBe(true);
+    }
+    expect(byName.get("func")?.kind).toBe("keyword");
+    expect(byName.get("iferr")?.kind).toBe("snippet");
+  });
+
+  it("includes core Rust methods + macros, with the bang kept in macro labels", () => {
+    const byName = new Map(__test.RUST_SYMBOLS.map((s) => [s.label, s]));
+    const println = byName.get("println!");
+    expect(println?.kind).toBe("function");
+    expect(println?.insertText).toMatch(/^println!\(/);
+    expect(println?.command?.id).toBe("editor.action.triggerParameterHints");
+    for (const name of ["push", "unwrap", "collect"]) {
+      expect(byName.get(name)?.kind, name).toBe("function");
+    }
+    expect(byName.get("None")?.kind).toBe("constant");
+    expect(byName.get("fn")?.kind).toBe("keyword");
+  });
+
+  it("keeps Go and Rust labels unique (no dedup in the provider)", () => {
+    for (const table of [__test.GO_SYMBOLS, __test.RUST_SYMBOLS]) {
+      const labels = table.map((s) => s.label);
+      expect(new Set(labels).size).toBe(labels.length);
+    }
+  });
 });
 
 describe("ISSUE-063: accepting a function surfaces its parameters", () => {
@@ -107,6 +139,23 @@ describe("computeSignatureHelp", () => {
 
   it("resolves a Java dotted receiver to the bare method label", () => {
     expect(computeSignatureHelp("System.out.println(")).toEqual({ name: "println", activeParameter: 0 });
+  });
+
+  it("resolves a Go package-qualified receiver to the bare member label", () => {
+    expect(computeSignatureHelp("fmt.Println(")).toEqual({ name: "Println", activeParameter: 0 });
+  });
+
+  it("does not count commas inside a Go raw (backtick) string", () => {
+    expect(computeSignatureHelp("fmt.Println(`a, b`, ")).toEqual({ name: "Println", activeParameter: 1 });
+  });
+
+  it("captures the bang of a Rust macro call", () => {
+    expect(computeSignatureHelp("println!(")).toEqual({ name: "println!", activeParameter: 0 });
+  });
+
+  it("treats a bare logical-not before a paren as a non-symbol name", () => {
+    // `!(a, ` resolves to name "!" (no symbol) and must not throw.
+    expect(computeSignatureHelp("return !(a, ")).toEqual({ name: "!", activeParameter: 1 });
   });
 
   it("ignores commas inside string literals", () => {
