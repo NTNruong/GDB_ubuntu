@@ -1,5 +1,23 @@
-import { describe, expect, it } from "vitest";
-import { computeSignatureHelp, __test } from "./langCompletions";
+import { describe, expect, it, vi } from "vitest";
+import {
+  computeSignatureHelp,
+  supportsSuggestionToggle,
+  setJavascriptSuggestions,
+  __test
+} from "./langCompletions";
+
+type MonacoArg = Parameters<typeof setJavascriptSuggestions>[0];
+
+// Minimal fake of the `monaco.languages.typescript.javascriptDefaults` surface.
+function fakeMonaco(modeConfiguration: Record<string, boolean>, setSpy: (c: unknown) => void) {
+  return {
+    languages: {
+      typescript: {
+        javascriptDefaults: { modeConfiguration, setModeConfiguration: setSpy }
+      }
+    }
+  } as unknown as MonacoArg;
+}
 
 describe("symbol table", () => {
   it("includes core C functions with detail + params", () => {
@@ -188,5 +206,34 @@ describe("computeSignatureHelp", () => {
 
   it("returns null when not inside any call", () => {
     expect(computeSignatureHelp("int x = 1; ")).toBeNull();
+  });
+});
+
+describe("JavaScript: gate the built-in TS worker (Wave 4)", () => {
+  it("offers the toggle for JavaScript and static-table languages", () => {
+    expect(supportsSuggestionToggle("javascript")).toBe(true);
+    expect(supportsSuggestionToggle("c")).toBe(true);
+  });
+
+  it("disables only TS completion + signature help when turned off, preserving the rest", () => {
+    const setSpy = vi.fn();
+    const monaco = fakeMonaco({ completionItems: true, signatureHelp: true, hovers: true }, setSpy);
+    const disposable = setJavascriptSuggestions(monaco, false);
+    expect(setSpy).toHaveBeenCalledWith({ completionItems: false, signatureHelp: false, hovers: true });
+    // Disposing restores the captured original config (back to full IntelliSense).
+    disposable?.dispose();
+    expect(setSpy).toHaveBeenLastCalledWith({ completionItems: true, signatureHelp: true, hovers: true });
+  });
+
+  it("restores TS completion + signature help when turned on", () => {
+    const setSpy = vi.fn();
+    const monaco = fakeMonaco({ completionItems: false, signatureHelp: false, hovers: true }, setSpy);
+    setJavascriptSuggestions(monaco, true);
+    expect(setSpy).toHaveBeenCalledWith({ completionItems: true, signatureHelp: true, hovers: true });
+  });
+
+  it("returns null when the TypeScript worker is unavailable", () => {
+    const monaco = { languages: { typescript: undefined } } as unknown as MonacoArg;
+    expect(setJavascriptSuggestions(monaco, false)).toBeNull();
   });
 });

@@ -62,7 +62,7 @@ test("runs a C++ hello world snippet", async ({ page }) => {
   await expect(page.locator(".terminal")).toContainText("Hello World", { timeout: 30_000 });
 });
 
-test("advanced suggestions toggle: default on, toggles, not persisted, supported langs only", async ({ page }) => {
+test("advanced suggestions toggle: default on, toggles, not persisted, all languages", async ({ page }) => {
   await page.goto("/");
   const toggle = page.getByTestId("btn-suggest-toggle");
   // Default language is C++ → toggle visible and ON by default.
@@ -76,15 +76,12 @@ test("advanced suggestions toggle: default on, toggles, not persisted, supported
   await page.reload();
   await expect(page.getByTestId("btn-suggest-toggle")).toHaveAttribute("aria-pressed", "true");
 
-  // Python, Java, Go and Rust all have static tables now → toggle still offered.
-  for (const lang of ["python", "java", "go", "rust"]) {
+  // Every language supports the switch now — static tables for six, the gated TS worker
+  // for JavaScript (Wave 4).
+  for (const lang of ["c", "cpp", "python", "java", "go", "rust", "javascript"]) {
     await page.getByLabel("Language").selectOption(lang);
     await expect(page.getByTestId("btn-suggest-toggle")).toBeVisible();
   }
-
-  // JavaScript has no static table (it uses Monaco's built-in TS worker) → button hidden.
-  await page.getByLabel("Language").selectOption("javascript");
-  await expect(page.getByTestId("btn-suggest-toggle")).toBeHidden();
 });
 
 test("accepting a function completion inserts its parameters (ISSUE-063)", async ({ page }) => {
@@ -144,6 +141,19 @@ test("Go and Rust advanced suggestions accept on the static table (Wave 2)", asy
   await expect(page.locator(".suggest-widget")).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(editor).toContainText("println!");
+});
+
+test("JavaScript IntelliSense is gated by the switch (Wave 4)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("javascript");
+  const editor = page.locator(".monaco-editor").first();
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  // Switch ON (default): the built-in TS worker offers `JSON.stringify`.
+  await page.keyboard.type("JSON.", { delay: 30 });
+  await page.keyboard.press("Control+Space");
+  await expect(page.locator(".suggest-widget")).toContainText("stringify");
 });
 
 test("requires a breakpoint before debugging", async ({ page }) => {

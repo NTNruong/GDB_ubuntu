@@ -614,5 +614,34 @@ export function registerSuggestions(monaco: Monaco, language: Language): IDispos
   };
 }
 
+/**
+ * Whether the advanced-suggestions switch should be shown for this language. True for any
+ * language with a static table, plus JavaScript (which gates Monaco's built-in TS worker
+ * instead of a static table — see `setJavascriptSuggestions`).
+ */
+export function supportsSuggestionToggle(language: Language): boolean {
+  return languageHasSuggestions(language) || language === "javascript";
+}
+
+/**
+ * Gate Monaco's built-in TypeScript worker for JavaScript. `enabled` true restores full
+ * IntelliSense; false disables the TS completion + signature-help providers so the editor
+ * falls back to word-based suggestions. Returns a disposable that restores the captured
+ * config on switch/language change or unmount. Null when the TS worker is unavailable.
+ */
+export function setJavascriptSuggestions(monaco: Monaco, enabled: boolean): IDisposable | null {
+  const defaults = monaco.languages.typescript?.javascriptDefaults;
+  if (!defaults) return null;
+  // React runs effect cleanup before re-running, so the current config is the restored
+  // default here — capture it per-call (no module-global state, keeps unit tests pure).
+  const original = defaults.modeConfiguration;
+  defaults.setModeConfiguration({ ...original, completionItems: enabled, signatureHelp: enabled });
+  return {
+    dispose() {
+      defaults.setModeConfiguration(original);
+    }
+  };
+}
+
 // Exposed for tests.
 export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, JAVA_SYMBOLS, GO_SYMBOLS, RUST_SYMBOLS, fnSnippet };

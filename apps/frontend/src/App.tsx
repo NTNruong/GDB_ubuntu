@@ -37,7 +37,12 @@ import {
   type TreeNode
 } from "@internal/shared";
 import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
-import { registerSuggestions, languageHasSuggestions } from "./langCompletions";
+import {
+  registerSuggestions,
+  languageHasSuggestions,
+  supportsSuggestionToggle,
+  setJavascriptSuggestions
+} from "./langCompletions";
 import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
 import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
@@ -1264,6 +1269,16 @@ export function App() {
     return () => disposable?.dispose();
   }, [suggestEnabled, language, monacoReady]);
 
+  // JavaScript uses Monaco's built-in TypeScript worker for IntelliSense (no static table).
+  // The switch gates that worker instead: OFF disables TS completion + signature help so the
+  // editor falls back to word-based suggestions; ON (or leaving JS) restores it.
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco || !monacoReady || language !== "javascript") return;
+    const disposable = setJavascriptSuggestions(monaco, suggestEnabled);
+    return () => disposable?.dispose();
+  }, [suggestEnabled, language, monacoReady]);
+
   useEffect(() => {
     const editor = editorRef.current;
     const monaco = monacoRef.current;
@@ -1436,7 +1451,7 @@ export function App() {
             ))}
           </select>
         )}
-        {languageHasSuggestions(language) && (
+        {supportsSuggestionToggle(language) && (
           <button
             type="button"
             className="topbar-icon-btn"
