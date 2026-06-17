@@ -243,6 +243,61 @@ describe("JavaScript: static table replaces the TS worker (ISSUE-066)", () => {
   });
 });
 
+describe("ISSUE-067: receiver-aware static suggestions", () => {
+  it("reads the static receiver typed before the word", () => {
+    expect(__test.receiverBefore("JSON.")).toBe("JSON");
+    expect(__test.receiverBefore("fmt.")).toBe("fmt");
+    expect(__test.receiverBefore("obj.")).toBe("obj");
+    expect(__test.receiverBefore("a.b.")).toBe("b"); // innermost receiver
+    expect(__test.receiverBefore("JSON")).toBe(""); // no dot → top-level
+    expect(__test.receiverBefore("")).toBe("");
+    expect(__test.receiverBefore("  Math  .")).toBe("Math"); // tolerates surrounding spaces
+  });
+
+  it("narrows JS members to the typed global, dropping unrelated symbols", () => {
+    const json = __test.symbolsForReceiver(__test.JS_SYMBOLS, "JSON");
+    expect(json?.map((s) => s.label).sort()).toEqual(["parse", "stringify"]);
+
+    const math = __test.symbolsForReceiver(__test.JS_SYMBOLS, "Math")!.map((s) => s.label);
+    expect(math).toContain("round");
+    expect(math).toContain("abs");
+    expect(math).not.toContain("parseInt"); // global, not a Math member
+    expect(math).not.toContain("isInteger"); // Number, not Math
+  });
+
+  it("narrows Go members to the typed package", () => {
+    const fmtPkg = __test.symbolsForReceiver(__test.GO_SYMBOLS, "fmt")!.map((s) => s.label);
+    expect(fmtPkg).toContain("Println");
+    expect(fmtPkg).not.toContain("Split"); // strings, not fmt
+    expect(fmtPkg).not.toContain("len"); // builtin, untagged
+
+    const strs = __test.symbolsForReceiver(__test.GO_SYMBOLS, "strings")!.map((s) => s.label);
+    expect(strs).toContain("Split");
+    expect(strs).not.toContain("Println");
+  });
+
+  it("returns null for an unknown receiver or no receiver (keeps full table + identifiers)", () => {
+    expect(__test.symbolsForReceiver(__test.JS_SYMBOLS, "arr")).toBeNull();
+    expect(__test.symbolsForReceiver(__test.JS_SYMBOLS, "")).toBeNull();
+    expect(__test.symbolsForReceiver(__test.C_SYMBOLS, "s")).toBeNull(); // C tags nothing
+  });
+
+  it("tags only static members, leaving instance methods / builtins untagged", () => {
+    const js = new Map(__test.JS_SYMBOLS.map((s) => [s.label, s]));
+    expect(js.get("stringify")?.receiver).toBe("JSON");
+    expect(js.get("log")?.receiver).toBe("console");
+    expect(js.get("round")?.receiver).toBe("Math");
+    expect(js.get("map")?.receiver).toBeUndefined(); // instance method
+    expect(js.get("parseInt")?.receiver).toBeUndefined(); // global
+
+    const go = new Map(__test.GO_SYMBOLS.map((s) => [s.label, s]));
+    expect(go.get("Println")?.receiver).toBe("fmt");
+    expect(go.get("Atoi")?.receiver).toBe("strconv");
+    expect(go.get("Args")?.receiver).toBe("os");
+    expect(go.get("len")?.receiver).toBeUndefined(); // builtin
+  });
+});
+
 describe("Self-scan user identifiers (Fix A)", () => {
   it("extracts distinct identifier tokens, ignoring numbers and punctuation", () => {
     const ids = __test.extractIdentifiers("int* ptr = arr; arr[0] = 5;");

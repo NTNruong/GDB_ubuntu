@@ -162,10 +162,31 @@ test("JavaScript IntelliSense is gated by the switch (Wave 4)", async ({ page })
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.press("Enter");
-  // Switch ON (default): the curated JS table offers `JSON.stringify` after the dot.
+  // Switch ON (default): the curated JS table is receiver-aware — `JSON.` lists only the
+  // JSON members (stringify/parse), not the whole alphabetical static table (ISSUE-067).
   await page.keyboard.type("JSON.", { delay: 30 });
   await page.keyboard.press("Control+Space");
-  await expect(page.locator(".suggest-widget")).toContainText("stringify");
+  const widget = page.locator(".suggest-widget");
+  await expect(widget).toContainText("stringify");
+  await expect(widget).toContainText("parse");
+  await expect(widget).not.toContainText("Array"); // unrelated globals filtered out
+  await expect(widget).not.toContainText("assign");
+});
+
+test("Go suggestions are receiver-aware after a package dot (ISSUE-067)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("go");
+  const editor = page.locator(".monaco-editor").first();
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  // `fmt.` lists only fmt-package functions — not strings/strconv members.
+  await page.keyboard.type("fmt.", { delay: 30 });
+  await page.keyboard.press("Control+Space");
+  const widget = page.locator(".suggest-widget");
+  await expect(widget).toContainText("Println");
+  await expect(widget).not.toContainText("Atoi"); // strconv, filtered out
+  await expect(widget).not.toContainText("Split"); // strings, filtered out
 });
 
 test("JavaScript suggestions OFF hides TS worker IntelliSense (ISSUE-066)", async ({ page }) => {

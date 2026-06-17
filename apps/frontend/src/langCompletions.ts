@@ -20,6 +20,13 @@ export interface LangSymbol {
   params?: string[];
   /** Command run on completion acceptance (e.g. trigger parameter hints). */
   command?: { id: string; title: string };
+  /**
+   * The static global / package this member is reached through (e.g. `JSON`, `Math`, `fmt`).
+   * Set only for members called as `Receiver.member`. Drives receiver-aware filtering: typing
+   * `JSON.` lists only `receiver === "JSON"` symbols. Instance methods (called on a variable
+   * whose type we can't resolve) and globals stay undefined. See ISSUE-067.
+   */
+  receiver?: string;
 }
 
 // Snippet placeholders only need `$`, `}`, `\` escaped; param text (commas, parens) is literal.
@@ -55,6 +62,11 @@ const snip = (label: string, insertText: string, detail: string): LangSymbol => 
   kind: "snippet",
   detail
 });
+
+// Tag a group of members with the static global / package they hang off (`JSON.stringify`,
+// `fmt.Println`), so the completion provider can narrow to them after `Receiver.` — see
+// ISSUE-067. Labels/details are untouched; only `receiver` is stamped on each.
+const on = (receiver: string, syms: LangSymbol[]): LangSymbol[] => syms.map((s) => ({ ...s, receiver }));
 
 // --- C standard library (shared by `c` and `cpp`) --------------------------
 const C_SYMBOLS: LangSymbol[] = [
@@ -286,59 +298,73 @@ const JAVA_SYMBOLS: LangSymbol[] = [
 // (`len`, `make`, ...) are unqualified. Labels must be UNIQUE (provider has no dedup).
 const GO_SYMBOLS: LangSymbol[] = [
   // fmt
-  fn("Println", "func fmt.Println(a ...any) (n int, err error)", ["a ...any"], "Print with spaces and a newline."),
-  fn("Printf", "func fmt.Printf(format string, a ...any) (n int, err error)", ["format string", "a ...any"]),
-  fn("Print", "func fmt.Print(a ...any) (n int, err error)", ["a ...any"]),
-  fn("Sprintf", "func fmt.Sprintf(format string, a ...any) string", ["format string", "a ...any"]),
-  fn("Sprint", "func fmt.Sprint(a ...any) string", ["a ...any"]),
-  fn("Sprintln", "func fmt.Sprintln(a ...any) string", ["a ...any"]),
-  fn("Scanln", "func fmt.Scanln(a ...any) (n int, err error)", ["a ...any"]),
-  fn("Scan", "func fmt.Scan(a ...any) (n int, err error)", ["a ...any"]),
-  fn("Scanf", "func fmt.Scanf(format string, a ...any) (n int, err error)", ["format string", "a ...any"]),
-  fn("Errorf", "func fmt.Errorf(format string, a ...any) error", ["format string", "a ...any"]),
-  fn("Fprintln", "func fmt.Fprintln(w io.Writer, a ...any) (n int, err error)", ["w io.Writer", "a ...any"]),
+  ...on("fmt", [
+    fn("Println", "func fmt.Println(a ...any) (n int, err error)", ["a ...any"], "Print with spaces and a newline."),
+    fn("Printf", "func fmt.Printf(format string, a ...any) (n int, err error)", ["format string", "a ...any"]),
+    fn("Print", "func fmt.Print(a ...any) (n int, err error)", ["a ...any"]),
+    fn("Sprintf", "func fmt.Sprintf(format string, a ...any) string", ["format string", "a ...any"]),
+    fn("Sprint", "func fmt.Sprint(a ...any) string", ["a ...any"]),
+    fn("Sprintln", "func fmt.Sprintln(a ...any) string", ["a ...any"]),
+    fn("Scanln", "func fmt.Scanln(a ...any) (n int, err error)", ["a ...any"]),
+    fn("Scan", "func fmt.Scan(a ...any) (n int, err error)", ["a ...any"]),
+    fn("Scanf", "func fmt.Scanf(format string, a ...any) (n int, err error)", ["format string", "a ...any"]),
+    fn("Errorf", "func fmt.Errorf(format string, a ...any) error", ["format string", "a ...any"]),
+    fn("Fprintln", "func fmt.Fprintln(w io.Writer, a ...any) (n int, err error)", ["w io.Writer", "a ...any"])
+  ]),
   // strings
-  fn("Split", "func strings.Split(s, sep string) []string", ["s string", "sep string"]),
-  fn("Join", "func strings.Join(elems []string, sep string) string", ["elems []string", "sep string"]),
-  fn("Contains", "func strings.Contains(s, substr string) bool", ["s string", "substr string"]),
-  fn("HasPrefix", "func strings.HasPrefix(s, prefix string) bool", ["s string", "prefix string"]),
-  fn("HasSuffix", "func strings.HasSuffix(s, suffix string) bool", ["s string", "suffix string"]),
-  fn("ToUpper", "func strings.ToUpper(s string) string", ["s string"]),
-  fn("ToLower", "func strings.ToLower(s string) string", ["s string"]),
-  fn("TrimSpace", "func strings.TrimSpace(s string) string", ["s string"]),
-  fn("ReplaceAll", "func strings.ReplaceAll(s, old, new string) string", ["s string", "old string", "new string"]),
-  fn("Index", "func strings.Index(s, substr string) int", ["s string", "substr string"]),
-  fn("Repeat", "func strings.Repeat(s string, count int) string", ["s string", "count int"]),
-  fn("Fields", "func strings.Fields(s string) []string", ["s string"]),
+  ...on("strings", [
+    fn("Split", "func strings.Split(s, sep string) []string", ["s string", "sep string"]),
+    fn("Join", "func strings.Join(elems []string, sep string) string", ["elems []string", "sep string"]),
+    fn("Contains", "func strings.Contains(s, substr string) bool", ["s string", "substr string"]),
+    fn("HasPrefix", "func strings.HasPrefix(s, prefix string) bool", ["s string", "prefix string"]),
+    fn("HasSuffix", "func strings.HasSuffix(s, suffix string) bool", ["s string", "suffix string"]),
+    fn("ToUpper", "func strings.ToUpper(s string) string", ["s string"]),
+    fn("ToLower", "func strings.ToLower(s string) string", ["s string"]),
+    fn("TrimSpace", "func strings.TrimSpace(s string) string", ["s string"]),
+    fn("ReplaceAll", "func strings.ReplaceAll(s, old, new string) string", ["s string", "old string", "new string"]),
+    fn("Index", "func strings.Index(s, substr string) int", ["s string", "substr string"]),
+    fn("Repeat", "func strings.Repeat(s string, count int) string", ["s string", "count int"]),
+    fn("Fields", "func strings.Fields(s string) []string", ["s string"])
+  ]),
   // strconv
-  fn("Atoi", "func strconv.Atoi(s string) (int, error)", ["s string"]),
-  fn("Itoa", "func strconv.Itoa(i int) string", ["i int"]),
-  fn("ParseInt", "func strconv.ParseInt(s string, base, bitSize int) (int64, error)", ["s string", "base int", "bitSize int"]),
-  fn("ParseFloat", "func strconv.ParseFloat(s string, bitSize int) (float64, error)", ["s string", "bitSize int"]),
-  fn("FormatInt", "func strconv.FormatInt(i int64, base int) string", ["i int64", "base int"]),
+  ...on("strconv", [
+    fn("Atoi", "func strconv.Atoi(s string) (int, error)", ["s string"]),
+    fn("Itoa", "func strconv.Itoa(i int) string", ["i int"]),
+    fn("ParseInt", "func strconv.ParseInt(s string, base, bitSize int) (int64, error)", ["s string", "base int", "bitSize int"]),
+    fn("ParseFloat", "func strconv.ParseFloat(s string, bitSize int) (float64, error)", ["s string", "bitSize int"]),
+    fn("FormatInt", "func strconv.FormatInt(i int64, base int) string", ["i int64", "base int"])
+  ]),
   // os
-  fn("Exit", "func os.Exit(code int)", ["code int"]),
-  fn("Open", "func os.Open(name string) (*os.File, error)", ["name string"]),
-  fn("Create", "func os.Create(name string) (*os.File, error)", ["name string"]),
-  fn("Getenv", "func os.Getenv(key string) string", ["key string"]),
+  ...on("os", [
+    fn("Exit", "func os.Exit(code int)", ["code int"]),
+    fn("Open", "func os.Open(name string) (*os.File, error)", ["name string"]),
+    fn("Create", "func os.Create(name string) (*os.File, error)", ["name string"]),
+    fn("Getenv", "func os.Getenv(key string) string", ["key string"])
+  ]),
   // math
-  fn("Abs", "func math.Abs(x float64) float64", ["x float64"]),
-  fn("Max", "func math.Max(x, y float64) float64", ["x float64", "y float64"]),
-  fn("Min", "func math.Min(x, y float64) float64", ["x float64", "y float64"]),
-  fn("Sqrt", "func math.Sqrt(x float64) float64", ["x float64"]),
-  fn("Pow", "func math.Pow(x, y float64) float64", ["x float64", "y float64"]),
-  fn("Floor", "func math.Floor(x float64) float64", ["x float64"]),
-  fn("Ceil", "func math.Ceil(x float64) float64", ["x float64"]),
-  fn("Round", "func math.Round(x float64) float64", ["x float64"]),
+  ...on("math", [
+    fn("Abs", "func math.Abs(x float64) float64", ["x float64"]),
+    fn("Max", "func math.Max(x, y float64) float64", ["x float64", "y float64"]),
+    fn("Min", "func math.Min(x, y float64) float64", ["x float64", "y float64"]),
+    fn("Sqrt", "func math.Sqrt(x float64) float64", ["x float64"]),
+    fn("Pow", "func math.Pow(x, y float64) float64", ["x float64", "y float64"]),
+    fn("Floor", "func math.Floor(x float64) float64", ["x float64"]),
+    fn("Ceil", "func math.Ceil(x float64) float64", ["x float64"]),
+    fn("Round", "func math.Round(x float64) float64", ["x float64"])
+  ]),
   // sort
-  fn("Ints", "func sort.Ints(a []int)", ["a []int"]),
-  fn("Strings", "func sort.Strings(a []string)", ["a []string"]),
-  fn("Float64s", "func sort.Float64s(a []float64)", ["a []float64"]),
-  fn("Slice", "func sort.Slice(slice any, less func(i, j int) bool)", ["slice any", "less func(i, j int) bool"]),
+  ...on("sort", [
+    fn("Ints", "func sort.Ints(a []int)", ["a []int"]),
+    fn("Strings", "func sort.Strings(a []string)", ["a []string"]),
+    fn("Float64s", "func sort.Float64s(a []float64)", ["a []float64"]),
+    fn("Slice", "func sort.Slice(slice any, less func(i, j int) bool)", ["slice any", "less func(i, j int) bool"])
+  ]),
   // bufio
-  fn("NewReader", "func bufio.NewReader(rd io.Reader) *bufio.Reader", ["rd io.Reader"]),
-  fn("NewScanner", "func bufio.NewScanner(r io.Reader) *bufio.Scanner", ["r io.Reader"]),
-  fn("NewWriter", "func bufio.NewWriter(w io.Writer) *bufio.Writer", ["w io.Writer"]),
+  ...on("bufio", [
+    fn("NewReader", "func bufio.NewReader(rd io.Reader) *bufio.Reader", ["rd io.Reader"]),
+    fn("NewScanner", "func bufio.NewScanner(r io.Reader) *bufio.Scanner", ["r io.Reader"]),
+    fn("NewWriter", "func bufio.NewWriter(w io.Writer) *bufio.Writer", ["w io.Writer"])
+  ]),
   // builtins (unqualified)
   fn("len", "builtin len(v Type) int", ["v"]),
   fn("cap", "builtin cap(v Type) int", ["v"]),
@@ -350,9 +376,9 @@ const GO_SYMBOLS: LangSymbol[] = [
   fn("panic", "builtin panic(v any)", ["v any"]),
   fn("recover", "builtin recover() any", []),
   fn("close", "builtin close(c chan<- Type)", ["c chan"]),
-  // members / static fields (bare)
-  ct("Args", "os.Args"), ct("Stdin", "os.Stdin"), ct("Stdout", "os.Stdout"), ct("Stderr", "os.Stderr"),
-  ct("Pi", "math.Pi"), ct("MaxInt", "math.MaxInt"),
+  // members / static fields (tagged with their owning package so `os.`/`math.` list them)
+  ...on("os", [ct("Args", "os.Args"), ct("Stdin", "os.Stdin"), ct("Stdout", "os.Stdout"), ct("Stderr", "os.Stderr")]),
+  ...on("math", [ct("Pi", "math.Pi"), ct("MaxInt", "math.MaxInt")]),
   // types
   ty("string"), ty("int"), ty("int64"), ty("float64"), ty("bool"), ty("byte"), ty("rune"),
   ty("error"), ty("any"), ty("map"), ty("chan"), ty("struct"), ty("interface"),
@@ -456,20 +482,26 @@ const RUST_SYMBOLS: LangSymbol[] = [
 // (provider has no dedup), so a method shared by several objects appears once.
 const JS_SYMBOLS: LangSymbol[] = [
   // console
-  fn("log", "console.log(...data: any[]): void", ["...data"], "Print to stdout."),
-  fn("error", "console.error(...data: any[]): void", ["...data"]),
-  fn("warn", "console.warn(...data: any[]): void", ["...data"]),
-  fn("info", "console.info(...data: any[]): void", ["...data"]),
+  ...on("console", [
+    fn("log", "console.log(...data: any[]): void", ["...data"], "Print to stdout."),
+    fn("error", "console.error(...data: any[]): void", ["...data"]),
+    fn("warn", "console.warn(...data: any[]): void", ["...data"]),
+    fn("info", "console.info(...data: any[]): void", ["...data"])
+  ]),
   // JSON
-  fn("stringify", "JSON.stringify(value, replacer?, space?): string", ["value", "replacer", "space"], "Serialize a value to JSON."),
-  fn("parse", "JSON.parse(text, reviver?): any", ["text", "reviver"], "Parse JSON text into a value."),
+  ...on("JSON", [
+    fn("stringify", "JSON.stringify(value, replacer?, space?): string", ["value", "replacer", "space"], "Serialize a value to JSON."),
+    fn("parse", "JSON.parse(text, reviver?): any", ["text", "reviver"], "Parse JSON text into a value.")
+  ]),
   // Object (static)
-  fn("keys", "Object.keys(obj): string[]", ["obj"]),
-  fn("values", "Object.values(obj): any[]", ["obj"]),
-  fn("entries", "Object.entries(obj): [string, any][]", ["obj"]),
-  fn("assign", "Object.assign(target, ...sources): object", ["target", "...sources"]),
-  fn("freeze", "Object.freeze(obj): object", ["obj"]),
-  fn("fromEntries", "Object.fromEntries(entries): object", ["entries"]),
+  ...on("Object", [
+    fn("keys", "Object.keys(obj): string[]", ["obj"]),
+    fn("values", "Object.values(obj): any[]", ["obj"]),
+    fn("entries", "Object.entries(obj): [string, any][]", ["obj"]),
+    fn("assign", "Object.assign(target, ...sources): object", ["target", "...sources"]),
+    fn("freeze", "Object.freeze(obj): object", ["obj"]),
+    fn("fromEntries", "Object.fromEntries(entries): object", ["entries"])
+  ]),
   // Array instance methods (String shares split/replace/etc. below — keep labels unique)
   fn("map", "Array#map(callback, thisArg?): any[]", ["callback", "thisArg"]),
   fn("filter", "Array#filter(callback, thisArg?): any[]", ["callback", "thisArg"]),
@@ -491,8 +523,10 @@ const JS_SYMBOLS: LangSymbol[] = [
   fn("flat", "Array#flat(depth?): any[]", ["depth"]),
   fn("some", "Array#some(callback, thisArg?): boolean", ["callback", "thisArg"]),
   fn("every", "Array#every(callback, thisArg?): boolean", ["callback", "thisArg"]),
-  fn("isArray", "Array.isArray(value): boolean", ["value"]),
-  fn("from", "Array.from(iterable, mapFn?): any[]", ["iterable", "mapFn"]),
+  ...on("Array", [
+    fn("isArray", "Array.isArray(value): boolean", ["value"]),
+    fn("from", "Array.from(iterable, mapFn?): any[]", ["iterable", "mapFn"])
+  ]),
   // String instance methods
   fn("split", "String#split(separator, limit?): string[]", ["separator", "limit"]),
   fn("replace", "String#replace(pattern, replacement): string", ["pattern", "replacement"]),
@@ -508,25 +542,33 @@ const JS_SYMBOLS: LangSymbol[] = [
   fn("startsWith", "String#startsWith(searchString, position?): boolean", ["searchString", "position"]),
   fn("endsWith", "String#endsWith(searchString, endPosition?): boolean", ["searchString", "endPosition"]),
   fn("substring", "String#substring(start, end?): string", ["start", "end"]),
-  // Number / Math
+  // Number / Math — globals (parseInt/parseFloat/isNaN) + instance (toFixed) stay untagged;
+  // only the `Number.`/`Math.` statics carry a receiver.
   fn("parseInt", "parseInt(string, radix?): number", ["string", "radix"]),
   fn("parseFloat", "parseFloat(string): number", ["string"]),
   fn("isNaN", "isNaN(value): boolean", ["value"]),
-  fn("isInteger", "Number.isInteger(value): boolean", ["value"]),
   fn("toFixed", "Number#toFixed(digits?): string", ["digits"]),
-  fn("round", "Math.round(x): number", ["x"]),
-  fn("floor", "Math.floor(x): number", ["x"]),
-  fn("ceil", "Math.ceil(x): number", ["x"]),
-  fn("abs", "Math.abs(x): number", ["x"]),
-  fn("max", "Math.max(...values): number", ["...values"]),
-  fn("min", "Math.min(...values): number", ["...values"]),
-  fn("pow", "Math.pow(base, exponent): number", ["base", "exponent"]),
-  fn("sqrt", "Math.sqrt(x): number", ["x"]),
-  fn("random", "Math.random(): number", []),
-  // Promise / async + timers
-  fn("resolve", "Promise.resolve(value): Promise", ["value"]),
-  fn("reject", "Promise.reject(reason): Promise", ["reason"]),
-  fn("all", "Promise.all(iterable): Promise", ["iterable"]),
+  ...on("Number", [
+    fn("isInteger", "Number.isInteger(value): boolean", ["value"])
+  ]),
+  ...on("Math", [
+    fn("round", "Math.round(x): number", ["x"]),
+    fn("floor", "Math.floor(x): number", ["x"]),
+    fn("ceil", "Math.ceil(x): number", ["x"]),
+    fn("abs", "Math.abs(x): number", ["x"]),
+    fn("max", "Math.max(...values): number", ["...values"]),
+    fn("min", "Math.min(...values): number", ["...values"]),
+    fn("pow", "Math.pow(base, exponent): number", ["base", "exponent"]),
+    fn("sqrt", "Math.sqrt(x): number", ["x"]),
+    fn("random", "Math.random(): number", [])
+  ]),
+  // Promise / async + timers — only the `Promise.` statics carry a receiver; `then`/`catch`
+  // are instance methods and timers/structuredClone are globals (untagged).
+  ...on("Promise", [
+    fn("resolve", "Promise.resolve(value): Promise", ["value"]),
+    fn("reject", "Promise.reject(reason): Promise", ["reason"]),
+    fn("all", "Promise.all(iterable): Promise", ["iterable"])
+  ]),
   fn("then", "Promise#then(onFulfilled, onRejected?): Promise", ["onFulfilled", "onRejected"]),
   fn("catch", "Promise#catch(onRejected): Promise", ["onRejected"]),
   fn("setTimeout", "setTimeout(callback, delay?, ...args): number", ["callback", "delay", "...args"]),
@@ -642,6 +684,35 @@ export function collectUserIdentifiers(texts: string[], stdlibLabels: Set<string
   return [...out];
 }
 
+/**
+ * The static receiver typed immediately before the word being completed, e.g. `JSON` in
+ * `JSON.stringi|` or `fmt` in `fmt.|`. `textBeforeWord` is the line up to the word start.
+ * Returns "" when there is no `.` right before the word (top-level or non-member position).
+ * `a.b.|` → `"b"` (innermost receiver). Mirrors `identifierBefore` but keyed on `.`.
+ */
+export function receiverBefore(textBeforeWord: string): string {
+  let j = textBeforeWord.length - 1;
+  while (j >= 0 && /\s/.test(textBeforeWord[j] ?? "")) j--;
+  if (j < 0 || textBeforeWord[j] !== ".") return "";
+  j--; // skip the dot
+  while (j >= 0 && /\s/.test(textBeforeWord[j] ?? "")) j--; // tolerate `Math .x`
+  const end = j + 1; // exclusive end of the identifier
+  while (j >= 0 && /[A-Za-z0-9_$]/.test(textBeforeWord[j] ?? "")) j--;
+  return textBeforeWord.slice(j + 1, end);
+}
+
+/**
+ * Narrow the stdlib table to the members reached through `receiver` (a static global /
+ * package). Returns the matching members when `receiver` names a known one, otherwise null —
+ * null means "no receiver narrowing applies", so the caller keeps the full table plus the
+ * user's own identifiers (unchanged behaviour, e.g. struct/attribute access). See ISSUE-067.
+ */
+export function symbolsForReceiver(symbols: LangSymbol[], receiver: string): LangSymbol[] | null {
+  if (!receiver) return null;
+  const matches = symbols.filter((s) => s.receiver === receiver);
+  return matches.length > 0 ? matches : null;
+}
+
 function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSymbol[]): IDisposable[] {
   const byName = new Map(symbols.map((s) => [s.label, s]));
   const stdlibLabels = new Set(symbols.map((s) => s.label));
@@ -662,6 +733,9 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
   };
 
   const completion = monaco.languages.registerCompletionItemProvider(languageId, {
+    // Pop the list right after a `.` so receiver-aware members (`JSON.` → stringify/parse)
+    // appear without an extra Ctrl+Space.
+    triggerCharacters: ["."],
     provideCompletionItems(model, position) {
       const word = model.getWordUntilPosition(position);
       const range = {
@@ -670,7 +744,18 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
         startColumn: word.startColumn,
         endColumn: word.endColumn
       };
-      const stdlibSuggestions = symbols.map((sym) => ({
+      // When the user is completing after `Receiver.` and the receiver is a known static
+      // global/package, narrow to its members (and drop user identifiers — they are not
+      // members of it). Otherwise `narrowed` is null and behaviour is unchanged. (ISSUE-067)
+      const textBeforeWord = model.getValueInRange({
+        startLineNumber: position.lineNumber,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: word.startColumn
+      });
+      const narrowed = symbolsForReceiver(symbols, receiverBefore(textBeforeWord));
+      const activeSymbols = narrowed ?? symbols;
+      const stdlibSuggestions = activeSymbols.map((sym) => ({
         label: sym.label,
         kind: kindOf(sym.kind),
         detail: sym.detail,
@@ -689,10 +774,13 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
       // Monaco suppresses its built-in word-based provider once our higher-score provider
       // returns results (suggest.js: provider groups stop after the first that yields), so
       // we surface the user's identifiers ourselves — from every open same-language model.
-      const texts = monaco.editor
-        .getModels()
-        .filter((m) => m.getLanguageId() === languageId && m.getValueLength() <= MAX_SCAN_BYTES)
-        .map((m) => m.getValue());
+      const texts =
+        narrowed
+          ? []
+          : monaco.editor
+              .getModels()
+              .filter((m) => m.getLanguageId() === languageId && m.getValueLength() <= MAX_SCAN_BYTES)
+              .map((m) => m.getValue());
       const currentWord = model.getWordAtPosition(position)?.word ?? "";
       const identifierSuggestions = collectUserIdentifiers(texts, stdlibLabels, currentWord).map((id) => ({
         label: id,
@@ -811,5 +899,7 @@ export const __test = {
   fnSnippet,
   extractIdentifiers,
   collectUserIdentifiers,
+  receiverBefore,
+  symbolsForReceiver,
   STDLIB_SORT_PREFIX
 };
