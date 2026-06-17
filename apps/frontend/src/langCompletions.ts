@@ -1,4 +1,5 @@
 import type { OnMount } from "@monaco-editor/react";
+import type { Language } from "@internal/shared";
 
 // The `monaco` namespace object handed to `onMount` — same type as `monacoRef.current`.
 type Monaco = Parameters<OnMount>[1];
@@ -9,7 +10,7 @@ type SymbolKind = "function" | "keyword" | "type" | "macro" | "constant";
 export interface LangSymbol {
   /** Text shown in the list and used to match (members like `cout`, not `std::cout`). */
   label: string;
-  /** Inserted on accept. For functions this is a snippet (`name($0)`). */
+  /** Inserted on accept. For functions this is a parameterized snippet. */
   insertText: string;
   kind: SymbolKind;
   /** Full signature / short type info, shown as detail and used as the signature label. */
@@ -17,15 +18,30 @@ export interface LangSymbol {
   documentation?: string;
   /** Parameter labels (functions only) — drives signature help. */
   params?: string[];
+  /** Command run on completion acceptance (e.g. trigger parameter hints). */
+  command?: { id: string; title: string };
+}
+
+// Snippet placeholders only need `$`, `}`, `\` escaped; param text (commas, parens) is literal.
+const escapeSnippet = (s: string): string => s.replace(/[\\$}]/g, (m) => `\\${m}`);
+
+// Build a parameterized snippet so accepting a function shows its parameters inline
+// (tab-stops), instead of empty `name()` — see ISSUE-063.
+function fnSnippet(label: string, params: string[]): string {
+  if (params.length === 0) return `${label}()`;
+  const placeholders = params.map((p, i) => `\${${i + 1}:${escapeSnippet(p)}}`);
+  return `${label}(${placeholders.join(", ")})`;
 }
 
 const fn = (label: string, detail: string, params: string[], documentation?: string): LangSymbol => ({
   label,
-  insertText: `${label}($0)`,
+  insertText: fnSnippet(label, params),
   kind: "function",
   detail,
   params,
-  documentation
+  documentation,
+  // Pop the signature-help widget right after acceptance so parameter guidance is visible.
+  command: params.length > 0 ? { id: "editor.action.triggerParameterHints", title: "Parameter hints" } : undefined
 });
 
 const kw = (label: string): LangSymbol => ({ label, insertText: label, kind: "keyword", detail: label });
@@ -101,6 +117,53 @@ const CPP_EXTRA_SYMBOLS: LangSymbol[] = [
     "protected", "virtual", "override", "this", "try", "catch", "throw"].map(kw)
 ];
 
+// --- Python builtins -------------------------------------------------------
+const PYTHON_SYMBOLS: LangSymbol[] = [
+  // builtin functions
+  fn("print", "print(*objects, sep=' ', end='\\n', file=sys.stdout)", ["*objects", "sep=' '", "end='\\n'", "file=sys.stdout"], "Print objects to the text stream."),
+  fn("len", "len(s)", ["s"], "Return the number of items in a container."),
+  fn("range", "range(start, stop[, step])", ["start", "stop", "step"]),
+  fn("input", "input(prompt='')", ["prompt=''"]),
+  fn("enumerate", "enumerate(iterable, start=0)", ["iterable", "start=0"]),
+  fn("zip", "zip(*iterables)", ["*iterables"]),
+  fn("map", "map(func, *iterables)", ["func", "*iterables"]),
+  fn("filter", "filter(function, iterable)", ["function", "iterable"]),
+  fn("sorted", "sorted(iterable, *, key=None, reverse=False)", ["iterable", "key=None", "reverse=False"]),
+  fn("sum", "sum(iterable, /, start=0)", ["iterable", "start=0"]),
+  fn("min", "min(iterable, *, key=None, default=...)", ["iterable", "key=None", "default=..."]),
+  fn("max", "max(iterable, *, key=None, default=...)", ["iterable", "key=None", "default=..."]),
+  fn("abs", "abs(x)", ["x"]),
+  fn("round", "round(number, ndigits=None)", ["number", "ndigits=None"]),
+  fn("open", "open(file, mode='r', encoding=None)", ["file", "mode='r'", "encoding=None"]),
+  fn("isinstance", "isinstance(obj, classinfo)", ["obj", "classinfo"]),
+  fn("type", "type(object)", ["object"]),
+  fn("ord", "ord(c)", ["c"]),
+  fn("chr", "chr(i)", ["i"]),
+  fn("hex", "hex(x)", ["x"]),
+  fn("bin", "bin(x)", ["x"]),
+  fn("oct", "oct(x)", ["x"]),
+  fn("any", "any(iterable)", ["iterable"]),
+  fn("all", "all(iterable)", ["iterable"]),
+  fn("reversed", "reversed(seq)", ["seq"]),
+  fn("format", "format(value, format_spec='')", ["value", "format_spec=''"]),
+  fn("repr", "repr(obj)", ["obj"]),
+  // constructor-style builtins (callable types) — keep params so signature help works
+  fn("int", "int(x=0, base=10)", ["x=0", "base=10"]),
+  fn("str", "str(object='')", ["object=''"]),
+  fn("float", "float(x=0.0)", ["x=0.0"]),
+  fn("list", "list(iterable=())", ["iterable=()"]),
+  fn("dict", "dict(**kwargs)", ["**kwargs"]),
+  fn("set", "set(iterable=())", ["iterable=()"]),
+  fn("tuple", "tuple(iterable=())", ["iterable=()"]),
+  fn("bool", "bool(x=False)", ["x=False"]),
+  // constants
+  ct("True"), ct("False"), ct("None"),
+  // keywords
+  ...["def", "class", "return", "if", "elif", "else", "for", "while", "import", "from", "as", "with",
+    "try", "except", "finally", "raise", "lambda", "yield", "async", "await", "pass", "break",
+    "continue", "global", "nonlocal", "in", "is", "not", "and", "or", "del", "assert"].map(kw)
+];
+
 export interface SignatureContext {
   /** Identifier of the enclosing (innermost) open call. */
   name: string;
@@ -118,9 +181,10 @@ function identifierBefore(text: string, openParenIndex: number): string {
 
 /**
  * Given the text before the cursor, find the innermost open function call and
- * the index of the argument the cursor sits in. Skips string/char literals
- * (with escapes) and ignores already-closed calls and nested brackets so commas
- * inside strings, array initializers, or sibling calls are not miscounted.
+ * the index of the argument the cursor sits in. Skips string/char/backtick
+ * literals (with escapes) and ignores already-closed calls and nested brackets
+ * so commas inside strings, template/raw literals, array initializers, or
+ * sibling calls are not miscounted.
  */
 export function computeSignatureHelp(text: string): SignatureContext | null {
   const stack: { name: string; argIndex: number }[] = [];
@@ -128,7 +192,7 @@ export function computeSignatureHelp(text: string): SignatureContext | null {
   const n = text.length;
   while (i < n) {
     const ch = text[i] ?? "";
-    if (ch === '"' || ch === "'") {
+    if (ch === '"' || ch === "'" || ch === "`") {
       const quote = ch;
       i++;
       while (i < n) {
@@ -196,6 +260,7 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
             sym.kind === "function"
               ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
               : undefined,
+          command: sym.command,
           range
         }))
       };
@@ -231,16 +296,30 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
   return [completion, signature];
 }
 
+// Static standard-library symbol tables, keyed by the editor's `Language` id (which
+// matches the Monaco language id). Add a language here to give it the toggle + providers.
+const SYMBOLS_BY_LANGUAGE: Partial<Record<Language, LangSymbol[]>> = {
+  c: C_SYMBOLS,
+  cpp: [...C_SYMBOLS, ...CPP_EXTRA_SYMBOLS],
+  python: PYTHON_SYMBOLS
+  // wave 2: go, rust  |  wave 3: java  |  wave 4: javascript (gate the built-in TS worker)
+};
+
+/** Whether a static stdlib symbol table exists for this language. */
+export function languageHasSuggestions(language: Language): boolean {
+  return SYMBOLS_BY_LANGUAGE[language] !== undefined;
+}
+
 /**
- * Register static C/C++ standard-library completion + signature help providers.
- * Returns a disposable that tears down every registered provider — call it when
- * the advanced-suggestions switch turns off or the editor language changes.
+ * Register static standard-library completion + signature help providers for the
+ * given language. Returns a disposable that tears down every registered provider —
+ * call it when the advanced-suggestions switch turns off or the language changes.
+ * Returns null when the language has no static table.
  */
-export function registerCSuggestions(monaco: Monaco): IDisposable {
-  const disposables: IDisposable[] = [
-    ...registerForLanguage(monaco, "c", C_SYMBOLS),
-    ...registerForLanguage(monaco, "cpp", [...C_SYMBOLS, ...CPP_EXTRA_SYMBOLS])
-  ];
+export function registerSuggestions(monaco: Monaco, language: Language): IDisposable | null {
+  const symbols = SYMBOLS_BY_LANGUAGE[language];
+  if (!symbols) return null;
+  const disposables = registerForLanguage(monaco, language, symbols);
   return {
     dispose() {
       for (const d of disposables) d.dispose();
@@ -249,4 +328,4 @@ export function registerCSuggestions(monaco: Monaco): IDisposable {
 }
 
 // Exposed for tests.
-export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS };
+export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, fnSnippet };

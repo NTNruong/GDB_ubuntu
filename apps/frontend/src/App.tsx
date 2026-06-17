@@ -37,7 +37,7 @@ import {
   type TreeNode
 } from "@internal/shared";
 import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
-import { registerCSuggestions } from "./cCompletions";
+import { registerSuggestions, languageHasSuggestions } from "./langCompletions";
 import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
 import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
@@ -1253,15 +1253,15 @@ export function App() {
     });
   };
 
-  // Register static C/C++ stdlib completion + signature help while the switch is
-  // ON and the language is C/C++. Disposing on toggle-off or language change
-  // returns the editor to Monaco's default word-based suggestions.
+  // Register static stdlib completion + signature help while the switch is ON and
+  // the current language has a symbol table. Disposing on toggle-off or language
+  // change returns the editor to Monaco's default word-based suggestions.
   useEffect(() => {
     const monaco = monacoRef.current;
     if (!monaco || !monacoReady) return;
-    if (!suggestEnabled || (language !== "c" && language !== "cpp")) return;
-    const disposable = registerCSuggestions(monaco);
-    return () => disposable.dispose();
+    if (!suggestEnabled || !languageHasSuggestions(language)) return;
+    const disposable = registerSuggestions(monaco, language);
+    return () => disposable?.dispose();
   }, [suggestEnabled, language, monacoReady]);
 
   useEffect(() => {
@@ -1436,13 +1436,13 @@ export function App() {
             ))}
           </select>
         )}
-        {(language === "c" || language === "cpp") && (
+        {languageHasSuggestions(language) && (
           <button
             type="button"
             className="topbar-icon-btn"
             data-testid="btn-suggest-toggle"
             aria-label="Advanced suggestions"
-            title={`Advanced suggestions (C/C++): ${suggestEnabled ? "on" : "off"}`}
+            title={`Advanced suggestions: ${suggestEnabled ? "on" : "off"}`}
             aria-pressed={suggestEnabled}
             onClick={() => setSuggestEnabled((value) => !value)}
           >

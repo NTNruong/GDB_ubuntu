@@ -62,7 +62,7 @@ test("runs a C++ hello world snippet", async ({ page }) => {
   await expect(page.locator(".terminal")).toContainText("Hello World", { timeout: 30_000 });
 });
 
-test("advanced suggestions toggle: default on, toggles, not persisted, C/C++ only", async ({ page }) => {
+test("advanced suggestions toggle: default on, toggles, not persisted, supported langs only", async ({ page }) => {
   await page.goto("/");
   const toggle = page.getByTestId("btn-suggest-toggle");
   // Default language is C++ → toggle visible and ON by default.
@@ -76,9 +76,28 @@ test("advanced suggestions toggle: default on, toggles, not persisted, C/C++ onl
   await page.reload();
   await expect(page.getByTestId("btn-suggest-toggle")).toHaveAttribute("aria-pressed", "true");
 
-  // Only offered for C/C++: the button is gone for other languages.
+  // Python has a static table now → toggle still offered.
   await page.getByLabel("Language").selectOption("python");
+  await expect(page.getByTestId("btn-suggest-toggle")).toBeVisible();
+
+  // A language without a static table (Java, until a later wave) hides the button.
+  await page.getByLabel("Language").selectOption("java");
   await expect(page.getByTestId("btn-suggest-toggle")).toBeHidden();
+});
+
+test("accepting a function completion inserts its parameters (ISSUE-063)", async ({ page }) => {
+  await page.goto("/");
+  // Default language is C++; `printf` is in the shared C table.
+  const editor = page.locator(".monaco-editor").first();
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("printf");
+  await page.keyboard.press("Control+Space");
+  await expect(page.locator(".suggest-widget")).toBeVisible();
+  await page.keyboard.press("Enter");
+  // Parameterized snippet → parameters appear inline, not empty `printf()`.
+  await expect(editor).toContainText("const char *format");
 });
 
 test("requires a breakpoint before debugging", async ({ page }) => {
