@@ -156,6 +156,24 @@ test("JavaScript IntelliSense is gated by the switch (Wave 4)", async ({ page })
   await expect(page.locator(".suggest-widget")).toContainText("stringify");
 });
 
+test("advanced suggestions still surface the user's own identifiers (Fix A)", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Language").selectOption("c");
+  const editor = page.locator(".monaco-editor").first();
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  // Declare a local identifier, then start typing its prefix on the next line.
+  await page.keyboard.type("int myCounter = 0;", { delay: 30 });
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("myCoun", { delay: 30 });
+  await page.keyboard.press("Control+Space");
+  await expect(page.locator(".suggest-widget")).toBeVisible();
+  // With the switch ON, the curated stdlib provider no longer hides the user's own
+  // identifiers — `myCounter` is offered (and ranked above stdlib via the sortText nudge).
+  await expect(page.locator(".suggest-widget")).toContainText("myCounter");
+});
+
 test("requires a breakpoint before debugging", async ({ page }) => {
   await page.goto("/");
   await page.getByTestId("btn-debug").click();

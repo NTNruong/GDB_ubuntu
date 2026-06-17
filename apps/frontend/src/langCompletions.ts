@@ -506,8 +506,46 @@ export function computeSignatureHelp(text: string): SignatureContext | null {
   return null;
 }
 
+// Sort the curated stdlib *after* the user's own identifiers (whose sortText defaults to
+// the plain word). `￿` is the conventional "sort last" sentinel.
+const STDLIB_SORT_PREFIX = "￿";
+
+// Skip scanning pathologically large models so the per-keystroke pass stays cheap.
+const MAX_SCAN_BYTES = 100_000;
+
+// Identifier tokens, matching how Monaco's word-based provider tokenizes words.
+const IDENTIFIER_RE = /[A-Za-z_]\w*/g;
+
+/** All distinct identifier-like tokens in a chunk of source text. */
+export function extractIdentifiers(text: string): string[] {
+  const out = new Set<string>();
+  for (const match of text.matchAll(IDENTIFIER_RE)) {
+    const id = match[0];
+    if (id) out.add(id);
+  }
+  return [...out];
+}
+
+/**
+ * The user's own identifiers to offer next to the stdlib table: every identifier across
+ * the given document texts, minus any that collides with a stdlib label (the stdlib entry
+ * wins — it carries detail/snippet/signature) and minus the word currently under the
+ * cursor (don't re-suggest the half-typed token itself).
+ */
+export function collectUserIdentifiers(texts: string[], stdlibLabels: Set<string>, currentWord: string): string[] {
+  const out = new Set<string>();
+  for (const text of texts) {
+    for (const id of extractIdentifiers(text)) {
+      if (id === currentWord || stdlibLabels.has(id)) continue;
+      out.add(id);
+    }
+  }
+  return [...out];
+}
+
 function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSymbol[]): IDisposable[] {
   const byName = new Map(symbols.map((s) => [s.label, s]));
+  const stdlibLabels = new Set(symbols.map((s) => s.label));
   const kindOf = (kind: SymbolKind): number => {
     const K = monaco.languages.CompletionItemKind;
     switch (kind) {
@@ -533,21 +571,40 @@ function registerForLanguage(monaco: Monaco, languageId: string, symbols: LangSy
         startColumn: word.startColumn,
         endColumn: word.endColumn
       };
-      return {
-        suggestions: symbols.map((sym) => ({
-          label: sym.label,
-          kind: kindOf(sym.kind),
-          detail: sym.detail,
-          documentation: sym.documentation,
-          insertText: sym.insertText,
-          insertTextRules:
-            sym.kind === "function" || sym.kind === "snippet"
-              ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
-              : undefined,
-          command: sym.command,
-          range
-        }))
-      };
+      const stdlibSuggestions = symbols.map((sym) => ({
+        label: sym.label,
+        kind: kindOf(sym.kind),
+        detail: sym.detail,
+        documentation: sym.documentation,
+        insertText: sym.insertText,
+        insertTextRules:
+          sym.kind === "function" || sym.kind === "snippet"
+            ? monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+            : undefined,
+        command: sym.command,
+        // Rank the curated stdlib *below* the user's own identifiers (light nudge).
+        sortText: STDLIB_SORT_PREFIX + sym.label,
+        range
+      }));
+
+      // Monaco suppresses its built-in word-based provider once our higher-score provider
+      // returns results (suggest.js: provider groups stop after the first that yields), so
+      // we surface the user's identifiers ourselves — from every open same-language model.
+      const texts = monaco.editor
+        .getModels()
+        .filter((m) => m.getLanguageId() === languageId && m.getValueLength() <= MAX_SCAN_BYTES)
+        .map((m) => m.getValue());
+      const currentWord = model.getWordAtPosition(position)?.word ?? "";
+      const identifierSuggestions = collectUserIdentifiers(texts, stdlibLabels, currentWord).map((id) => ({
+        label: id,
+        kind: monaco.languages.CompletionItemKind.Text,
+        insertText: id,
+        // Plain sortText (the word itself) ranks these above the `￿`-prefixed stdlib.
+        sortText: id,
+        range
+      }));
+
+      return { suggestions: [...identifierSuggestions, ...stdlibSuggestions] };
     }
   });
 
@@ -644,4 +701,15 @@ export function setJavascriptSuggestions(monaco: Monaco, enabled: boolean): IDis
 }
 
 // Exposed for tests.
-export const __test = { C_SYMBOLS, CPP_EXTRA_SYMBOLS, PYTHON_SYMBOLS, JAVA_SYMBOLS, GO_SYMBOLS, RUST_SYMBOLS, fnSnippet };
+export const __test = {
+  C_SYMBOLS,
+  CPP_EXTRA_SYMBOLS,
+  PYTHON_SYMBOLS,
+  JAVA_SYMBOLS,
+  GO_SYMBOLS,
+  RUST_SYMBOLS,
+  fnSnippet,
+  extractIdentifiers,
+  collectUserIdentifiers,
+  STDLIB_SORT_PREFIX
+};

@@ -237,3 +237,39 @@ describe("JavaScript: gate the built-in TS worker (Wave 4)", () => {
     expect(setJavascriptSuggestions(monaco, false)).toBeNull();
   });
 });
+
+describe("Self-scan user identifiers (Fix A)", () => {
+  it("extracts distinct identifier tokens, ignoring numbers and punctuation", () => {
+    const ids = __test.extractIdentifiers("int* ptr = arr; arr[0] = 5;");
+    expect(ids).toContain("int");
+    expect(ids).toContain("ptr");
+    expect(ids).toContain("arr");
+    expect(ids).not.toContain("5");
+    expect(ids).not.toContain("0");
+    // de-duplicated (arr appears twice in the source)
+    expect(ids.filter((x) => x === "arr")).toHaveLength(1);
+  });
+
+  it("drops stdlib-collision labels and the word under the cursor, keeps the rest", () => {
+    const ids = __test.collectUserIdentifiers(
+      ["int total = myHelper(); printf"],
+      new Set(["printf", "int"]),
+      "total"
+    );
+    expect(ids).toContain("myHelper");
+    expect(ids).not.toContain("printf"); // collides with a stdlib label
+    expect(ids).not.toContain("int"); // collides with a stdlib label
+    expect(ids).not.toContain("total"); // word currently under the cursor
+  });
+
+  it("unions identifiers across multiple open documents (matchingDocuments scope)", () => {
+    const ids = __test.collectUserIdentifiers(["alpha beta", "beta gamma"], new Set(), "");
+    expect(new Set(ids)).toEqual(new Set(["alpha", "beta", "gamma"]));
+  });
+
+  it("ranks a user identifier above the stdlib via sortText (the light nudge)", () => {
+    // stdlib items get the `STDLIB_SORT_PREFIX` so the comparator (sortText first) puts
+    // the user's own identifiers on top.
+    expect("ptr" < __test.STDLIB_SORT_PREFIX + "printf").toBe(true);
+  });
+});
