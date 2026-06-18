@@ -3,6 +3,7 @@ import type { TreeNode } from "@internal/shared";
 import {
   duplicateName,
   hasDirtyServerTab,
+  isServerFolderRun,
   pathExistsInTree,
   remapKeys,
   remapPath,
@@ -76,6 +77,18 @@ describe("resolveStopped", () => {
       path: "proj/pkg/util.py",
       content: "x=1"
     });
+  });
+});
+
+describe("isServerFolderRun", () => {
+  it("forces the server branch for an explicit target even before serverTabs sync (ISSUE-071)", () => {
+    // The just-opened tab is not yet registered, but a target is always server-backed.
+    expect(isServerFolderRun(true, "tool.py", {})).toBe(true);
+  });
+
+  it("falls back to active-tab membership when there is no target", () => {
+    expect(isServerFolderRun(false, "main.py", { "main.py": {} })).toBe(true);
+    expect(isServerFolderRun(false, "scratch.py", { "main.py": {} })).toBe(false);
   });
 });
 

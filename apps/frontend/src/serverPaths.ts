@@ -85,6 +85,22 @@ export function pathExistsInTree(nodes: readonly TreeNode[], path: string): bool
   return false;
 }
 
+/**
+ * Whether to build the run/debug payload as a server folder (gathered from disk)
+ * rather than from open scratch buffers. An explicit "Run/Debug this file" target
+ * is always server-backed (the Explorer menu only fires for a logged-in user on a
+ * file node), so it forces the server branch even before `serverTabs` — synced in a
+ * post-commit effect — registers the just-opened tab (ISSUE-071). Otherwise the
+ * active tab must already be a known server tab.
+ */
+export function isServerFolderRun(
+  hasTarget: boolean,
+  active: string,
+  serverTabs: Record<string, unknown>
+): boolean {
+  return hasTarget || active in serverTabs;
+}
+
 /** Basename → original server path + content for the active folder's run/debug. */
 export type DebugFileMap = Map<string, { serverPath: string; content: string }>;
 

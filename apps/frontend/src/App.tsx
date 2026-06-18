@@ -53,6 +53,7 @@ import { baseOf, dirOf, gatherFolderRun } from "./runGather";
 import {
   duplicateName,
   hasDirtyServerTab,
+  isServerFolderRun,
   pathExistsInTree,
   remapKeys,
   remapPath,
@@ -619,7 +620,7 @@ export function App() {
     const target = runTargetRef.current;
     const active = target?.path ?? activePath;
     const effLang = target?.language ?? language;
-    const activeIsServer = active in serverTabsRef.current;
+    const activeIsServer = isServerFolderRun(target !== null, active, serverTabsRef.current);
     if (user && activeIsServer) {
       const dir = dirOf(active);
       // Python projects gather recursively (nested package files); other
