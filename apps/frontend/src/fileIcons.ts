@@ -3,7 +3,7 @@
 // This module is intentionally free of `import.meta.glob`, asset imports and
 // JSX so it can be unit-tested under Vitest's `environment: "node"` without any
 // Vite asset transform. The thin component layer (glob name->URL map +
-// <FileTypeIcon>/<FolderTypeIcon>) lives in fileIcons.tsx.
+// <FileTypeIcon>/<FolderTypeIcon>) lives in fileTypeIcons.tsx.
 //
 // Icon names map 1:1 to vendored SVG basenames under
 // src/icons/material/{files,folders}/<name>.svg (Material Icon Theme, MIT).

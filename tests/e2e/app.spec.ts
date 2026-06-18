@@ -604,8 +604,9 @@ test("multi-file: add, rename, and close editor tabs (ISSUE-040)", async ({ page
   await expect(page.locator(".editor-tab-bar")).toBeVisible();
   await expect(page.locator(".editor-tab")).toHaveCount(1);
   await expect(page.locator(".editor-tab .tab-label")).toHaveText("main.c");
-  // ISSUE-042: the file icon is a spec-aligned SVG, not a bare text letter.
-  await expect(page.locator(".editor-tab.active .tab-icon svg")).toBeVisible();
+  // ISSUE-042/070: the file icon is a Material Icon Theme SVG rendered as a
+  // decorative <img class="ftype-icon">, not an inline <svg> or a text letter.
+  await expect(page.locator(".editor-tab.active .tab-icon img.ftype-icon")).toBeVisible();
 
   // Add a file → untitled1.c becomes the second tab.
   await page.getByRole("button", { name: "Add file" }).click();
