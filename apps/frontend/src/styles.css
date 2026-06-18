@@ -85,14 +85,6 @@
   --tab-bg-hover: hsla(215, 20%, 18%, 0.5);
   --tab-min-width: 80px;
   --tab-max-width: 160px;
-  --icon-c: hsl(210, 70%, 60%);
-  --icon-h: hsl(280, 50%, 65%);
-  --icon-cpp: hsl(210, 80%, 50%);
-  --icon-hpp: hsl(280, 60%, 60%);
-  --icon-js: hsl(48, 90%, 55%);
-  --icon-java: hsl(18, 80%, 55%);
-  --icon-go: hsl(190, 75%, 55%);
-  --icon-rust: hsl(25, 60%, 55%);
 
   color: var(--text-primary);
   background: var(--bg-base);
@@ -547,14 +539,17 @@ h1.brand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
 }
 
-.editor-tab .tab-icon svg {
-  width: 14px;
-  height: 14px;
+/* Material-theme file/folder icons (vendored SVGs) — used in tabs + explorer. */
+.ftype-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  object-fit: contain;
 }
 
 .editor-tab .tab-label {
@@ -1622,6 +1617,15 @@ h1.brand {
 .explorer-caret-spacer {
   display: inline-block;
   width: 14px;
+}
+
+.explorer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 .explorer-name {

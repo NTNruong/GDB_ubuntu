@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { USER_PATH_SEGMENT_PATTERN, type TreeNode } from "@internal/shared";
+import { FileTypeIcon, FolderTypeIcon } from "./fileTypeIcons";
 
 type ExplorerProps = {
   username: string;
@@ -157,6 +158,13 @@ export function Explorer({
         >
           <span className={`explorer-caret ${isDir && isOpen ? "open" : ""}`}>
             {isDir ? <ChevronRight size={14} /> : <span className="explorer-caret-spacer" />}
+          </span>
+          <span className="explorer-icon">
+            {isDir ? (
+              <FolderTypeIcon name={node.name} open={isOpen} />
+            ) : (
+              <FileTypeIcon name={node.name} />
+            )}
           </span>
           <span className="explorer-name">{node.name}</span>
         </div>
