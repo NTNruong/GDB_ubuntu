@@ -43,7 +43,7 @@ import {
   supportsSuggestionToggle,
   disableJavascriptWorkerCompletions
 } from "./langCompletions";
-import { isCompilerDiagnosticContext, parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
+import { parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
 import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
 import { AuthExpiredError, authApi, filesApi } from "./filesApi";
@@ -724,8 +724,13 @@ export function App() {
       lastRun = now;
       const rect = workspaceRef.current?.getBoundingClientRect();
       if (!rect) return;
-      const pct = ((moveEvent.clientY - rect.top) / rect.height) * 100;
-      setEditorHeight(Math.min(85, Math.max(20, pct)));
+      // Debug mode keeps the viewport-locked grid → size relative to the workspace box (%).
+      // The non-debug run view is a page-scroll layout where the workspace can be taller than
+      // the viewport, so size the editor relative to the viewport (vh) instead (ISSUE-068).
+      // clientY/rect.top are both viewport coordinates, so this is correct even when scrolled.
+      const editorPx = moveEvent.clientY - rect.top;
+      const next = isDebugActive ? (editorPx / rect.height) * 100 : (editorPx / window.innerHeight) * 100;
+      setEditorHeight(Math.min(85, Math.max(20, next)));
     };
 
     const onMouseUp = () => {
@@ -737,7 +742,7 @@ export function App() {
 
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
-  }, []);
+  }, [isDebugActive]);
 
   const startResizeX = useCallback((event: React.MouseEvent) => {
     event.preventDefault();
@@ -877,10 +882,14 @@ export function App() {
 
   const appendRunStderr = useCallback(
     (data: string) => {
-      const shouldParseDiagnostics = runPhaseRef.current === "compile" && runLanguageRef.current !== "python";
+      // Always show the full compiler transcript in Output (errors + warnings + notes +
+      // the `^~~` caret context) so learners see exactly what/where the problem is. The
+      // Error List is built in parallel from the parsed diagnostics — it does not replace
+      // the raw output anymore (ISSUE-069).
+      appendOutput("stderr", data);
 
+      const shouldParseDiagnostics = runPhaseRef.current === "compile" && runLanguageRef.current !== "python";
       if (!shouldParseDiagnostics) {
-        appendOutput("stderr", data);
         return;
       }
 
@@ -895,11 +904,6 @@ export function App() {
         if (errors > 0) {
           setActiveTab("errors");
         }
-        return;
-      }
-
-      if (!isCompilerDiagnosticContext(data)) {
-        appendOutput("stderr", data);
       }
     },
     [appendOutput]
@@ -1552,7 +1556,15 @@ export function App() {
         <main
           className="workspace"
           ref={workspaceRef}
-          style={{ "--editor-height": `${editorHeight}%` } as CSSProperties}
+          style={
+            {
+              "--editor-height": `${editorHeight}%`,
+              // Viewport-relative twin of --editor-height, used by the non-debug page-scroll
+              // layout where a `%` height would have no definite parent to resolve against
+              // (ISSUE-068).
+              "--editor-vh": `${editorHeight}vh`
+            } as CSSProperties
+          }
         >
           <section className="editor-panel">
           {showTabs && (
@@ -1586,7 +1598,11 @@ export function App() {
               glyphMargin: true,
               scrollBeyondLastLine: false,
               automaticLayout: true,
-              tabSize: 4
+              tabSize: 4,
+              // Let the wheel bubble to the page once the editor is at its top/bottom edge,
+              // so scrolling continues down into the Output panel instead of getting stuck
+              // inside Monaco (ISSUE-068).
+              scrollbar: { alwaysConsumeMouseWheel: false }
             }}
           />
           </div>

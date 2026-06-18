@@ -220,7 +220,10 @@ textarea {
   border-bottom: none;
   background: linear-gradient(180deg, var(--bg-layer-2), var(--bg-layer-1));
   box-shadow: 0 1px 0 var(--border-subtle), inset 0 -1px 0 var(--border-subtle);
-  position: relative;
+  /* Stay pinned while the run/edit view page-scrolls, so Run/Debug never scroll out of
+     reach (ISSUE-068). */
+  position: sticky;
+  top: 0;
   z-index: 10;
 }
 
@@ -393,6 +396,31 @@ h1.brand {
   .workspace {
     grid-template-rows: minmax(200px, var(--editor-height)) 6px minmax(200px, 1fr);
   }
+}
+
+/* === Run/edit view: whole-page scroll (ISSUE-068) ============================
+   In the non-debug view the editor gets a viewport-relative height and the bottom
+   panel flows below it; the workspace overflows visibly so the page (body) scrolls.
+   The editor wheel bubbles to the page at its edge (alwaysConsumeMouseWheel:false).
+   Debug mode keeps the viewport-locked grid above (QC-verified ISSUE-028/047). */
+.content-area:not(.debug-active) .workspace {
+  overflow: visible;
+  grid-template-rows: minmax(240px, var(--editor-vh, 58vh)) 6px auto;
+}
+
+/* Let the result panels flow with the page instead of scrolling inside a fixed box,
+   so Output/Error List grow downward (Error List never pushes the editor up). A 80vh
+   cap keeps a pathologically long transcript/list from making the page endless — past
+   that the panel scrolls internally (overflow:auto comes from the base rules). */
+.content-area:not(.debug-active) .result-card {
+  overflow: visible;
+  grid-template-rows: auto auto;
+}
+
+.content-area:not(.debug-active) .terminal,
+.content-area:not(.debug-active) .diagnostics-panel {
+  min-height: 200px;
+  max-height: 80vh;
 }
 
 .resize-handle {
