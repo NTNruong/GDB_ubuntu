@@ -4,7 +4,7 @@ This file provides Antigravity IDE (Gemini) with the operating rules, workflow, 
 
 ## What This Is
 
-Tailnet-only online code runner (C `gnu17`, C++ `gnu++20`, Python 3.12) with DAP-based debugging. No login, no DB, no server-side source persistence. Exposed only inside a tailnet via Tailscale Funnel on port `8080`.
+Tailnet-only online code runner for **seven languages** — C (`gnu17`), C++ (`gnu++20`), Python 3.12, JavaScript (Node), Java (selectable JDK 17/21/25), Go, and Rust. Every language can **run**; **debugging** (DAP-based) is available for C/C++/Python/Go/Rust/Java — only JavaScript is run-only. Multi-file projects are supported (per-language file extensions, a `files[]` array). Anonymous run/debug stays login-free and stateless. **Phase 2** adds optional **app-managed accounts** (bcrypt `users.json`, signed-cookie sessions; admin-seeded via the `users` CLI, no public self-registration) that unlock a VSCode-like **file explorer** over a per-user home directory (`USER_HOMES_ROOT/<username>`, full CRUD + Ctrl+S save + run-the-folder). Exposed inside a tailnet via Tailscale Funnel on port `8080`.
 
 For full architecture, see [CLAUDE.md](CLAUDE.md).
 
@@ -18,6 +18,13 @@ For full architecture, see [CLAUDE.md](CLAUDE.md).
   - `tmp/antigravity-proposals/` — create HTML/CSS demo files for UI/UX proposals.
   - `GEMINI.md` — self-update when the user approves rule changes.
 - The project is copied manually to this server through WinSCP. Do not rely on `git status` or git history being available.
+
+## QC Test Account
+
+- Use this app-managed account only for authenticated Explorer/File API UI/UX testing via `/browser`.
+- Username: `qc_runner`
+- Password: `QC_Explorer_2026_06_11!`
+- Do not use this account for personal data or privileged production workflows.
 
 ## Multi-Agent Relay Workflow
 
@@ -54,21 +61,28 @@ Test the deployed UI/UX using `/browser` against the production site.
 Claude Code (leader/developer) writes and maintains test cases across two locations:
 
 1. **Legacy manual checklist:** [QC_TEST_CASES.md](QC_TEST_CASES.md) — 20 manual test cases (TC-001..TC-020), UI-focused.
-2. **Comprehensive capability checklist:** [tests/qc/](tests/qc/) — 192+ scenarios organized by scope:
+2. **Comprehensive capability checklist:** [tests/qc/](tests/qc/) — organized by scope:
 
-| File | Scope | Scenarios | Prefixes |
-|------|-------|-----------|----------|
-| [INDEX.md](tests/qc/INDEX.md) | Master index, convention, feature matrix | — | — |
-| [runner.md](tests/qc/runner.md) | Runner capabilities: Run, Debug, Limits, Abuse, Observability | 57 | TC-RUN, TC-DBG, TC-LIM, TC-ABS, TC-OBS |
-| [c-embedded.md](tests/qc/c-embedded.md) | C firmware/embedded: Register/MMIO, RTOS, DS+Math+Protocol | 90+ | TC-C-REG, TC-C-RTOS, TC-C-DS |
-| [cpp.md](tests/qc/cpp.md) | C++ STL, gnu++20, Threading, Firmware-adjacent | 60 | TC-CPP |
-| [python.md](tests/qc/python.md) | Python 3.12 smoke, asyncio, typing, stdlib | 15 | TC-PY |
+| File | Scope | Prefixes |
+|------|-------|----------|
+| [INDEX.md](tests/qc/INDEX.md) | Master index, convention, feature matrix | — |
+| [runner.md](tests/qc/runner.md) | Runner capabilities: Run, Debug, Limits, Abuse, Observability | TC-RUN, TC-DBG, TC-LIM, TC-ABS, TC-OBS |
+| [c-embedded.md](tests/qc/c-embedded.md) | C firmware/embedded: Register/MMIO, RTOS, DS+Math+Protocol | TC-C-REG, TC-C-RTOS, TC-C-DS |
+| [c-dsa.md](tests/qc/c-dsa.md) | C data structures & algorithms | TC-C-DSA |
+| [cpp.md](tests/qc/cpp.md) | C++ STL, gnu++20, Threading, Firmware-adjacent | TC-CPP |
+| [python.md](tests/qc/python.md) | Python 3.12 smoke, asyncio, typing, stdlib | TC-PY |
+| [java.md](tests/qc/java.md) | Java JDK 17/21/25, debug, toolchain versions | TC-JAVA |
+| [go.md](tests/qc/go.md) | Go run/debug, packages, goroutines | TC-GO |
+| [rust.md](tests/qc/rust.md) | Rust run/debug, cargo-less single-file | TC-RUST |
+| [javascript.md](tests/qc/javascript.md) | JavaScript (Node) run-only, ES modules | TC-JS |
+| [explorer.md](tests/qc/explorer.md) | File Explorer: auth, CRUD, folder operations, run-the-folder | TC-EXP |
 
 **For UI/UX testing**, focus on:
 - `QC_TEST_CASES.md` — all 20 cases are directly UI/UX testable via browser.
 - `runner.md` § RUN (TC-RUN-001..015) — verify output rendering, pill status, error display.
 - `runner.md` § DEBUG (TC-DBG-001..015) — verify Variables panel, Watch panel, Call Stack, debug toolbar.
 - `runner.md` § LIMITS (TC-LIM-001..010) — verify timeout/error UI states.
+- `explorer.md` — verify login/logout, Explorer tree, folder operations, file CRUD, run-the-folder UX.
 
 **Not directly UI-testable** (require server-side access / Docker): TC-OBS-*, TC-ABS-008..011, TC-LIM-002/003/006..010.
 
@@ -248,7 +262,7 @@ Increment the session number from the previous Antigravity IDE entry. If a sessi
 ## Accepted Risks
 
 - The user intentionally exposes the personal site through Tailscale Funnel on port `8080`.
-- Treat the current no-auth/no-rate-limit public Funnel exposure as a known accepted risk, not a new issue by itself.
+- The site has app-managed accounts (bcrypt, cookie sessions) but no rate limiting on public Funnel — treat this as a known accepted risk, not a new issue by itself.
 
 ---
 
@@ -256,7 +270,27 @@ Increment the session number from the previous Antigravity IDE entry. If a sessi
 
 For detailed architecture, environment variables, deploy workflow, and coding conventions, refer to [CLAUDE.md](CLAUDE.md). Key points for UI/UX work:
 
-- Frontend: [apps/frontend/src/App.tsx](apps/frontend/src/App.tsx) — single-component Monaco-based UI with `@monaco-editor/react` + lucide icons.
+- Frontend: [apps/frontend/src/App.tsx](apps/frontend/src/App.tsx) — single-component Monaco-based UI with `@monaco-editor/react` + lucide icons + Material-style file icons.
+- File Explorer: [apps/frontend/src/Explorer.tsx](apps/frontend/src/Explorer.tsx) — authenticated VSCode-like file tree with CRUD, folder operations, and run-the-folder.
+- File Tabs: [apps/frontend/src/FileTabs.tsx](apps/frontend/src/FileTabs.tsx) — multi-file editor tabs with add/rename/close, context menu, file-type icons.
+- File Icons: [apps/frontend/src/fileIcons.ts](apps/frontend/src/fileIcons.ts) (resolver) + [apps/frontend/src/fileTypeIcons.tsx](apps/frontend/src/fileTypeIcons.tsx) (component) — Material Icon Theme vendored SVGs.
+- Advanced Suggestions: [apps/frontend/src/langCompletions.ts](apps/frontend/src/langCompletions.ts) — static curated stdlib suggestions for C/C++/Python/Java/Go/Rust + JS TS-worker gating, receiver-aware narrowing, user-identifier self-scan.
 - Breakpoints: [apps/frontend/src/breakpoints.ts](apps/frontend/src/breakpoints.ts)
+- Server paths: [apps/frontend/src/serverPaths.ts](apps/frontend/src/serverPaths.ts) — authenticated file operations, run-folder gather.
+- Run gather: [apps/frontend/src/runGather.ts](apps/frontend/src/runGather.ts) — folder file gathering for run-the-folder.
+- Diagnostics: [apps/frontend/src/diagnostics.ts](apps/frontend/src/diagnostics.ts) — compile error/warning parsing for Error List.
+- Design tokens: [DESIGN.md](DESIGN.md) — HSL color palettes, spacing, typography, component specs.
 - Dev ports: frontend `5173` (Vite), production `8080` (via Docker compose).
 - Wire protocol (shared types): [packages/shared/src/index.ts](packages/shared/src/index.ts)
+
+### Current Open Issues
+
+- **ISSUE-058** (OPEN): Go Debug reaches breakpoints but Continue loses stdout and exit code. All other issues (ISSUE-001..070 except 058) are PASSED.
+
+### Recent Feature Additions (for UI/UX awareness)
+
+- **Material-style file/folder icons** (session 117): 41 vendored Material Icon Theme SVGs for Explorer rows and editor tabs.
+- **Advanced suggestions with receiver-awareness** (sessions 103-112): Static curated completions for all 7 languages, receiver-aware filtering (e.g. `JSON.` → only JSON members), user identifier self-scan, parameter hints.
+- **Page-scroll run/edit view** (session 115): Non-debug view flows with page scroll, Monaco wheel handoff, sticky topbar, capped Output/Error List panels.
+- **Full compiler transcript in Output** (session 115): Output tab now shows complete compiler stderr alongside Error List.
+- **Python Explorer project plan** (session 121): Under review — Python multi-file projects with nested paths, entrypoint field, recursive Explorer gather.

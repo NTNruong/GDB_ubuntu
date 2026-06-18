@@ -11,6 +11,12 @@ export const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
 export const MAX_FILES = 20;
 export const MAX_TOTAL_SOURCE_BYTES = 2_000_000;
 /**
+ * Max chars for a project file path. Python projects may use nested package
+ * folders ("pkg/util.py") with "/" separators (validated via parseUserPath);
+ * other languages stay single-segment (see refineProjectFiles).
+ */
+export const MAX_PROJECT_PATH_CHARS = 512;
+/**
  * Max raw HTTP body (JSON) accepted for /run + /debug. Must comfortably cover
  * MAX_TOTAL_SOURCE_BYTES + MAX_STDIN_BYTES + argv plus JSON-escaping headroom,
  * otherwise the transport rejects (413) a payload the schema would allow.
@@ -40,6 +46,12 @@ export const RESERVED_FILENAMES = [
 ];
 
 export const FILENAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** Last "/"-separated segment of a path ("pkg/util.py" → "util.py"). */
+export function basename(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash >= 0 ? path.slice(slash + 1) : path;
+}
 
 /** Lowercased extension incl. leading dot (e.g. ".c"); "" for none/dotfile. */
 export function fileExtension(path: string): string {
@@ -74,13 +86,13 @@ export function defaultFileName(language: Language): string {
 }
 
 export const ProjectFileSchema = z.object({
-  path: z.string().min(1).max(64),
+  path: z.string().min(1).max(MAX_PROJECT_PATH_CHARS),
   content: z.string().max(MAX_SOURCE_BYTES)
 });
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 
 export const BreakpointSchema = z.object({
-  path: z.string().min(1).max(64),
+  path: z.string().min(1).max(MAX_PROJECT_PATH_CHARS),
   line: z.number().int().positive()
 });
 export type Breakpoint = z.infer<typeof BreakpointSchema>;
@@ -90,6 +102,12 @@ function refineProjectFiles(
   ctx: z.RefinementCtx
 ): void {
   const allowed = LANGUAGE_EXTENSIONS[value.language];
+  // Python projects may use nested package folders ("pkg/util.py"); every other
+  // language stays single-segment (the run protocol is a flat list for them).
+  // The nested rule is enforced server-side here, not just in the frontend
+  // gather, so a direct API call cannot smuggle nested paths to a language whose
+  // runner does not handle them.
+  const allowNested = value.language === "python";
   const seen = new Set<string>();
   let total = 0;
 
@@ -99,14 +117,22 @@ function refineProjectFiles(
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["files", index, "path"], message });
     };
 
-    if (!FILENAME_PATTERN.test(file.path) || file.path.startsWith(".")) {
-      issue(`Invalid file name "${file.path}" (use letters, digits, ., _, -; no leading dot)`);
+    const validShape = allowNested
+      ? parseUserPath(file.path) !== null
+      : FILENAME_PATTERN.test(file.path) && !file.path.startsWith(".");
+    if (!validShape) {
+      issue(
+        allowNested
+          ? `Invalid file path "${file.path}" (use letters, digits, ., _, -, / separators; no leading dot, no ..)`
+          : `Invalid file name "${file.path}" (use letters, digits, ., _, -; no leading dot)`
+      );
       return;
     }
-    if (RESERVED_FILENAMES.includes(file.path.toLowerCase())) {
-      issue(`"${file.path}" is a reserved file name`);
+    const base = basename(file.path);
+    if (RESERVED_FILENAMES.includes(base.toLowerCase())) {
+      issue(`"${base}" is a reserved file name`);
     }
-    const ext = fileExtension(file.path);
+    const ext = fileExtension(base);
     if (!allowed.includes(ext)) {
       issue(`Extension "${ext || "(none)"}" not allowed for ${value.language} (allowed: ${allowed.join(", ")})`);
     }
@@ -155,15 +181,50 @@ const RunRequestBaseSchema = z.object({
   stdin: z.string().max(MAX_STDIN_BYTES).default(""),
   argv: z.array(z.string().max(MAX_ARG_BYTES)).max(MAX_ARG_COUNT).default([]),
   /** Optional toolchain version (e.g. Java "17"/"21"/"25"). Omitted ⇒ default. */
-  toolchainVersion: z.string().max(16).optional()
+  toolchainVersion: z.string().max(16).optional(),
+  /**
+   * Optional explicit entrypoint file to run/debug instead of the language
+   * default (Python only — its runner reads it; omitted ⇒ main.py). Must match
+   * one of `files[].path`. See refineEntrypoint.
+   */
+  entrypoint: z.string().min(1).max(MAX_PROJECT_PATH_CHARS).optional()
 });
 
+/**
+ * `entrypoint` is Python-only (the other languages' runners don't read it) and
+ * must point at a file actually present in the request, so it can never escape
+ * the workspace or name a missing file.
+ */
+function refineEntrypoint(
+  value: { language: Language; files: ProjectFile[]; entrypoint?: string },
+  ctx: z.RefinementCtx
+): void {
+  if (value.entrypoint === undefined) {
+    return;
+  }
+  const issue = (message: string): void => {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["entrypoint"], message });
+  };
+  if (value.language !== "python") {
+    issue(`entrypoint is only supported for python`);
+    return;
+  }
+  if (parseUserPath(value.entrypoint) === null) {
+    issue(`Invalid entrypoint path "${value.entrypoint}"`);
+    return;
+  }
+  if (!value.files.some((file) => file.path === value.entrypoint)) {
+    issue(`entrypoint "${value.entrypoint}" must match one of the project files`);
+  }
+}
+
 function refineRunRequest(
-  value: { language: Language; files: ProjectFile[]; toolchainVersion?: string },
+  value: { language: Language; files: ProjectFile[]; toolchainVersion?: string; entrypoint?: string },
   ctx: z.RefinementCtx
 ): void {
   refineProjectFiles(value, ctx);
   refineToolchainVersion(value, ctx);
+  refineEntrypoint(value, ctx);
 }
 
 export const RunRequestSchema = RunRequestBaseSchema.superRefine(refineRunRequest);
@@ -471,7 +532,11 @@ export type FileResponse = {
   mtimeMs: number;
 };
 
-/** Top-level regular files of one folder, with content — feeds run-the-folder. */
+/**
+ * Regular files of one folder, with content — feeds run-the-folder. By default
+ * `name` is a bare top-level filename; with `?recursive=1` it is the path
+ * relative to the folder ("pkg/util.py") so nested Python projects can be run.
+ */
 export type FolderFilesResponse = {
   path: string;
   files: { name: string; content: string; size: number }[];

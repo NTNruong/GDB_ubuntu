@@ -1,7 +1,9 @@
 import {
+  Bug,
   ChevronRight,
   FilePlus,
   FolderPlus,
+  Play,
   RefreshCw,
   Trash2
 } from "lucide-react";
@@ -19,6 +21,8 @@ type ExplorerProps = {
   onRename(path: string, newName: string): void;
   onDelete(node: TreeNode): void;
   onDuplicate(node: TreeNode): void;
+  onRunFile(path: string): void;
+  onDebugFile(path: string): void;
 };
 
 type Menu = { node: TreeNode | null; x: number; y: number } | null;
@@ -38,7 +42,9 @@ export function Explorer({
   onCreate,
   onRename,
   onDelete,
-  onDuplicate
+  onDuplicate,
+  onRunFile,
+  onDebugFile
 }: ExplorerProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [menu, setMenu] = useState<Menu>(null);
@@ -224,6 +230,29 @@ export function Explorer({
           )}
           {menu.node && (
             <>
+              {menu.node.type === "file" && menu.node.name.endsWith(".py") && (
+                <>
+                  <li
+                    role="menuitem"
+                    onClick={() => {
+                      onRunFile(menu.node!.path);
+                      setMenu(null);
+                    }}
+                  >
+                    <Play size={13} /> Run this file
+                  </li>
+                  <li
+                    role="menuitem"
+                    onClick={() => {
+                      onDebugFile(menu.node!.path);
+                      setMenu(null);
+                    }}
+                  >
+                    <Bug size={13} /> Debug this file
+                  </li>
+                  <li className="menu-separator" role="separator" />
+                </>
+              )}
               <li role="menuitem" onClick={() => startRename(menu.node!)}>
                 Rename
               </li>

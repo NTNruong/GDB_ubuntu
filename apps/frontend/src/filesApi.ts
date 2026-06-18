@@ -68,8 +68,9 @@ export const filesApi = {
   read(path: string): Promise<FileResponse> {
     return request<FileResponse>(`/api/files/content?path=${encodeURIComponent(path)}`);
   },
-  folder(path: string): Promise<FolderFilesResponse> {
-    return request<FolderFilesResponse>(`/api/files/folder?path=${encodeURIComponent(path)}`);
+  folder(path: string, recursive = false): Promise<FolderFilesResponse> {
+    const query = `path=${encodeURIComponent(path)}${recursive ? "&recursive=1" : ""}`;
+    return request<FolderFilesResponse>(`/api/files/folder?${query}`);
   },
   write(path: string, content: string): Promise<FileResponse> {
     return request<FileResponse>("/api/files/content", { method: "PUT", ...jsonBody({ path, content }) });

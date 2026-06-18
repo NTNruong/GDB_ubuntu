@@ -12,7 +12,7 @@ import {
 } from "@internal/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiConfig } from "./config.js";
-import { PathError, assertSafePath, countEntries, walkTree } from "./pathSafety.js";
+import { PathError, assertSafePath, countEntries, walkFolderFiles, walkTree } from "./pathSafety.js";
 import { ensureUserHome } from "./userStore.js";
 
 type ErrorResponse = { error: string };
@@ -99,7 +99,7 @@ export function registerFiles(app: FastifyInstance, config: ApiConfig): void {
     }
   );
 
-  app.get<{ Querystring: { path?: string }; Reply: FolderFilesResponse | ErrorResponse }>(
+  app.get<{ Querystring: { path?: string; recursive?: string }; Reply: FolderFilesResponse | ErrorResponse }>(
     "/api/files/folder",
     guard,
     async (request, reply) => {
@@ -109,6 +109,14 @@ export function registerFiles(app: FastifyInstance, config: ApiConfig): void {
         // no traversal check needed); any other path is shape-checked + jailed.
         const rel = readOptionalPathQuery(request);
         const abs = rel === "" ? root : await assertSafePath(root, rel);
+        // `?recursive=1` walks the whole subtree (file names carry their path
+        // relative to this folder, e.g. "pkg/util.py") — feeds nested Python
+        // folder runs. Default stays the flat top-level listing.
+        const recursive = request.query.recursive === "1" || request.query.recursive === "true";
+        if (recursive) {
+          const files = await walkFolderFiles(abs);
+          return reply.send({ path: rel, files });
+        }
         const dirents = await readdir(abs, { withFileTypes: true });
         const files: FolderFilesResponse["files"] = [];
         for (const dirent of dirents) {

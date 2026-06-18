@@ -100,6 +100,11 @@ export class DockerRunner {
         // e.g. Java: the entrypoint reads JAVA_VERSION to pick the JDK.
         env.push(`JAVA_VERSION=${toolchainVersion}`);
       }
+      if (request.language === "python" && request.entrypoint) {
+        // run-python runs ${ENTRYPOINT:-main.py} (relative to /workspace). The
+        // schema guarantees it is Python-only and names a real project file.
+        env.push(`ENTRYPOINT=${request.entrypoint}`);
+      }
       container = await this.docker.createContainer({
         Image: image,
         Cmd: commandForLanguage(request.language, request.argv),

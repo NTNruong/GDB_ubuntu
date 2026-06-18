@@ -4,7 +4,9 @@ import {
   FILENAME_PATTERN,
   LANGUAGE_EXTENSIONS,
   RESERVED_FILENAMES,
+  basename,
   fileExtension,
+  parseUserPath,
   type Language,
   type ProjectFile
 } from "@internal/shared";
@@ -16,12 +18,20 @@ export type WorkspacePaths = {
 };
 
 /**
- * Defense-in-depth filename guard (the zod schema already validates the wire
- * request). Rejects path traversal, absolute/hidden names, disallowed
- * extensions, and reserved workspace filenames before anything is written.
+ * Defense-in-depth path guard (the zod schema already validates the wire
+ * request). Python projects may use nested package folders ("pkg/util.py",
+ * validated via parseUserPath); every other language stays single-segment.
+ * Rejects path traversal, absolute/hidden names, disallowed extensions, and
+ * reserved workspace filenames before anything is written.
  */
 export function assertSafeFileName(name: string, language: Language): void {
-  if (
+  if (language === "python") {
+    // parseUserPath confines to relative, "/"-separated segments of the file
+    // charset (no "..", no leading dot, no backslash, bounded depth).
+    if (parseUserPath(name) === null) {
+      throw new Error(`Unsafe file path: ${name}`);
+    }
+  } else if (
     !FILENAME_PATTERN.test(name) ||
     name.startsWith(".") ||
     name.includes("/") ||
@@ -30,15 +40,20 @@ export function assertSafeFileName(name: string, language: Language): void {
   ) {
     throw new Error(`Unsafe file name: ${name}`);
   }
-  if (RESERVED_FILENAMES.includes(name.toLowerCase())) {
-    throw new Error(`Reserved file name: ${name}`);
+  const base = basename(name);
+  if (RESERVED_FILENAMES.includes(base.toLowerCase())) {
+    throw new Error(`Reserved file name: ${base}`);
   }
-  if (!LANGUAGE_EXTENSIONS[language].includes(fileExtension(name))) {
+  if (!LANGUAGE_EXTENSIONS[language].includes(fileExtension(base))) {
     throw new Error(`Disallowed ${language} file extension: ${name}`);
   }
 }
 
-/** Write every project file flat into the workspace root (mode 0o600). */
+/**
+ * Write every project file into the workspace (mode 0o600). Flat for most
+ * languages; Python may carry nested paths ("pkg/util.py"), so the parent
+ * directory is created first. Paths are guarded by assertSafeFileName.
+ */
 export async function writeProjectFiles(
   root: string,
   files: ProjectFile[],
@@ -46,7 +61,12 @@ export async function writeProjectFiles(
 ): Promise<void> {
   for (const file of files) {
     assertSafeFileName(file.path, language);
-    await writeFile(path.join(root, file.path), file.content, { mode: 0o600 });
+    const target = path.join(root, file.path);
+    const dir = path.dirname(target);
+    if (dir !== root) {
+      await mkdir(dir, { recursive: true, mode: 0o700 });
+    }
+    await writeFile(target, file.content, { mode: 0o600 });
   }
 }
 

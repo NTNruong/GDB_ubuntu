@@ -1062,15 +1062,19 @@ function javaDebugArgsString(argv: readonly string[]): string {
 }
 
 export function launchArgumentsFor(
-  request: Pick<DebugRequest, "language" | "argv" | "toolchainVersion">
+  request: Pick<DebugRequest, "language" | "argv" | "toolchainVersion" | "entrypoint">
 ): Record<string, unknown> {
   if (request.language === "python") {
+    // Explicit "Debug this file" entrypoint (Python only, schema-validated to a
+    // real project file), else the main.py convention. The bootstrap runner reads
+    // it from args[0] (sys.argv[1]) and runpy.run_path's it under /workspace.
+    const entry = request.entrypoint ?? "main.py";
     return {
       name: "Python",
       type: "python",
       request: "launch",
       program: "/workspace/__debugpy_runner.py",
-      args: ["/workspace/main.py", ...request.argv],
+      args: [`/workspace/${entry}`, ...request.argv],
       cwd: "/workspace",
       console: "internalConsole",
       // -u: unbuffered stdout/stderr so print() output reaches the DAP output events (and
@@ -1157,8 +1161,20 @@ export function shouldSuppressDebuggerStderr(
 }
 
 /**
+ * Frame source path ("/workspace/pkg/util.py") → path relative to the workspace
+ * ("pkg/util.py"), matching how breakpoint paths are sent. Falls back to the bare
+ * basename for any path without the `/workspace/` prefix (defensive).
+ */
+function workspaceRelative(src: string): string {
+  const marker = "/workspace/";
+  const idx = src.indexOf(marker);
+  return idx >= 0 ? src.slice(idx + marker.length) : src.replace(/^.*[\\/]/, "");
+}
+
+/**
  * True if a stack frame sits on one of the user's requested breakpoints, matched
- * by file basename + line (frame source paths are absolute `/workspace/<file>`).
+ * by workspace-relative path + line (frame source paths are absolute
+ * `/workspace/<relpath>`; Python projects may be nested, e.g. `pkg/util.py`).
  * Used to decide whether an initial stop is the entry stop (auto-continue) or an
  * actual user breakpoint (stop), independent of the adapter's `reason` string.
  */
@@ -1169,9 +1185,8 @@ export function frameMatchesBreakpoint(
   if (!frame || frame.line === undefined) {
     return false;
   }
-  const src = frame.source?.path ?? frame.source?.name ?? "";
-  const base = src.replace(/^.*[\\/]/, "");
-  return breakpoints.some((bp) => bp.path === base && bp.line === frame.line);
+  const rel = workspaceRelative(frame.source?.path ?? frame.source?.name ?? "");
+  return breakpoints.some((bp) => bp.path === rel && bp.line === frame.line);
 }
 
 function commandForLanguage(language: Language, argv: string[]): string[] {

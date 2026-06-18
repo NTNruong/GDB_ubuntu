@@ -186,3 +186,62 @@ describe("multi-file validation", () => {
     expect(() => RunRequestSchema.parse({ language: "c", files })).toThrow();
   });
 });
+
+describe("nested Python project paths", () => {
+  const py = (...paths: string[]) => paths.map((path) => ({ path, content: "x = 1" }));
+
+  it("accepts nested package files for Python", () => {
+    const parsed = RunRequestSchema.parse({
+      language: "python",
+      files: py("main.py", "pkg/util.py", "pkg/sub/deep.py")
+    });
+    expect(parsed.files.map((f) => f.path)).toEqual(["main.py", "pkg/util.py", "pkg/sub/deep.py"]);
+  });
+
+  it("rejects traversal / hidden / over-deep nested Python paths", () => {
+    for (const path of ["../evil.py", "pkg/../../escape.py", "pkg/.hidden.py", "a/b/c/d/e/f/g/h/i.py"]) {
+      expect(() => RunRequestSchema.parse({ language: "python", files: py(path) })).toThrow();
+    }
+  });
+
+  it("checks reserved name and extension on the basename of a nested path", () => {
+    expect(() => RunRequestSchema.parse({ language: "python", files: py("pkg/__debugpy_runner.py") })).toThrow();
+    expect(() => RunRequestSchema.parse({ language: "python", files: py("pkg/util.c") })).toThrow();
+  });
+
+  it("still rejects nested paths for non-Python languages (flat-only)", () => {
+    for (const language of ["c", "cpp", "javascript", "java", "go", "rust"] as const) {
+      const ext = { c: ".c", cpp: ".cpp", javascript: ".js", java: ".java", go: ".go", rust: ".rs" }[language];
+      expect(() =>
+        RunRequestSchema.parse({ language, files: [{ path: `sub/dir${ext}`, content: "x" }] })
+      ).toThrow();
+    }
+  });
+});
+
+describe("entrypoint validation", () => {
+  it("accepts a Python entrypoint that names a real project file", () => {
+    const parsed = RunRequestSchema.parse({
+      language: "python",
+      files: [{ path: "main.py", content: "x" }, { path: "tool.py", content: "y" }],
+      entrypoint: "tool.py"
+    });
+    expect(parsed.entrypoint).toBe("tool.py");
+  });
+
+  it("rejects an entrypoint for non-Python languages", () => {
+    expect(() =>
+      RunRequestSchema.parse({ language: "c", files: [{ path: "main.c", content: "x" }], entrypoint: "main.c" })
+    ).toThrow();
+  });
+
+  it("rejects an entrypoint that matches no project file", () => {
+    expect(() =>
+      RunRequestSchema.parse({
+        language: "python",
+        files: [{ path: "main.py", content: "x" }],
+        entrypoint: "ghost.py"
+      })
+    ).toThrow();
+  });
+});

@@ -1,6 +1,7 @@
-import { lstat, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import {
+  MAX_TOTAL_SOURCE_BYTES,
   MAX_TREE_DEPTH,
   MAX_TREE_ENTRIES,
   parseUserPath,
@@ -145,4 +146,64 @@ export async function countEntries(userRoot: string): Promise<number> {
   const counter = { count: 0 };
   await walkDir(userRoot, "", 1, counter);
   return counter.count;
+}
+
+export type FolderFile = { name: string; content: string; size: number };
+
+/**
+ * Recursively collect regular files under `folderAbs`, each as its path relative
+ * to that folder (e.g. "pkg/util.py") plus content — feeds nested "run the
+ * folder" for Python. Symlinks are skipped; the walk aborts early (PathError)
+ * once it crosses the entry-count or total-byte cap, so we never read an
+ * unbounded subtree. The runnable file-count cap (MAX_FILES) is applied later by
+ * the frontend gather, after filtering to the language's extensions.
+ */
+export async function walkFolderFiles(folderAbs: string): Promise<FolderFile[]> {
+  const files: FolderFile[] = [];
+  await collectFolderFiles(folderAbs, "", 1, files, { totalBytes: 0 });
+  return files;
+}
+
+async function collectFolderFiles(
+  folderAbs: string,
+  relDir: string,
+  depth: number,
+  out: FolderFile[],
+  state: { totalBytes: number }
+): Promise<void> {
+  const absDir = relDir === "" ? folderAbs : path.join(folderAbs, relDir);
+  let dirents;
+  try {
+    dirents = await readdir(absDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  dirents.sort((a, b) => a.name.localeCompare(b.name));
+
+  for (const dirent of dirents) {
+    // Foreign symlinks could point outside the jail — never follow them.
+    if (dirent.isSymbolicLink()) {
+      continue;
+    }
+    const relPath = relDir === "" ? dirent.name : `${relDir}/${dirent.name}`;
+
+    if (dirent.isDirectory()) {
+      if (depth < MAX_TREE_DEPTH) {
+        await collectFolderFiles(folderAbs, relPath, depth + 1, out, state);
+      }
+      continue;
+    }
+    if (!dirent.isFile()) {
+      continue;
+    }
+    if (out.length >= MAX_TREE_ENTRIES) {
+      throw new PathError(`Folder has too many files (max ${MAX_TREE_ENTRIES})`, 400);
+    }
+    const content = await readFile(path.join(folderAbs, relPath), "utf8");
+    state.totalBytes += Buffer.byteLength(content);
+    if (state.totalBytes > MAX_TOTAL_SOURCE_BYTES) {
+      throw new PathError(`Folder source exceeds ${MAX_TOTAL_SOURCE_BYTES} bytes`, 400);
+    }
+    out.push({ name: relPath, content, size: Buffer.byteLength(content) });
+  }
 }

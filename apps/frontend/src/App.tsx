@@ -154,6 +154,11 @@ export function App() {
   // Basename → server path/content for the folder of the active server debug run;
   // lets a stop in a secondary file activate the right tab (ISSUE-052).
   const debugFileMapRef = useRef<DebugFileMap>(new Map());
+  // Set by "Run/Debug this file" to override the folder + entrypoint + language
+  // for one dispatch (read by buildRunPayload/startRun/startDebug, then cleared).
+  // Decoupled from React state so the override is correct even before the
+  // setActivePath/setLanguage it triggers have re-rendered.
+  const runTargetRef = useRef<{ path: string; language: Language; entrypoint?: string } | null>(null);
 
   const capability = useMemo(
     () => LANGUAGE_CAPABILITIES.find((item) => item.id === language) ?? initialLanguage,
@@ -587,11 +592,15 @@ export function App() {
   }, [resetToLoggedOut]);
 
   // Persist any dirty server tabs in `dir` before a folder run gathers them.
-  const saveDirtyInDir = useCallback(async (dir: string) => {
+  // `recursive` (Python) also saves dirty files in nested subfolders, since the
+  // folder is gathered recursively.
+  const saveDirtyInDir = useCallback(async (dir: string, recursive: boolean) => {
+    const inDir = (p: string): boolean =>
+      recursive ? (dir === "" ? true : p.startsWith(`${dir}/`)) : dirOf(p) === dir;
     const targets = filesRef.current.filter(
       (file) =>
         file.path in serverTabsRef.current &&
-        dirOf(file.path) === dir &&
+        inDir(file.path) &&
         file.content !== serverTabsRef.current[file.path]!.savedContent
     );
     for (const file of targets) {
@@ -606,24 +615,33 @@ export function App() {
   const buildRunPayload = useCallback(async (): Promise<
     { ok: true; files: ProjectFile[]; breakpoints: Breakpoint[] } | { ok: false; error: string }
   > => {
-    const activeIsServer = activePath in serverTabsRef.current;
+    // "Run/Debug this file" overrides the active tab + language for one dispatch.
+    const target = runTargetRef.current;
+    const active = target?.path ?? activePath;
+    const effLang = target?.language ?? language;
+    const activeIsServer = active in serverTabsRef.current;
     if (user && activeIsServer) {
-      const dir = dirOf(activePath);
-      await saveDirtyInDir(dir);
-      const folder = await filesApi.folder(dir);
+      const dir = dirOf(active);
+      // Python projects gather recursively (nested package files); other
+      // languages stay flat top-level.
+      const recursive = effLang === "python";
+      await saveDirtyInDir(dir, recursive);
+      const folder = await filesApi.folder(dir, recursive);
       // Remember each gathered file's original server path + content so a debug
-      // stop in a secondary file resolves to the correct tab (ISSUE-052).
+      // stop in a secondary file resolves to the correct tab (ISSUE-052). For a
+      // recursive Python folder, file.name is the folder-relative path.
       const map: DebugFileMap = new Map();
       for (const file of folder.files) {
         map.set(file.name, { serverPath: dir ? `${dir}/${file.name}` : file.name, content: file.content });
       }
       debugFileMapRef.current = map;
       return gatherFolderRun({
-        language,
+        language: effLang,
         folderDir: dir,
         folderFiles: folder.files,
-        activeName: baseOf(activePath),
-        allBreakpoints
+        activeName: dir === "" ? active : active.slice(dir.length + 1),
+        allBreakpoints,
+        entryName: target?.entrypoint
       });
     }
     debugFileMapRef.current = new Map();
@@ -868,7 +886,7 @@ export function App() {
         editor.setPosition({ lineNumber: line, column: diagnostic.column ?? 1 });
       };
 
-      const target = basenameFromWorkspace(diagnostic.file);
+      const target = workspaceRelPath(diagnostic.file);
       if (target && target !== activePathRef.current && files.some((file) => file.path === target)) {
         setActivePath(target);
         // Let the editor swap to the target file's model before revealing.
@@ -919,7 +937,11 @@ export function App() {
     setRunStatus("Starting");
     setStoppedLine(undefined);
     runPhaseRef.current = "idle";
-    runLanguageRef.current = language;
+    // "Run this file" can override language + entrypoint for this dispatch.
+    const target = runTargetRef.current;
+    const effLang = target?.language ?? language;
+    const entrypoint = target?.entrypoint;
+    runLanguageRef.current = effLang;
     compileWarningsRef.current = 0;
     compileErrorsRef.current = 0;
 
@@ -953,7 +975,14 @@ export function App() {
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ language, files: payload.files, stdin, argv, toolchainVersion })
+        body: JSON.stringify({
+          language: effLang,
+          files: payload.files,
+          stdin,
+          argv,
+          toolchainVersion,
+          ...(entrypoint ? { entrypoint } : {})
+        })
       });
 
       if (!response.ok) {
@@ -984,7 +1013,12 @@ export function App() {
   }, [appendOutput, argvInput, buildRunPayload, language, stdin, stopSockets]);
 
   const startDebug = useCallback(async () => {
-    if (!capability.debug) {
+    // "Debug this file" can override language + entrypoint for this dispatch.
+    const target = runTargetRef.current;
+    const effLang = target?.language ?? language;
+    const entrypoint = target?.entrypoint;
+    const effCapability = LANGUAGE_CAPABILITIES.find((item) => item.id === effLang) ?? capability;
+    if (!effCapability.debug) {
       return;
     }
 
@@ -1001,7 +1035,7 @@ export function App() {
     setStoppedLine(undefined);
     setDebugStatus("Starting");
     setDebugStopped(false);
-    if (language === "java") {
+    if (effLang === "java") {
       // Java debug cold-starts jdt.ls before the first breakpoint; set expectations so the
       // ~10-15s wait reads as progress, not a hang.
       appendDebug("system", "Booting Java debugger (jdt.ls)… first start can take ~10-15s.\n");
@@ -1057,13 +1091,14 @@ export function App() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          language,
+          language: effLang,
           files: payload.files,
           stdin,
           argv,
           toolchainVersion,
           breakpoints: payload.breakpoints,
-          clientId: clientIdRef.current
+          clientId: clientIdRef.current,
+          ...(entrypoint ? { entrypoint } : {})
         })
       });
 
@@ -1083,11 +1118,56 @@ export function App() {
       setIsDebugActive(false);
       appendDebug("system", `${messageFromError(error)}\n`);
     }
-  }, [appendDebug, argvInput, buildRunPayload, capability.debug, language, stdin, stopSockets]);
+  }, [appendDebug, argvInput, buildRunPayload, capability, language, stdin, stopSockets]);
 
   useEffect(() => {
     startDebugRef.current = startDebug;
   }, [startDebug]);
+
+  // "Run/Debug this file" from the explorer: open the file, then run/debug its
+  // folder with that file as the explicit entrypoint (Python). The override is
+  // carried via runTargetRef so it is correct even before setActivePath settles.
+  const runServerFile = useCallback(
+    async (path: string) => {
+      const lang = languageForFile(path);
+      if (!lang) {
+        return;
+      }
+      await openServerFile(path);
+      runTargetRef.current = {
+        path,
+        language: lang,
+        entrypoint: lang === "python" ? baseOf(path) : undefined
+      };
+      try {
+        await startRun();
+      } finally {
+        runTargetRef.current = null;
+      }
+    },
+    [openServerFile, startRun]
+  );
+
+  const debugServerFile = useCallback(
+    async (path: string) => {
+      const lang = languageForFile(path);
+      if (!lang) {
+        return;
+      }
+      await openServerFile(path);
+      runTargetRef.current = {
+        path,
+        language: lang,
+        entrypoint: lang === "python" ? baseOf(path) : undefined
+      };
+      try {
+        await startDebug();
+      } finally {
+        runTargetRef.current = null;
+      }
+    },
+    [openServerFile, startDebug]
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => editorRef.current?.layout(), 50);
@@ -1180,7 +1260,7 @@ export function App() {
         setDebugStatus(event.reason ?? "Stopped");
         setDebugStopped(true);
         setStoppedLine(event.line);
-        const base = basenameFromWorkspace(event.file);
+        const base = workspaceRelPath(event.file);
         const resolved = resolveStopped(base, debugFileMapRef.current, filesRef.current.map((file) => file.path));
         if (resolved) {
           // Step-into a folder file whose tab isn't open yet → open it as a server tab.
@@ -1551,6 +1631,8 @@ export function App() {
             onRename={handleRenameServer}
             onDelete={handleDeleteServer}
             onDuplicate={handleDuplicate}
+            onRunFile={runServerFile}
+            onDebugFile={debugServerFile}
           />
         )}
         <main
@@ -2080,10 +2162,19 @@ function languageForFile(path: string): Language | undefined {
   return undefined;
 }
 
-/** Map a debug frame path like "/workspace/util.c" to its bare file name. */
-function basenameFromWorkspace(filePath?: string): string | undefined {
+/**
+ * Map a debug frame path like "/workspace/pkg/util.py" to its workspace-relative
+ * path ("pkg/util.py") — preserving subfolders for nested Python projects.
+ * Falls back to the bare basename for any path without the "/workspace/" prefix.
+ */
+function workspaceRelPath(filePath?: string): string | undefined {
   if (!filePath) {
     return undefined;
+  }
+  const marker = "/workspace/";
+  const idx = filePath.indexOf(marker);
+  if (idx >= 0) {
+    return filePath.slice(idx + marker.length);
   }
   const slash = filePath.lastIndexOf("/");
   return slash >= 0 ? filePath.slice(slash + 1) : filePath;

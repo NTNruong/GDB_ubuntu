@@ -90,4 +90,43 @@ describe("gatherFolderRun", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it("keeps nested Python package paths and remaps nested breakpoints to folder-relative", () => {
+    const result = gatherFolderRun({
+      language: "python",
+      folderDir: "proj",
+      folderFiles: [
+        { name: "main.py", content: "import pkg.util" },
+        { name: "pkg/util.py", content: "x=1" }
+      ],
+      activeName: "pkg/util.py",
+      allBreakpoints: [
+        { path: "proj/pkg/util.py", line: 1 },
+        { path: "proj/main.py", line: 2 },
+        { path: "other/x.py", line: 9 }
+      ]
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.files.map((f) => f.path)).toEqual(["main.py", "pkg/util.py"]);
+    expect(result.breakpoints).toEqual([
+      { path: "pkg/util.py", line: 1 },
+      { path: "main.py", line: 2 }
+    ]);
+  });
+
+  it("runs an explicit entrypoint without requiring main.py", () => {
+    const result = gatherFolderRun({
+      language: "python",
+      folderDir: "proj",
+      folderFiles: [{ name: "tool.py", content: "print(1)" }],
+      activeName: "tool.py",
+      allBreakpoints: [],
+      entryName: "tool.py"
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The entrypoint is ordered first.
+    expect(result.files[0]?.path).toBe("tool.py");
+  });
 });

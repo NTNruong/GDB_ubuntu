@@ -66,6 +66,17 @@ describe("resolveStopped", () => {
     expect(resolveStopped("ghost.c", map, ["proj/main.c"])).toBeUndefined();
     expect(resolveStopped(undefined, map, ["proj/main.c"])).toBeUndefined();
   });
+
+  it("resolves a nested Python module by its folder-relative path (no basename collision)", () => {
+    const nested: DebugFileMap = new Map([
+      ["pkg/util.py", { serverPath: "proj/pkg/util.py", content: "x=1" }],
+      ["util.py", { serverPath: "proj/util.py", content: "y=2" }]
+    ]);
+    expect(resolveStopped("pkg/util.py", nested, ["proj/main.py"])).toEqual({
+      path: "proj/pkg/util.py",
+      content: "x=1"
+    });
+  });
 });
 
 describe("savableScratch", () => {

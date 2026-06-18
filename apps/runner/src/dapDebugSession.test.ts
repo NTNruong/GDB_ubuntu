@@ -141,6 +141,13 @@ describe("frameMatchesBreakpoint", () => {
     expect(frameMatchesBreakpoint({ source: { name: "util.c" }, line: 3 }, breakpoints)).toBe(true);
   });
 
+  it("matches a nested Python file by its full workspace-relative path", () => {
+    const nested = [{ path: "pkg/util.py", line: 4 }];
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/pkg/util.py" }, line: 4 }, nested)).toBe(true);
+    // A bare basename must NOT match a nested breakpoint (no path collision).
+    expect(frameMatchesBreakpoint({ source: { path: "/workspace/util.py" }, line: 4 }, nested)).toBe(false);
+  });
+
   it("returns false for missing frame or missing line", () => {
     expect(frameMatchesBreakpoint(undefined, breakpoints)).toBe(false);
     expect(frameMatchesBreakpoint({ source: { path: "/workspace/main.c" } }, breakpoints)).toBe(false);
@@ -197,6 +204,11 @@ describe("launchArgumentsFor", () => {
     expect(args.args).toEqual(["/workspace/main.py", "x"]);
     // -u keeps debuggee stdout unbuffered so print() streams while stepping.
     expect(args.python).toContain("-u");
+  });
+
+  it("debugs an explicit Python entrypoint instead of main.py", () => {
+    const args = launchArgumentsFor({ language: "python", argv: ["x"], entrypoint: "tool.py" });
+    expect(args.args).toEqual(["/workspace/tool.py", "x"]);
   });
 
   it("debugs Java through java-debug with _DebugMain, sourcePaths and versioned javaExec", () => {

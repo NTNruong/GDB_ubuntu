@@ -27,12 +27,24 @@ export type GatherResult =
   | { ok: true; files: ProjectFile[]; breakpoints: Breakpoint[] }
   | { ok: false; error: string };
 
+/** Path of `p` relative to `folderDir`, or null if it is not inside the folder. */
+export function relToFolder(p: string, folderDir: string): string | null {
+  if (folderDir === "") {
+    return p;
+  }
+  if (p.startsWith(`${folderDir}/`)) {
+    return p.slice(folderDir.length + 1);
+  }
+  return null;
+}
+
 /**
- * Build a run/debug payload from every top-level file of one folder ("run the
- * whole folder"). Non-recursive — the run protocol is a flat file list and the
- * compile scripts glob only the workspace root. Filenames become bare basenames
- * (valid run-protocol names); breakpoints in the folder are remapped to those
- * basenames. Returns a friendly error instead of letting the server 400.
+ * Build a run/debug payload from the files of one folder ("run the whole
+ * folder"). For Python the file list is recursive — names carry their path
+ * relative to the folder ("pkg/util.py") so package imports resolve — while
+ * other languages stay flat top-level (their compile scripts glob only the
+ * workspace root). Breakpoints inside the folder are remapped to those
+ * folder-relative paths. Returns a friendly error instead of letting the server 400.
  */
 export function gatherFolderRun(params: {
   language: Language;
@@ -40,8 +52,10 @@ export function gatherFolderRun(params: {
   folderFiles: { name: string; content: string }[];
   activeName: string;
   allBreakpoints: Breakpoint[];
+  /** Explicit folder-relative entrypoint (Python "Run this file"); else main.py. */
+  entryName?: string;
 }): GatherResult {
-  const { language, folderDir, folderFiles, activeName, allBreakpoints } = params;
+  const { language, folderDir, folderFiles, activeName, allBreakpoints, entryName } = params;
   const allowed = LANGUAGE_EXTENSIONS[language];
 
   const runnable = folderFiles.filter((file) => allowed.includes(fileExtension(file.name)));
@@ -57,8 +71,10 @@ export function gatherFolderRun(params: {
   }
 
   if (language === "python") {
-    if (!runnable.some((file) => file.name === "main.py")) {
-      return { ok: false, error: "Python runs main.py — add a main.py to this folder." };
+    // "Run this file" names an explicit entry; the default folder run uses main.py.
+    const required = entryName ?? "main.py";
+    if (!runnable.some((file) => file.name === required)) {
+      return { ok: false, error: `Python runs ${required} — add ${required} to this folder.` };
     }
   } else if (language === "javascript") {
     if (!runnable.some((file) => file.name === "main.js")) {
@@ -82,14 +98,18 @@ export function gatherFolderRun(params: {
 
   // Deterministic order (semantically irrelevant to the linker): entry first,
   // then the active file, then alphabetical.
-  const entry = defaultFileName(language);
+  const entry = entryName ?? defaultFileName(language);
   const ordered = [...runnable].sort((a, b) => rank(a.name, entry, activeName) - rank(b.name, entry, activeName) || a.name.localeCompare(b.name));
   const files: ProjectFile[] = ordered.map((file) => ({ path: file.name, content: file.content }));
 
   const runnableNames = new Set(runnable.map((file) => file.name));
-  const breakpoints: Breakpoint[] = allBreakpoints
-    .filter((bp) => dirOf(bp.path) === folderDir && runnableNames.has(baseOf(bp.path)))
-    .map((bp) => ({ path: baseOf(bp.path), line: bp.line }));
+  const breakpoints: Breakpoint[] = [];
+  for (const bp of allBreakpoints) {
+    const rel = relToFolder(bp.path, folderDir);
+    if (rel !== null && runnableNames.has(rel)) {
+      breakpoints.push({ path: rel, line: bp.line });
+    }
+  }
 
   return { ok: true, files, breakpoints };
 }

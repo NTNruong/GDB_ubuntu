@@ -43,16 +43,22 @@ run_with_metrics() {
   return "$exit_code"
 }
 
+# Entrypoint relative to /workspace; the runner passes ENTRYPOINT for an explicit
+# "Run this file" (Python only), else fall back to the main.py convention.
+ENTRY_REL="${ENTRYPOINT:-main.py}"
+
 # Keep -I (isolated: no user site, ignore env) for sandbox hardening, but restore
-# /workspace on sys.path so a folder run's main.py can import sibling modules
+# /workspace on sys.path so a folder run's entry can import sibling modules
 # (-I/-P otherwise strip the script dir from sys.path) — ISSUE-051.
 # process_time() is captured just before running the user code and emitted via
 # atexit (survives sys.exit()), so the reported CPU excludes interpreter startup.
+# The entrypoint path comes from argv[1] (set from $ENTRY_REL below) so it is not
+# string-interpolated into the Python source.
 PYRUN='
-import sys, runpy, time, atexit
+import sys, runpy, time, atexit, os
 sys.path.insert(0, "/workspace")
-t = "/workspace/main.py"
-sys.argv = [t, *sys.argv[1:]]
+t = os.path.join("/workspace", sys.argv[1])
+sys.argv = [t, *sys.argv[2:]]
 _cpu0 = time.process_time()
 def _emit_cpu():
     try:
@@ -63,4 +69,4 @@ def _emit_cpu():
 atexit.register(_emit_cpu)
 runpy.run_path(t, run_name="__main__")
 '
-run_with_metrics python3 -I -c "$PYRUN" "$@"
+run_with_metrics python3 -I -c "$PYRUN" "$ENTRY_REL" "$@"
