@@ -35,6 +35,7 @@ describe("ai chat API", () => {
       sessionCookieSecure: false,
       aiEnabled: true,
       llamaBaseUrl: "http://127.0.0.1:1",
+      llamaApiKey: "",
       geminiApiKey: "",
       aiDataRoot: path.join(root, "ai-data"),
       aiKeySecret: "test-ai-key-secret",

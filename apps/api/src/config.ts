@@ -18,6 +18,8 @@ export type ApiConfig = {
   aiEnabled: boolean;
   /** Base URL of the host llama.cpp server (OpenAI-compatible). */
   llamaBaseUrl: string;
+  /** Bearer token for the llama.cpp server (`--api-key`); "" = no auth. */
+  llamaApiKey: string;
   /** Server-wide Google AI Studio API key fallback (per-user keys take precedence). */
   geminiApiKey: string;
   /** Root dir holding one subdir per user for AI chat threads (separate from userHomesRoot). */
@@ -41,6 +43,7 @@ export function readConfig(): ApiConfig {
     sessionCookieSecure: process.env.SESSION_COOKIE_SECURE === "1",
     aiEnabled: process.env.AI_ENABLED !== "0",
     llamaBaseUrl: process.env.LLAMA_BASE_URL ?? "http://localhost:8000",
+    llamaApiKey: process.env.LLAMA_API_KEY ?? "",
     geminiApiKey: process.env.GEMINI_API_KEY ?? "",
     aiDataRoot: process.env.AI_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-ai-data"),
     // `||` (not `??`) so an empty AI_KEY_SECRET — which compose passes as "" when

@@ -46,7 +46,7 @@ export function streamChat(
   if (model.backend === "gemini") {
     return streamGemini(geminiApiKey, model.remoteModelId, messages, signal);
   }
-  return streamLlama(config.llamaBaseUrl, model.remoteModelId, messages, signal);
+  return streamLlama(config.llamaBaseUrl, model.remoteModelId, messages, signal, config.llamaApiKey);
 }
 
 /**

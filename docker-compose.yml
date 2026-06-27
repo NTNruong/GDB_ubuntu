@@ -27,13 +27,19 @@ services:
       # Set SESSION_COOKIE_SECURE=1 in the deploy .env (ISSUE-054). Unset → "" → off.
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-}"
       # AI learning assistant (Phase 3). LLAMA_BASE_URL points at the host
-      # llama.cpp server (Vulkan/RX580) — extra_hosts maps host.docker.internal
-      # to the host gateway on Linux. GEMINI_API_KEY is an optional server-wide
-      # fallback; each user can also save their own key, encrypted at rest with
-      # AI_KEY_SECRET (defaults to SESSION_SECRET when unset). Set AI_ENABLED=0 to
-      # hide the local model. AI_DATA_ROOT stores per-user chat threads + keys.
+      # llama.cpp server (Vulkan/RX580). Under ROOTLESS Docker the host-loopback
+      # path is disabled, so host.docker.internal is unreachable — set
+      # LLAMA_BASE_URL to the host's real address (e.g. the tailnet name
+      # http://<host>.ts.net:8000) in the deploy .env. LLAMA_API_KEY must match
+      # llama-server's --api-key so the model is not callable without the token
+      # even when its port is reachable on the tailnet. GEMINI_API_KEY is an
+      # optional server-wide fallback; each user can also save their own key,
+      # encrypted at rest with AI_KEY_SECRET (defaults to SESSION_SECRET when
+      # unset). Set AI_ENABLED=0 to hide the local model. AI_DATA_ROOT stores
+      # per-user chat threads + keys.
       AI_ENABLED: "${AI_ENABLED:-1}"
       LLAMA_BASE_URL: "${LLAMA_BASE_URL:-http://host.docker.internal:8000}"
+      LLAMA_API_KEY: "${LLAMA_API_KEY:-}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       AI_KEY_SECRET: "${AI_KEY_SECRET:-}"
       AI_DATA_ROOT: "/ai-data"

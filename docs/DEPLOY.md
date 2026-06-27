@@ -79,18 +79,31 @@ Polaris/gfx803 is dropped by ROCm → use the **Vulkan (RADV)** backend. Run lla
    ```
 3. Pick the **8GB** card: `./build/bin/llama-server --list-devices` → the RX580 is the 8192 MiB Vulkan device (identify by VRAM, since RX580/RX570 share PCI id 0x67DF). Pass `--device VulkanN`.
 4. Run as a **systemd service** so it survives reboot (replace `truong`/paths/`Vulkan0` as needed):
+   First create an **API key file** so the model is never callable without a token
+   (the port is reachable over the tailnet — see the security note below):
+   ```bash
+   openssl rand -hex 32 > /home/truong/llama.cpp/api-key.txt
+   chmod 600 /home/truong/llama.cpp/api-key.txt
+   ```
    ```ini
    # /etc/systemd/system/llama-server.service
    [Unit]
    Description=llama.cpp server (Gemma 4 E4B, Vulkan RX580)
-   After=multi-user.target
+   After=multi-user.target tailscaled.service
    [Service]
    User=truong
    SupplementaryGroups=render video
    WorkingDirectory=/home/truong/llama.cpp
+   # Bind to the host's Tailscale IP (run `tailscale ip -4`) — NOT 0.0.0.0 — so the
+   # model is off the LAN/public and only on the tailnet; --api-key-file then
+   # requires a bearer token even there. The api container reaches it via the
+   # tailnet name (LLAMA_BASE_URL below) because rootless Docker blocks the
+   # host-loopback path (host.docker.internal is unreachable).
    ExecStart=/home/truong/llama.cpp/build/bin/llama-server \
      -m /home/truong/llama.cpp/models/gemma-4-E4B-it-Q4_K_M.gguf \
-     --device Vulkan0 -ngl 99 -c 8192 --host 0.0.0.0 --port 8000 --jinja
+     --device Vulkan0 -ngl 99 -c 8192 \
+     --host 100.x.x.x --port 8000 \
+     --api-key-file /home/truong/llama.cpp/api-key.txt --jinja
    Restart=on-failure
    RestartSec=3
    [Install]
@@ -98,14 +111,28 @@ Polaris/gfx803 is dropped by ROCm → use the **Vulkan (RADV)** backend. Run lla
    ```
    ```bash
    sudo systemctl daemon-reload && sudo systemctl enable --now llama-server
-   curl http://localhost:8000/v1/models    # should list the gguf
+   KEY=$(cat /home/truong/llama.cpp/api-key.txt)
+   # 401 without the key, 200 with it — proves the model is protected:
+   curl -s -o /dev/null -w '%{http_code}\n' http://gdb.char-newton.ts.net:8000/v1/models
+   curl -s -H "Authorization: Bearer $KEY" http://gdb.char-newton.ts.net:8000/v1/models
    ```
    If VRAM is tight (8GB), lower `-c` (e.g. 4096) or `-ngl`.
+
+   > **Security (rootless Docker):** the `api` container cannot use
+   > `host.docker.internal`/the bridge gateway — rootless Docker runs with
+   > `--disable-host-loopback`, so it must reach llama via the host's real address
+   > (the tailnet name worked in QC: `http://gdb.char-newton.ts.net:8000`). Because
+   > that address is shared with the whole tailnet, **always** set `--api-key-file`
+   > (above) + `LLAMA_API_KEY` (below) so port 8000 is useless without the token.
+   > Binding to the Tailscale IP (not `0.0.0.0`) additionally keeps it off the LAN
+   > and the public internet. For extra hardening, firewall :8000 to the tailscale0
+   > interface only (`sudo ufw allow in on tailscale0 to any port 8000`).
 5. **Optional power cap (~85% TDP):** the card's default `power1_cap` already governs it; to lower further needs amdgpu OverDrive (`amdgpu.ppfeaturemask=0xffffffff` in GRUB → reboot), then write `/sys/class/drm/card<8GB>/device/hwmon/hwmon*/power1_cap` (µW). Some VBIOSes lock it; this is best-effort and non-essential.
 
 ### b) App env (deploy `.env` next to `docker-compose.yml`)
 
-- `LLAMA_BASE_URL=http://host.docker.internal:8000` — the compose `api` service already declares `extra_hosts: host.docker.internal:host-gateway` so the container reaches the host server. Set `AI_ENABLED=0` to hide the local model.
+- `LLAMA_BASE_URL=http://gdb.char-newton.ts.net:8000` — under **rootless Docker** the container can't use `host.docker.internal` (host-loopback disabled), so point it at the host's tailnet name (or real LAN IP). Set `AI_ENABLED=0` to hide the local model.
+- `LLAMA_API_KEY=<contents of api-key.txt>` — **must match** llama-server's `--api-key-file` or every local-model call returns 401. This is what makes exposing :8000 on the tailnet safe.
 - `GEMINI_API_KEY=` — **optional** server-wide fallback. Usually leave empty and let each user save their own key (below).
 - `AI_KEY_SECRET=$(openssl rand -hex 32)` — encrypts per-user keys at rest. **Defaults to `SESSION_SECRET`**, so if that is already set you can skip this; keep it stable or stored keys become undecryptable.
 - `AI_DATA_HOST_ROOT=/home/gdbrunner/gdb-ai-data` — host bind for per-user chat threads + encrypted keys (separate from `USER_HOMES_HOST_ROOT` so chats never show in the file explorer). `mkdir -p` it as the service user. This is a **stateful path — back it up** alongside `users.json`.
