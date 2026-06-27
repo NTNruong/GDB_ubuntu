@@ -24,6 +24,8 @@ export type ApiConfig = {
   aiDataRoot: string;
   /** Secret used to encrypt per-user API keys at rest. Falls back to SESSION_SECRET. */
   aiKeySecret: string;
+  /** Wall-clock cap (ms) on a single Antigravity agent run before we stop + cancel. */
+  antigravityMaxMs: number;
 };
 
 export function readConfig(): ApiConfig {
@@ -44,6 +46,7 @@ export function readConfig(): ApiConfig {
     // `||` (not `??`) so an empty AI_KEY_SECRET — which compose passes as "" when
     // unset in .env — still falls back to SESSION_SECRET instead of disabling the
     // per-user key store with a "" secret (ISSUE-073).
-    aiKeySecret: process.env.AI_KEY_SECRET || process.env.SESSION_SECRET || ""
+    aiKeySecret: process.env.AI_KEY_SECRET || process.env.SESSION_SECRET || "",
+    antigravityMaxMs: Number.parseInt(process.env.ANTIGRAVITY_MAX_MS ?? "180000", 10)
   };
 }

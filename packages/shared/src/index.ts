@@ -615,7 +615,7 @@ export function parseArgv(input: string): string[] {
 // /api/ai/models (a backend with no key/server configured is hidden).
 // ---------------------------------------------------------------------------
 
-export const AI_BACKENDS = ["llama", "gemini"] as const;
+export const AI_BACKENDS = ["llama", "gemini", "antigravity"] as const;
 export type AiBackend = (typeof AI_BACKENDS)[number];
 
 export type AiModel = {
@@ -662,6 +662,14 @@ export const AI_MODELS: AiModel[] = [
     backend: "gemini",
     remoteModelId: "gemma-4-31b-it",
     description: "Largest Gemma served via the Google API."
+  },
+  {
+    id: "antigravity-agent",
+    label: "Antigravity (agent, experimental)",
+    backend: "antigravity",
+    remoteModelId: "antigravity-preview-05-2026",
+    description:
+      "Google agent: runs tools + code in a remote sandbox and shows its steps. Slow, very limited free quota."
   }
 ];
 
@@ -773,6 +781,10 @@ export type AiThread = {
   createdAt: number;
   updatedAt: number;
   messages: AiThreadMessage[];
+  /** Antigravity agent continuity: the last interaction id (server-side memory). */
+  interactionId?: string;
+  /** Antigravity agent continuity: the remote sandbox id to reuse across turns. */
+  environmentId?: string;
 };
 export type AiThreadSummary = { id: string; title: string; model: string; updatedAt: number };
 
@@ -788,8 +800,22 @@ export type AiModelsResponse = {
   languages: { id: Language; label: string }[];
 };
 
+/**
+ * One activity item from an agentic (Antigravity) run, surfaced live alongside
+ * the answer text. The final answer still streams as `token` events; these carry
+ * the agent's tool/code/image "artifacts" so the UI can render a step timeline.
+ */
+export type AiAgentStep =
+  | { kind: "code_call"; language: string; code: string }
+  | { kind: "code_result"; result: string; isError: boolean }
+  | { kind: "tool_call"; name: string }
+  | { kind: "tool_result"; isError: boolean }
+  | { kind: "image"; mimeType: string; dataBase64: string }
+  | { kind: "thought"; text: string };
+
 /** SSE events streamed from POST /api/ai/chat. */
 export type AiStreamEvent =
   | { type: "token"; data: string }
+  | { type: "step"; step: AiAgentStep }
   | { type: "done"; threadId: string; title: string }
   | { type: "error"; message: string };

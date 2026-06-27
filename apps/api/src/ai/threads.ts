@@ -117,6 +117,23 @@ export async function appendMessages(
   return thread;
 }
 
+/** Persist Antigravity continuation ids on a thread (after an agent turn). */
+export async function updateThreadMeta(
+  userDir: string,
+  id: string,
+  meta: { interactionId?: string; environmentId?: string }
+): Promise<void> {
+  const thread = await readThread(userDir, id);
+  if (meta.interactionId !== undefined) {
+    thread.interactionId = meta.interactionId;
+  }
+  if (meta.environmentId !== undefined) {
+    thread.environmentId = meta.environmentId;
+  }
+  thread.updatedAt = Date.now();
+  await writeThread(userDir, thread);
+}
+
 export async function renameThread(userDir: string, id: string, title: string): Promise<void> {
   const thread = await readThread(userDir, id);
   thread.title = title;

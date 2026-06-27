@@ -1977,6 +1977,63 @@ h1.brand {
   border: 1px solid var(--border-subtle);
 }
 
+.ai-experimental {
+  color: hsl(38, 80%, 65%);
+}
+
+/* Antigravity agent activity timeline */
+.ai-agent-steps {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-layer-1, var(--bg-surface));
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.8rem;
+}
+
+.ai-agent-steps > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ai-step {
+  margin-top: var(--space-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-step-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.ai-step pre {
+  margin: 0;
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-layer-2);
+  border-radius: var(--radius-sm, 6px);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ai-step-error .ai-step-label,
+.ai-step-error pre {
+  color: hsl(0, 70%, 72%);
+}
+
+.ai-step-img img {
+  max-width: 100%;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-subtle);
+}
+
 .ai-error {
   color: hsl(0, 70%, 70%);
   font-size: 0.82rem;

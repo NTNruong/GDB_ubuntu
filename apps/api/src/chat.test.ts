@@ -37,7 +37,8 @@ describe("ai chat API", () => {
       llamaBaseUrl: "http://127.0.0.1:1",
       geminiApiKey: "",
       aiDataRoot: path.join(root, "ai-data"),
-      aiKeySecret: "test-ai-key-secret"
+      aiKeySecret: "test-ai-key-secret",
+      antigravityMaxMs: 180000
     };
     await addUser(config.usersFile, "alice", "pw");
     app = createApiServer(config);
@@ -73,6 +74,7 @@ describe("ai chat API", () => {
     const ids = (res.json().models as { id: string; backend: string }[]).map((m) => m.id);
     expect(ids).toContain("local-gemma-e4b");
     expect(ids).not.toContain("gemini-flash");
+    expect(ids).not.toContain("antigravity-agent");
   });
 
   it("400s an unknown model and a malformed chat body", async () => {
@@ -101,9 +103,10 @@ describe("ai chat API", () => {
     expect(put.statusCode).toBe(200);
     expect(put.json()).toEqual({ hasKey: true, last4: "0001" });
 
-    // With a user key, gemini-backed models now appear in the catalog.
+    // With a user key, the Google-backed models (gemini + antigravity) appear.
     const withKey = (await authed("GET", "/api/ai/models")).json().models as { id: string }[];
     expect(withKey.map((m) => m.id)).toContain("gemini-flash");
+    expect(withKey.map((m) => m.id)).toContain("antigravity-agent");
 
     expect((await authed("DELETE", "/api/ai/key")).statusCode).toBe(200);
     const after = (await authed("GET", "/api/ai/models")).json().models as { id: string }[];

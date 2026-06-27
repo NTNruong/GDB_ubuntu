@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { extractAgentEvents, newAgentSeen, toAgentInput } from "./backends/antigravity.js";
 import { extractGeminiToken, toGeminiBody } from "./backends/gemini.js";
 import { extractLlamaToken } from "./backends/llama.js";
 import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
@@ -74,6 +75,53 @@ describe("gemini mapping", () => {
       extractGeminiToken(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }))
     ).toBe("ok");
     expect(extractGeminiToken("nope")).toBe("");
+  });
+});
+
+describe("antigravity agent backend", () => {
+  it("builds input with persona on the first turn, message-only on continuation", () => {
+    const first = toAgentInput("PERSONA", "explain pointers", false);
+    expect(first).toContain("PERSONA");
+    expect(first).toContain("explain pointers");
+    expect(toAgentInput("PERSONA", "explain pointers", true)).toBe("explain pointers");
+  });
+
+  it("emits answer text as incremental token deltas", () => {
+    const seen = newAgentSeen();
+    const step = (text: string) => ({ steps: [{ type: "model_output", content: [{ type: "text", text }] }] });
+    expect(extractAgentEvents(step("Hel"), seen)).toEqual([{ type: "token", data: "Hel" }]);
+    expect(extractAgentEvents(step("Hello"), seen)).toEqual([{ type: "token", data: "lo" }]);
+    expect(extractAgentEvents(step("Hello"), seen)).toEqual([]);
+  });
+
+  it("emits code-execution steps once and de-dups on re-read", () => {
+    const seen = newAgentSeen();
+    const snap = {
+      steps: [
+        { type: "code_execution_call", id: "c1", arguments: { language: "python", code: "print(1)" } },
+        { type: "code_execution_result", call_id: "c1", result: "1\n", is_error: false }
+      ]
+    };
+    expect(extractAgentEvents(snap, seen)).toEqual([
+      { type: "step", step: { kind: "code_call", language: "python", code: "print(1)" } },
+      { type: "step", step: { kind: "code_result", result: "1\n", isError: false } }
+    ]);
+    expect(extractAgentEvents(snap, seen)).toEqual([]);
+  });
+
+  it("surfaces images and prefers output_text for the final answer", () => {
+    const imgSeen = newAgentSeen();
+    expect(
+      extractAgentEvents(
+        { steps: [{ type: "model_output", content: [{ type: "image", data: "B64", mime_type: "image/png" }] }] },
+        imgSeen
+      )
+    ).toEqual([{ type: "step", step: { kind: "image", mimeType: "image/png", dataBase64: "B64" } }]);
+
+    const txtSeen = newAgentSeen();
+    expect(extractAgentEvents({ status: "completed", output_text: "Final", steps: [] }, txtSeen)).toEqual([
+      { type: "token", data: "Final" }
+    ]);
   });
 });
 

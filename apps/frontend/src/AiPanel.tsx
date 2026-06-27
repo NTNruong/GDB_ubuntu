@@ -3,11 +3,14 @@ import {
   KeyRound,
   Plus,
   Send,
+  Terminal,
   Trash2,
+  Wrench,
   X
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+  AiAgentStep,
   AiContext,
   AiKeyInfoResponse,
   AiLevel,
@@ -15,11 +18,13 @@ import type {
   AiSkillKind,
   AiThreadSummary,
   AiWorkflow,
-  ChatMessage,
   ChatSendRequest,
   Language
 } from "@internal/shared";
 import { aiApi } from "./aiApi.js";
+
+/** A transcript entry; assistant turns may carry agentic `steps` (Antigravity). */
+type UiMessage = { role: "user" | "assistant"; content: string; steps?: AiAgentStep[] };
 
 type AiPanelProps = {
   onClose: () => void;
@@ -42,7 +47,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
 
   const [threads, setThreads] = useState<AiThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +140,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
           setMessages(
             thread.messages
               .filter((message) => message.role !== "system")
-              .map((message) => ({ role: message.role, content: message.content }))
+              .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }))
           );
         })
         .catch(onAuthError);
@@ -170,7 +175,11 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
     }
     setError(null);
     setInput("");
-    setMessages((current) => [...current, { role: "user", content: text }, { role: "assistant", content: "" }]);
+    setMessages((current) => [
+      ...current,
+      { role: "user", content: text },
+      { role: "assistant", content: "", steps: [] }
+    ]);
     setStreaming(true);
 
     const controller = new AbortController();
@@ -195,7 +204,18 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         const next = current.slice();
         const last = next[next.length - 1];
         if (last && last.role === "assistant") {
-          next[next.length - 1] = { role: "assistant", content: last.content + token };
+          next[next.length - 1] = { ...last, content: last.content + token };
+        }
+        return next;
+      });
+    };
+
+    const appendStep = (step: AiAgentStep): void => {
+      setMessages((current) => {
+        const next = current.slice();
+        const last = next[next.length - 1];
+        if (last && last.role === "assistant") {
+          next[next.length - 1] = { ...last, steps: [...(last.steps ?? []), step] };
         }
         return next;
       });
@@ -205,6 +225,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       .chatStream(request, {
         signal: controller.signal,
         onToken: appendToAssistant,
+        onStep: appendStep,
         onError: (message) => setError(message),
         onDone: ({ threadId: id }) => {
           setThreadId(id);
@@ -274,6 +295,11 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
             )}
           </select>
         </label>
+        {meta?.models.find((item) => item.id === model)?.backend === "antigravity" && (
+          <p className="ai-hint ai-experimental">
+            Experimental agent — runs tools/code in Google&apos;s sandbox. Slow, very limited free quota.
+          </p>
+        )}
         <label className="ai-field">
           <span>Workflow</span>
           <select value={workflow} onChange={(event) => setWorkflow(event.target.value as AiWorkflow)}>
@@ -401,6 +427,14 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         {messages.map((message, index) => (
           <div key={index} className={`ai-message ai-${message.role}`}>
             <span className="ai-role">{message.role === "user" ? "You" : "Tutor"}</span>
+            {message.steps && message.steps.length > 0 && (
+              <details className="ai-agent-steps" open>
+                <summary>Agent activity ({message.steps.length})</summary>
+                {message.steps.map((step, stepIndex) => (
+                  <AgentStepView key={stepIndex} step={step} />
+                ))}
+              </details>
+            )}
             <div className="ai-bubble">{message.content || (streaming && index === messages.length - 1 ? "…" : "")}</div>
           </div>
         ))}
@@ -438,5 +472,55 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         )}
       </form>
     </aside>
+  );
+}
+
+/** Render one Antigravity agent activity item (code/tool/image/thought). */
+function AgentStepView({ step }: { step: AiAgentStep }) {
+  if (step.kind === "code_call") {
+    return (
+      <div className="ai-step ai-step-code">
+        <span className="ai-step-label">
+          <Terminal size={12} /> code{step.language ? ` · ${step.language}` : ""}
+        </span>
+        <pre>{step.code}</pre>
+      </div>
+    );
+  }
+  if (step.kind === "code_result") {
+    return (
+      <div className={`ai-step ai-step-result${step.isError ? " ai-step-error" : ""}`}>
+        <span className="ai-step-label">{step.isError ? "error" : "result"}</span>
+        <pre>{step.result}</pre>
+      </div>
+    );
+  }
+  if (step.kind === "tool_call") {
+    return (
+      <div className="ai-step ai-step-tool">
+        <span className="ai-step-label">
+          <Wrench size={12} /> {step.name}
+        </span>
+      </div>
+    );
+  }
+  if (step.kind === "tool_result") {
+    return (
+      <div className={`ai-step ai-step-tool${step.isError ? " ai-step-error" : ""}`}>
+        <span className="ai-step-label">tool {step.isError ? "failed" : "done"}</span>
+      </div>
+    );
+  }
+  if (step.kind === "image") {
+    return (
+      <div className="ai-step ai-step-img">
+        <img src={`data:${step.mimeType};base64,${step.dataBase64}`} alt="agent artifact" />
+      </div>
+    );
+  }
+  return (
+    <div className="ai-step ai-step-thought">
+      <em>{step.text}</em>
+    </div>
   );
 }

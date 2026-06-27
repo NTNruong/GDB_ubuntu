@@ -1,4 +1,5 @@
 import type {
+  AiAgentStep,
   AiKeyInfoResponse,
   AiModelsResponse,
   AiStreamEvent,
@@ -34,6 +35,8 @@ function jsonBody(body: unknown): RequestInit {
 
 export type ChatStreamHandlers = {
   onToken: (token: string) => void;
+  /** Agentic (Antigravity) activity item — tool/code/image step. */
+  onStep?: (step: AiAgentStep) => void;
   onDone: (event: { threadId: string; title: string }) => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
@@ -110,6 +113,8 @@ export const aiApi = {
       }
       if (event.type === "token") {
         handlers.onToken(event.data);
+      } else if (event.type === "step") {
+        handlers.onStep?.(event.step);
       } else if (event.type === "done") {
         handlers.onDone({ threadId: event.threadId, title: event.title });
       } else if (event.type === "error") {

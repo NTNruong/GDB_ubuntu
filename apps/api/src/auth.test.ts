@@ -25,7 +25,8 @@ describe("auth routes", () => {
       llamaBaseUrl: "http://127.0.0.1:1",
       geminiApiKey: "",
       aiDataRoot: path.join(root, "ai-data"),
-      aiKeySecret: "test-ai-key-secret"
+      aiKeySecret: "test-ai-key-secret",
+      antigravityMaxMs: 180000
     };
     await addUser(config.usersFile, "alice", "correct-horse");
   });

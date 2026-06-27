@@ -17,7 +17,8 @@ import {
 } from "@internal/shared";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiConfig } from "./config.js";
-import { enabledModels, findEnabledModel, streamChat } from "./ai/index.js";
+import { enabledModels, findEnabledModel, streamAgent, streamChat } from "./ai/index.js";
+import { toAgentInput } from "./ai/backends/antigravity.js";
 import { deleteUserKey, loadUserKey, storeUserKey, userKeyInfo } from "./ai/keystore.js";
 import { buildSystemPrompt } from "./ai/prompts.js";
 import {
@@ -27,7 +28,8 @@ import {
   listThreads,
   readThread,
   renameThread,
-  titleFromMessage
+  titleFromMessage,
+  updateThreadMeta
 } from "./ai/threads.js";
 import { PathError } from "./pathSafety.js";
 import { ensureUserHome } from "./userStore.js";
@@ -184,12 +186,13 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     }
 
     // Compose the model input: system prompt + recent history + the new message.
+    const systemPrompt = buildSystemPrompt(body.workflow, body.skill, body.context);
     const history: ChatMessage[] = thread.messages
       .slice(-MAX_AI_HISTORY_MESSAGES)
       .filter((message) => message.role !== "system")
       .map((message) => ({ role: message.role, content: message.content }));
     const messages: ChatMessage[] = [
-      { role: "system", content: buildSystemPrompt(body.workflow, body.skill, body.context) },
+      { role: "system", content: systemPrompt },
       ...history,
       { role: "user", content: body.message }
     ];
@@ -206,10 +209,31 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     });
 
     let assistant = "";
+    let agentMeta: { interactionId?: string; environmentId?: string } | undefined;
     try {
-      for await (const token of streamChat(config, model, messages, controller.signal, effectiveGeminiKey)) {
-        assistant += token;
-        sse(reply, { type: "token", data: token });
+      if (model.backend === "antigravity") {
+        // Agentic path: yields rich events (answer tokens + tool/code/image steps)
+        // and returns the interaction/environment ids for multi-turn continuation.
+        const input = toAgentInput(systemPrompt, body.message, Boolean(thread.interactionId));
+        const agent = streamAgent(config, model, input, controller.signal, effectiveGeminiKey, {
+          previousInteractionId: thread.interactionId,
+          environmentId: thread.environmentId
+        });
+        let next = await agent.next();
+        while (!next.done) {
+          const event = next.value;
+          if (event.type === "token") {
+            assistant += event.data;
+          }
+          sse(reply, event);
+          next = await agent.next();
+        }
+        agentMeta = next.value;
+      } else {
+        for await (const token of streamChat(config, model, messages, controller.signal, effectiveGeminiKey)) {
+          assistant += token;
+          sse(reply, { type: "token", data: token });
+        }
       }
       sse(reply, { type: "done", threadId: thread.id, title: thread.title });
     } catch (error) {
@@ -229,6 +253,9 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
         }
         try {
           await appendMessages(dir, thread.id, turn);
+          if (agentMeta && (agentMeta.interactionId || agentMeta.environmentId)) {
+            await updateThreadMeta(dir, thread.id, agentMeta);
+          }
         } catch (error) {
           app.log.warn({ err: error, threadId: thread.id }, "failed to persist ai thread");
         }

@@ -1,5 +1,6 @@
-import { AI_MODELS, type AiModel, type ChatMessage } from "@internal/shared";
+import { AI_MODELS, type AiModel, type AiStreamEvent, type ChatMessage } from "@internal/shared";
 import type { ApiConfig } from "../config.js";
+import { streamAntigravity, type AgentRunResult } from "./backends/antigravity.js";
 import { streamGemini } from "./backends/gemini.js";
 import { streamLlama } from "./backends/llama.js";
 
@@ -14,7 +15,9 @@ export function enabledModels(config: ApiConfig, hasUserGeminiKey = false): AiMo
     if (model.backend === "llama") {
       return config.aiEnabled;
     }
-    if (model.backend === "gemini") {
+    // `gemini` and `antigravity` both authenticate with the Google API key, so
+    // they unlock together (per-user key or the server-wide fallback).
+    if (model.backend === "gemini" || model.backend === "antigravity") {
       return hasUserGeminiKey || config.geminiApiKey.length > 0;
     }
     return false;
@@ -44,4 +47,23 @@ export function streamChat(
     return streamGemini(geminiApiKey, model.remoteModelId, messages, signal);
   }
   return streamLlama(config.llamaBaseUrl, model.remoteModelId, messages, signal);
+}
+
+/**
+ * Run an agentic (Antigravity) model. Unlike {@link streamChat} this yields rich
+ * {@link AiStreamEvent}s (answer `token`s + tool/code/image `step`s) and returns
+ * the interaction/environment ids so the caller can persist them for multi-turn.
+ */
+export function streamAgent(
+  config: ApiConfig,
+  model: AiModel,
+  input: string,
+  signal: AbortSignal,
+  geminiApiKey: string,
+  opts: { previousInteractionId?: string; environmentId?: string }
+): AsyncGenerator<AiStreamEvent, AgentRunResult> {
+  return streamAntigravity(geminiApiKey, model.remoteModelId, input, signal, {
+    ...opts,
+    maxMs: config.antigravityMaxMs
+  });
 }
