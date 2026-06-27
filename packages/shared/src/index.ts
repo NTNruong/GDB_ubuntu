@@ -630,9 +630,9 @@ export type AiModel = {
 };
 
 /**
- * Full model catalog. `gemini` remoteModelIds are best-effort and should be
- * confirmed against the live ListModels for the deployment's API key; the
- * `/api/ai/models` route only returns the backends that are actually configured.
+ * Full model catalog. `gemini` remoteModelIds were confirmed against the live
+ * ListModels for a free-tier API key; the `/api/ai/models` route only returns the
+ * backends that are actually configured.
  */
 export const AI_MODELS: AiModel[] = [
   {
@@ -653,14 +653,14 @@ export const AI_MODELS: AiModel[] = [
     id: "gemma-26b",
     label: "Gemma 4 26B (Google)",
     backend: "gemini",
-    remoteModelId: "gemma-3-27b-it",
+    remoteModelId: "gemma-4-26b-a4b-it",
     description: "Larger Gemma served via the Google API."
   },
   {
     id: "gemma-31b",
     label: "Gemma 4 31B (Google)",
     backend: "gemini",
-    remoteModelId: "gemma-3-27b-it",
+    remoteModelId: "gemma-4-31b-it",
     description: "Largest Gemma served via the Google API."
   }
 ];
