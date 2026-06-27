@@ -41,6 +41,9 @@ export function readConfig(): ApiConfig {
     llamaBaseUrl: process.env.LLAMA_BASE_URL ?? "http://localhost:8000",
     geminiApiKey: process.env.GEMINI_API_KEY ?? "",
     aiDataRoot: process.env.AI_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-ai-data"),
-    aiKeySecret: process.env.AI_KEY_SECRET ?? process.env.SESSION_SECRET ?? ""
+    // `||` (not `??`) so an empty AI_KEY_SECRET — which compose passes as "" when
+    // unset in .env — still falls back to SESSION_SECRET instead of disabling the
+    // per-user key store with a "" secret (ISSUE-073).
+    aiKeySecret: process.env.AI_KEY_SECRET || process.env.SESSION_SECRET || ""
   };
 }
