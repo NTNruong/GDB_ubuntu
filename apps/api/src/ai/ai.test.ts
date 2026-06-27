@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractGeminiToken, toGeminiBody } from "./backends/gemini.js";
 import { extractLlamaToken } from "./backends/llama.js";
+import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
 import { parseSseData } from "./sse.js";
 import {
   appendMessages,
@@ -113,5 +114,34 @@ describe("ai thread store", () => {
 
   it("rejects an unsafe thread id", async () => {
     await expect(readThread(dir, "../escape")).rejects.toBeInstanceOf(PathError);
+  });
+});
+
+describe("ai key store", () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "gdb-aikey-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("round-trips a key via AES-GCM and fails to decrypt with the wrong secret", () => {
+    const blob = encryptSecret("secretA", "AIzaSECRET1234");
+    expect(blob).not.toContain("AIzaSECRET1234");
+    expect(decryptSecret("secretA", blob)).toBe("AIzaSECRET1234");
+    expect(() => decryptSecret("secretB", blob)).toThrow();
+  });
+
+  it("stores, masks and removes a user key", async () => {
+    expect(await userKeyInfo(dir, "s")).toEqual({ hasKey: false });
+
+    await storeUserKey(dir, "s", "AIzaABCDEFGH1234");
+    expect(await loadUserKey(dir, "s")).toBe("AIzaABCDEFGH1234");
+    expect(await userKeyInfo(dir, "s")).toEqual({ hasKey: true, last4: "1234" });
+
+    // A wrong secret can't decrypt → treated as no usable key.
+    expect(await loadUserKey(dir, "wrong")).toBeNull();
   });
 });

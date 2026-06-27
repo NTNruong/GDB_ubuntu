@@ -1,4 +1,5 @@
 import type {
+  AiKeyInfoResponse,
   AiModelsResponse,
   AiStreamEvent,
   AiThreadListResponse,
@@ -58,6 +59,16 @@ export const aiApi = {
     return request<{ ok: true }>(`/api/ai/threads/${encodeURIComponent(id)}`, {
       method: "DELETE"
     }).then(() => undefined);
+  },
+
+  keyInfo(): Promise<AiKeyInfoResponse> {
+    return request<AiKeyInfoResponse>("/api/ai/key");
+  },
+  setKey(apiKey: string): Promise<AiKeyInfoResponse> {
+    return request<AiKeyInfoResponse>("/api/ai/key", { method: "PUT", ...jsonBody({ apiKey }) });
+  },
+  deleteKey(): Promise<void> {
+    return request<{ ok: true }>("/api/ai/key", { method: "DELETE" }).then(() => undefined);
   },
 
   /**

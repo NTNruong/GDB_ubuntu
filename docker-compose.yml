@@ -26,11 +26,28 @@ services:
       # Mark the session cookie Secure when served over HTTPS (public Funnel).
       # Set SESSION_COOKIE_SECURE=1 in the deploy .env (ISSUE-054). Unset → "" → off.
       SESSION_COOKIE_SECURE: "${SESSION_COOKIE_SECURE:-}"
+      # AI learning assistant (Phase 3). LLAMA_BASE_URL points at the host
+      # llama.cpp server (Vulkan/RX580) — extra_hosts maps host.docker.internal
+      # to the host gateway on Linux. GEMINI_API_KEY is an optional server-wide
+      # fallback; each user can also save their own key, encrypted at rest with
+      # AI_KEY_SECRET (defaults to SESSION_SECRET when unset). Set AI_ENABLED=0 to
+      # hide the local model. AI_DATA_ROOT stores per-user chat threads + keys.
+      AI_ENABLED: "${AI_ENABLED:-1}"
+      LLAMA_BASE_URL: "${LLAMA_BASE_URL:-http://host.docker.internal:8000}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      AI_KEY_SECRET: "${AI_KEY_SECRET:-}"
+      AI_DATA_ROOT: "/ai-data"
+    extra_hosts:
+      # Lets the api container reach a llama.cpp server running on the host.
+      - "host.docker.internal:host-gateway"
     volumes:
       # Host bind-source of the per-user homes. In production (rootless Docker)
       # point USER_HOMES_HOST_ROOT at a dir owned by the service user (ISSUE-044),
       # e.g. /home/gdbrunner/gdb-user-homes. Must match USER_HOMES_ROOT above.
       - ${USER_HOMES_HOST_ROOT:-/tmp/gdb-ubuntu-user-homes}:/user-homes
+      # Per-user AI chat threads + encrypted API keys (separate from user homes
+      # so they never appear in the file explorer). Must match AI_DATA_ROOT.
+      - ${AI_DATA_HOST_ROOT:-/tmp/gdb-ubuntu-ai-data}:/ai-data
     expose:
       - "4000"
     depends_on:

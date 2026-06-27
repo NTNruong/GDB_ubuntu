@@ -36,7 +36,8 @@ describe("ai chat API", () => {
       aiEnabled: true,
       llamaBaseUrl: "http://127.0.0.1:1",
       geminiApiKey: "",
-      aiDataRoot: path.join(root, "ai-data")
+      aiDataRoot: path.join(root, "ai-data"),
+      aiKeySecret: "test-ai-key-secret"
     };
     await addUser(config.usersFile, "alice", "pw");
     app = createApiServer(config);
@@ -48,7 +49,7 @@ describe("ai chat API", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  function authed(method: "GET" | "POST" | "PATCH" | "DELETE", url: string, payload?: object) {
+  function authed(method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE", url: string, payload?: object) {
     return app.inject({ method, url, cookies: { gdb_session: cookie }, payload });
   }
 
@@ -91,5 +92,25 @@ describe("ai chat API", () => {
   it("starts with an empty thread list", async () => {
     const res = await authed("GET", "/api/ai/threads");
     expect(res.json().threads).toEqual([]);
+  });
+
+  it("per-user key: save → masked status → unlocks gemini models → delete", async () => {
+    expect((await authed("GET", "/api/ai/key")).json()).toEqual({ hasKey: false });
+
+    const put = await authed("PUT", "/api/ai/key", { apiKey: "AIzaTESTKEY0001" });
+    expect(put.statusCode).toBe(200);
+    expect(put.json()).toEqual({ hasKey: true, last4: "0001" });
+
+    // With a user key, gemini-backed models now appear in the catalog.
+    const withKey = (await authed("GET", "/api/ai/models")).json().models as { id: string }[];
+    expect(withKey.map((m) => m.id)).toContain("gemini-flash");
+
+    expect((await authed("DELETE", "/api/ai/key")).statusCode).toBe(200);
+    const after = (await authed("GET", "/api/ai/models")).json().models as { id: string }[];
+    expect(after.map((m) => m.id)).not.toContain("gemini-flash");
+  });
+
+  it("rejects a too-short api key (400)", async () => {
+    expect((await authed("PUT", "/api/ai/key", { apiKey: "short" })).statusCode).toBe(400);
   });
 });

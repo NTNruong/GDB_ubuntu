@@ -14,7 +14,8 @@ describe("api app", () => {
     aiEnabled: true,
     llamaBaseUrl: "http://127.0.0.1:1",
     geminiApiKey: "",
-    aiDataRoot: "/tmp/gdb-test-ai-data"
+    aiDataRoot: "/tmp/gdb-test-ai-data",
+    aiKeySecret: "test-ai-key-secret"
   };
 
   it("returns language capabilities without contacting the runner", async () => {

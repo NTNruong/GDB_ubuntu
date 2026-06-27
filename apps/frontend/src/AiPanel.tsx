@@ -1,5 +1,6 @@
 import {
   GraduationCap,
+  KeyRound,
   Plus,
   Send,
   Trash2,
@@ -8,6 +9,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   AiContext,
+  AiKeyInfoResponse,
   AiLevel,
   AiModelsResponse,
   AiSkillKind,
@@ -45,32 +47,71 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [keyInfo, setKeyInfo] = useState<AiKeyInfoResponse | null>(null);
+  const [keyInput, setKeyInput] = useState("");
+  const [showKeyForm, setShowKeyForm] = useState(false);
+
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Load the model catalog + workflows/topics, and the user's thread list.
-  useEffect(() => {
-    let cancelled = false;
-    aiApi
+  // Re-fetch the model catalog (the enabled set depends on whether a Gemini key
+  // is present); keep the current model if still available, else pick the first.
+  const reloadModels = useCallback(() => {
+    return aiApi
       .models()
       .then((data) => {
-        if (cancelled) return;
         setMeta(data);
-        setModel((current) => current || data.models[0]?.id || "");
+        setModel((current) => (current && data.models.some((m) => m.id === current) ? current : data.models[0]?.id ?? ""));
         setTopic((current) => current || data.topics[0]?.id || "");
       })
       .catch(onAuthError);
+  }, [onAuthError]);
+
+  // Load the model catalog, the user's thread list, and key status.
+  useEffect(() => {
+    let cancelled = false;
+    void reloadModels();
     aiApi
       .threads()
       .then((data) => {
         if (!cancelled) setThreads(data.threads);
       })
       .catch(onAuthError);
+    aiApi
+      .keyInfo()
+      .then((info) => {
+        if (!cancelled) setKeyInfo(info);
+      })
+      .catch(onAuthError);
     return () => {
       cancelled = true;
       abortRef.current?.abort();
     };
-  }, [onAuthError]);
+  }, [reloadModels, onAuthError]);
+
+  const saveKey = useCallback(() => {
+    const value = keyInput.trim();
+    if (!value) return;
+    aiApi
+      .setKey(value)
+      .then((info) => {
+        setKeyInfo(info);
+        setKeyInput("");
+        setShowKeyForm(false);
+        return reloadModels();
+      })
+      .catch(onAuthError);
+  }, [keyInput, reloadModels, onAuthError]);
+
+  const removeKey = useCallback(() => {
+    aiApi
+      .deleteKey()
+      .then(() => {
+        setKeyInfo({ hasKey: false });
+        return reloadModels();
+      })
+      .catch(onAuthError);
+  }, [reloadModels, onAuthError]);
 
   // Keep the transcript scrolled to the latest message.
   useEffect(() => {
@@ -280,6 +321,45 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
           <input type="checkbox" checked={attachContext} onChange={(event) => setAttachContext(event.target.checked)} />
           <span>Attach current code &amp; output</span>
         </label>
+
+        <div className="ai-key">
+          {keyInfo?.hasKey ? (
+            <div className="ai-key-status">
+              <KeyRound size={13} />
+              <span>Google key ••{keyInfo.last4}</span>
+              <button type="button" className="ai-link" onClick={removeKey}>
+                Remove
+              </button>
+            </div>
+          ) : showKeyForm ? (
+            <div className="ai-key-form">
+              <input
+                type="password"
+                value={keyInput}
+                placeholder="Paste your Google API key"
+                autoComplete="off"
+                onChange={(event) => setKeyInput(event.target.value)}
+              />
+              <button type="button" className="ai-link" onClick={saveKey} disabled={!keyInput.trim()}>
+                Save
+              </button>
+              <button
+                type="button"
+                className="ai-link"
+                onClick={() => {
+                  setShowKeyForm(false);
+                  setKeyInput("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="ai-link" onClick={() => setShowKeyForm(true)}>
+              <KeyRound size={13} /> Add your Google API key
+            </button>
+          )}
+        </div>
       </div>
 
       {threads.length > 0 && (

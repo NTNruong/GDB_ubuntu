@@ -3,10 +3,12 @@ import {
   AI_SKILL_KINDS,
   AI_TOPICS,
   AI_WORKFLOW_INFO,
+  ApiKeyRequestSchema,
   ChatSendRequestSchema,
   LANGUAGE_CAPABILITIES,
   MAX_AI_HISTORY_MESSAGES,
   ThreadRenameRequestSchema,
+  type AiKeyInfoResponse,
   type AiModelsResponse,
   type AiThreadListResponse,
   type AiThreadResponse,
@@ -16,6 +18,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiConfig } from "./config.js";
 import { enabledModels, findEnabledModel, streamChat } from "./ai/index.js";
+import { deleteUserKey, loadUserKey, storeUserKey, userKeyInfo } from "./ai/keystore.js";
 import { buildSystemPrompt } from "./ai/prompts.js";
 import {
   appendMessages,
@@ -58,15 +61,48 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     preHandler: (request: FastifyRequest, reply: FastifyReply) => app.authenticate(request, reply)
   };
 
-  app.get<{ Reply: AiModelsResponse }>("/api/ai/models", guard, async (_request, reply) => {
+  app.get<{ Reply: AiModelsResponse }>("/api/ai/models", guard, async (request, reply) => {
+    const dir = await aiDirFor(request, config);
+    const info = config.aiKeySecret ? await userKeyInfo(dir, config.aiKeySecret) : { hasKey: false };
     return reply.send({
-      models: enabledModels(config),
+      models: enabledModels(config, info.hasKey),
       workflows: AI_WORKFLOW_INFO,
       skillKinds: AI_SKILL_KINDS,
       topics: AI_TOPICS,
       levels: AI_LEVELS,
       languages: LANGUAGE_CAPABILITIES.map((cap) => ({ id: cap.id, label: cap.label }))
     });
+  });
+
+  app.get<{ Reply: AiKeyInfoResponse }>("/api/ai/key", guard, async (request, reply) => {
+    if (!config.aiKeySecret) {
+      return reply.send({ hasKey: false });
+    }
+    const dir = await aiDirFor(request, config);
+    return reply.send(await userKeyInfo(dir, config.aiKeySecret));
+  });
+
+  app.put<{ Body: unknown; Reply: AiKeyInfoResponse | ErrorResponse }>(
+    "/api/ai/key",
+    guard,
+    async (request, reply) => {
+      if (!config.aiKeySecret) {
+        return reply.code(503).send({ error: "Per-user API keys are not enabled on this server" });
+      }
+      const parsed = ApiKeyRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid API key" });
+      }
+      const dir = await aiDirFor(request, config);
+      await storeUserKey(dir, config.aiKeySecret, parsed.data.apiKey.trim());
+      return reply.send(await userKeyInfo(dir, config.aiKeySecret));
+    }
+  );
+
+  app.delete<{ Reply: { ok: true } }>("/api/ai/key", guard, async (request, reply) => {
+    const dir = await aiDirFor(request, config);
+    await deleteUserKey(dir);
+    return reply.send({ ok: true });
   });
 
   app.get<{ Reply: AiThreadListResponse }>("/api/ai/threads", guard, async (request, reply) => {
@@ -126,12 +162,16 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     }
     const body = parsed.data;
 
-    const model = findEnabledModel(config, body.model);
+    const dir = await aiDirFor(request, config);
+
+    // Per-user key takes precedence over the server-wide fallback.
+    const userKey = config.aiKeySecret ? await loadUserKey(dir, config.aiKeySecret) : null;
+    const effectiveGeminiKey = userKey ?? config.geminiApiKey;
+
+    const model = findEnabledModel(config, body.model, Boolean(userKey));
     if (!model) {
       return reply.code(400).send({ error: `Model "${body.model}" is not available` });
     }
-
-    const dir = await aiDirFor(request, config);
 
     // Load the target thread (or create a fresh one auto-titled from this message).
     let thread;
@@ -167,7 +207,7 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
 
     let assistant = "";
     try {
-      for await (const token of streamChat(config, model, messages, controller.signal)) {
+      for await (const token of streamChat(config, model, messages, controller.signal, effectiveGeminiKey)) {
         assistant += token;
         sse(reply, { type: "token", data: token });
       }

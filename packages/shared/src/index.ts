@@ -753,6 +753,15 @@ export const ThreadRenameRequestSchema = z.object({
 });
 export type ThreadRenameRequest = z.infer<typeof ThreadRenameRequestSchema>;
 
+/** Per-user Google API key (stored encrypted server-side; never echoed back). */
+export const ApiKeyRequestSchema = z.object({
+  apiKey: z.string().min(10).max(400)
+});
+export type ApiKeyRequest = z.infer<typeof ApiKeyRequestSchema>;
+
+/** Key status returned to the client — masked, never the full key. */
+export type AiKeyInfoResponse = { hasKey: boolean; last4?: string };
+
 export type ChatRole = "system" | "user" | "assistant";
 export type ChatMessage = { role: ChatRole; content: string };
 

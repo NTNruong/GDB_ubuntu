@@ -18,10 +18,12 @@ export type ApiConfig = {
   aiEnabled: boolean;
   /** Base URL of the host llama.cpp server (OpenAI-compatible). */
   llamaBaseUrl: string;
-  /** Google AI Studio API key; empty ⇒ Gemini/Gemma backends are hidden. */
+  /** Server-wide Google AI Studio API key fallback (per-user keys take precedence). */
   geminiApiKey: string;
   /** Root dir holding one subdir per user for AI chat threads (separate from userHomesRoot). */
   aiDataRoot: string;
+  /** Secret used to encrypt per-user API keys at rest. Falls back to SESSION_SECRET. */
+  aiKeySecret: string;
 };
 
 export function readConfig(): ApiConfig {
@@ -38,6 +40,7 @@ export function readConfig(): ApiConfig {
     aiEnabled: process.env.AI_ENABLED !== "0",
     llamaBaseUrl: process.env.LLAMA_BASE_URL ?? "http://localhost:8000",
     geminiApiKey: process.env.GEMINI_API_KEY ?? "",
-    aiDataRoot: process.env.AI_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-ai-data")
+    aiDataRoot: process.env.AI_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-ai-data"),
+    aiKeySecret: process.env.AI_KEY_SECRET ?? process.env.SESSION_SECRET ?? ""
   };
 }

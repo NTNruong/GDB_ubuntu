@@ -59,6 +59,63 @@ The optional per-user file explorer (Phase 2) is auth-gated and stores files on 
 
 `users.json` (default `<USER_HOMES_ROOT>/users.json`) and the per-user homes directory are the **only stateful host paths** the app owns — back them up together. There is no public self-registration; accounts are admin-managed via the CLI above.
 
+## AI learning assistant (Phase 3)
+
+The login-gated AI tutor needs two things the auto-deploy does **not** provide: a model backend and a few env vars. The api container is just a streaming proxy + per-user thread/key store.
+
+### a) Host llama.cpp Vulkan server (local Gemma 4 E4B on the RX580)
+
+Polaris/gfx803 is dropped by ROCm → use the **Vulkan (RADV)** backend. Run llama.cpp **on the host** (no in-Docker GPU passthrough); the api reaches it via `LLAMA_BASE_URL`.
+
+1. Build (one-time): `sudo apt install -y build-essential cmake git libvulkan-dev mesa-vulkan-drivers vulkan-tools glslc libcurl4-openssl-dev` then
+   ```bash
+   git clone https://github.com/ggml-org/llama.cpp && cd llama.cpp
+   cmake -B build -DGGML_VULKAN=ON -DGGML_CUDA=OFF && cmake --build build --config Release -j$(nproc)
+   ```
+2. Get the model (manual download is more robust than `-hf`, which needs an OpenSSL build):
+   ```bash
+   cd ~/llama.cpp/models
+   wget https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_M.gguf
+   ```
+3. Pick the **8GB** card: `./build/bin/llama-server --list-devices` → the RX580 is the 8192 MiB Vulkan device (identify by VRAM, since RX580/RX570 share PCI id 0x67DF). Pass `--device VulkanN`.
+4. Run as a **systemd service** so it survives reboot (replace `truong`/paths/`Vulkan0` as needed):
+   ```ini
+   # /etc/systemd/system/llama-server.service
+   [Unit]
+   Description=llama.cpp server (Gemma 4 E4B, Vulkan RX580)
+   After=multi-user.target
+   [Service]
+   User=truong
+   SupplementaryGroups=render video
+   WorkingDirectory=/home/truong/llama.cpp
+   ExecStart=/home/truong/llama.cpp/build/bin/llama-server \
+     -m /home/truong/llama.cpp/models/gemma-4-E4B-it-Q4_K_M.gguf \
+     --device Vulkan0 -ngl 99 -c 8192 --host 0.0.0.0 --port 8000 --jinja
+   Restart=on-failure
+   RestartSec=3
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   ```bash
+   sudo systemctl daemon-reload && sudo systemctl enable --now llama-server
+   curl http://localhost:8000/v1/models    # should list the gguf
+   ```
+   If VRAM is tight (8GB), lower `-c` (e.g. 4096) or `-ngl`.
+5. **Optional power cap (~85% TDP):** the card's default `power1_cap` already governs it; to lower further needs amdgpu OverDrive (`amdgpu.ppfeaturemask=0xffffffff` in GRUB → reboot), then write `/sys/class/drm/card<8GB>/device/hwmon/hwmon*/power1_cap` (µW). Some VBIOSes lock it; this is best-effort and non-essential.
+
+### b) App env (deploy `.env` next to `docker-compose.yml`)
+
+- `LLAMA_BASE_URL=http://host.docker.internal:8000` — the compose `api` service already declares `extra_hosts: host.docker.internal:host-gateway` so the container reaches the host server. Set `AI_ENABLED=0` to hide the local model.
+- `GEMINI_API_KEY=` — **optional** server-wide fallback. Usually leave empty and let each user save their own key (below).
+- `AI_KEY_SECRET=$(openssl rand -hex 32)` — encrypts per-user keys at rest. **Defaults to `SESSION_SECRET`**, so if that is already set you can skip this; keep it stable or stored keys become undecryptable.
+- `AI_DATA_HOST_ROOT=/home/gdbrunner/gdb-ai-data` — host bind for per-user chat threads + encrypted keys (separate from `USER_HOMES_HOST_ROOT` so chats never show in the file explorer). `mkdir -p` it as the service user. This is a **stateful path — back it up** alongside `users.json`.
+
+Then `docker compose up -d` (env-only → no `--build`).
+
+### c) Per-user API keys
+
+Each logged-in user pastes their own Google AI Studio key in the assistant panel ("Add your Google API key"). It is stored **AES-256-GCM encrypted** under `AI_DATA_ROOT/<user>/gemini-key.enc`, never returned to the browser (only `••last4`), and redacted from logs. A user key **takes precedence** over `GEMINI_API_KEY`; with neither, that user simply sees only the local model. The local llama model needs no key.
+
 ## Public Funnel route allowlist (EXPLORER-001/002, ISSUE-049)
 
 The container nginx (`apps/frontend/nginx.conf`) already proxies **all** of `/api/` to the api service, so login / Explorer / run / debug work on the LAN URL (`http://<host>:8080`). The **public Tailscale Funnel** is fronted by a **host** nginx (`/etc/nginx/conf.d/gdb_ubuntu.conf`, *not* in git): if it only allowlists the original run/debug routes, the Phase-2 account + file APIs return nginx `404` and **public login fails while LAN login works**.

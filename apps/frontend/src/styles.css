@@ -1878,6 +1878,48 @@ h1.brand {
   cursor: pointer;
 }
 
+.ai-key {
+  font-size: 0.78rem;
+}
+
+.ai-key-status,
+.ai-key-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.ai-key-status {
+  color: var(--text-secondary);
+}
+
+.ai-key-form input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-accent);
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+
+.ai-link:hover {
+  text-decoration: underline;
+}
+
+.ai-link:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  text-decoration: none;
+}
+
 .ai-threads {
   display: flex;
   gap: var(--space-xs);
