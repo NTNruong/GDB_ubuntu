@@ -11,6 +11,7 @@ import {
 import Fastify, { type FastifyInstance } from "fastify";
 import WebSocket from "ws";
 import { registerAuth } from "./auth.js";
+import { registerChat } from "./chat.js";
 import type { ApiConfig } from "./config.js";
 import { registerFiles } from "./files.js";
 
@@ -30,7 +31,12 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
         "req.body.stdin",
         "req.body.argv",
         "req.body.content",
-        "req.body.password"
+        "req.body.password",
+        "req.body.message",
+        "req.body.context.code",
+        "req.body.context.selection",
+        "req.body.context.runOutput",
+        "req.body.messages[*].content"
       ]
     }
   });
@@ -43,6 +49,7 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
 
   registerAuth(app, config);
   registerFiles(app, config);
+  registerChat(app, config);
 
   app.register(async (routes) => {
     routes.get("/api/health", async (): Promise<HealthResponse> => {

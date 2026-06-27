@@ -603,3 +603,184 @@ export function parseArgv(input: string): string[] {
 
   return args;
 }
+
+// ---------------------------------------------------------------------------
+// AI Learning Assistant (Phase 3)
+//
+// Login-gated chat for *learning* (not run/debug). The api proxies to model
+// backends and streams tokens back as SSE. Two orthogonal selectors drive the
+// system prompt built server-side: a "skill" (WHAT to learn) and a "workflow"
+// (HOW to answer). The static catalogs below are the source of truth; the
+// *enabled* model subset is computed from config and returned by GET
+// /api/ai/models (a backend with no key/server configured is hidden).
+// ---------------------------------------------------------------------------
+
+export const AI_BACKENDS = ["llama", "gemini"] as const;
+export type AiBackend = (typeof AI_BACKENDS)[number];
+
+export type AiModel = {
+  /** Stable id used on the wire + by the client (e.g. "local-gemma-e4b"). */
+  id: string;
+  /** Human label for the dropdown. */
+  label: string;
+  backend: AiBackend;
+  /** Model id the backend itself expects (OpenAI model / Gemini model path). */
+  remoteModelId: string;
+  description?: string;
+};
+
+/**
+ * Full model catalog. `gemini` remoteModelIds are best-effort and should be
+ * confirmed against the live ListModels for the deployment's API key; the
+ * `/api/ai/models` route only returns the backends that are actually configured.
+ */
+export const AI_MODELS: AiModel[] = [
+  {
+    id: "local-gemma-e4b",
+    label: "Gemma 4 E4B (local)",
+    backend: "llama",
+    remoteModelId: "gemma-4-e4b",
+    description: "Runs on the server GPU (llama.cpp / Vulkan). Private, no quota."
+  },
+  {
+    id: "gemini-flash",
+    label: "Gemini Flash (Google)",
+    backend: "gemini",
+    remoteModelId: "gemini-flash-latest",
+    description: "Google AI Studio free tier — fast, general purpose."
+  },
+  {
+    id: "gemma-26b",
+    label: "Gemma 4 26B (Google)",
+    backend: "gemini",
+    remoteModelId: "gemma-3-27b-it",
+    description: "Larger Gemma served via the Google API."
+  },
+  {
+    id: "gemma-31b",
+    label: "Gemma 4 31B (Google)",
+    backend: "gemini",
+    remoteModelId: "gemma-3-27b-it",
+    description: "Largest Gemma served via the Google API."
+  }
+];
+
+export const AI_WORKFLOWS = ["answer", "study_plan", "strict_teacher"] as const;
+export type AiWorkflow = (typeof AI_WORKFLOWS)[number];
+
+export type AiWorkflowInfo = { id: AiWorkflow; label: string; description: string };
+export const AI_WORKFLOW_INFO: AiWorkflowInfo[] = [
+  { id: "answer", label: "Answer", description: "Directly answer the question with clear, worked explanations." },
+  { id: "study_plan", label: "Study plan", description: "Build a leveled learning roadmap toward the chosen goal." },
+  {
+    id: "strict_teacher",
+    label: "Strict teacher",
+    description: "Quiz first, insist on fundamentals, and correct mistakes firmly."
+  }
+];
+
+export const AI_SKILL_KINDS = ["language_syntax", "topic_roadmap"] as const;
+export type AiSkillKind = (typeof AI_SKILL_KINDS)[number];
+
+export const AI_LEVELS = ["fresher", "junior", "middle", "senior"] as const;
+export type AiLevel = (typeof AI_LEVELS)[number];
+
+export type AiTopic = { id: string; label: string; description?: string };
+export const AI_TOPICS: AiTopic[] = [
+  {
+    id: "embedded_firmware",
+    label: "Embedded firmware engineer",
+    description: "MCU architecture, registers, peripheral drivers, debugging."
+  },
+  {
+    id: "embedded_rtos",
+    label: "RTOS & real-time systems",
+    description: "Tasks, scheduling, IPC, timing and concurrency."
+  },
+  {
+    id: "c_systems",
+    label: "C / systems programming",
+    description: "Memory, pointers, build systems and toolchains."
+  }
+];
+
+export const MAX_AI_MESSAGE_BYTES = 16_000;
+export const MAX_AI_CONTEXT_BYTES = 60_000;
+export const MAX_AI_THREADS = 100;
+export const MAX_AI_THREAD_MESSAGES = 200;
+/** History turns (user+assistant pairs) replayed to the model per request. */
+export const MAX_AI_HISTORY_MESSAGES = 20;
+export const AI_THREAD_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+export const AiThreadIdSchema = z
+  .string()
+  .regex(AI_THREAD_ID_PATTERN, { message: "Invalid thread id" });
+
+export const AiSkillSchema = z.object({
+  kind: z.enum(AI_SKILL_KINDS),
+  /** For language_syntax: the editor's current language. */
+  language: LanguageSchema.optional(),
+  /** For topic_roadmap: an AI_TOPICS id. */
+  topic: z.string().max(64).optional(),
+  /** For topic_roadmap: target career level. */
+  level: z.enum(AI_LEVELS).optional()
+});
+export type AiSkill = z.infer<typeof AiSkillSchema>;
+
+export const AiContextSchema = z.object({
+  filename: z.string().max(MAX_USER_PATH_CHARS).optional(),
+  language: z.string().max(32).optional(),
+  code: z.string().max(MAX_AI_CONTEXT_BYTES).optional(),
+  selection: z.string().max(MAX_AI_CONTEXT_BYTES).optional(),
+  runOutput: z.string().max(MAX_AI_CONTEXT_BYTES).optional()
+});
+export type AiContext = z.infer<typeof AiContextSchema>;
+
+export const ChatSendRequestSchema = z.object({
+  /** Omitted ⇒ a new thread is created and auto-titled from the first message. */
+  threadId: AiThreadIdSchema.optional(),
+  /** An AI_MODELS id. */
+  model: z.string().min(1).max(64),
+  workflow: z.enum(AI_WORKFLOWS),
+  skill: AiSkillSchema,
+  message: z.string().min(1).max(MAX_AI_MESSAGE_BYTES),
+  context: AiContextSchema.optional()
+});
+export type ChatSendRequest = z.infer<typeof ChatSendRequestSchema>;
+
+export const ThreadRenameRequestSchema = z.object({
+  title: z.string().min(1).max(120)
+});
+export type ThreadRenameRequest = z.infer<typeof ThreadRenameRequestSchema>;
+
+export type ChatRole = "system" | "user" | "assistant";
+export type ChatMessage = { role: ChatRole; content: string };
+
+export type AiThreadMessage = { role: ChatRole; content: string; at: number };
+export type AiThread = {
+  id: string;
+  title: string;
+  model: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: AiThreadMessage[];
+};
+export type AiThreadSummary = { id: string; title: string; model: string; updatedAt: number };
+
+export type AiThreadListResponse = { threads: AiThreadSummary[] };
+export type AiThreadResponse = AiThread;
+
+export type AiModelsResponse = {
+  models: AiModel[];
+  workflows: AiWorkflowInfo[];
+  skillKinds: readonly AiSkillKind[];
+  topics: AiTopic[];
+  levels: readonly AiLevel[];
+  languages: { id: Language; label: string }[];
+};
+
+/** SSE events streamed from POST /api/ai/chat. */
+export type AiStreamEvent =
+  | { type: "token"; data: string }
+  | { type: "done"; threadId: string; title: string }
+  | { type: "error"; message: string };

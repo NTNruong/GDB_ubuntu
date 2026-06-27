@@ -14,6 +14,14 @@ export type ApiConfig = {
   sessionSecret: string;
   /** Set the session cookie `Secure` flag (enable behind HTTPS). */
   sessionCookieSecure: boolean;
+  /** Enable the local llama.cpp backend for the AI assistant (Phase 3). */
+  aiEnabled: boolean;
+  /** Base URL of the host llama.cpp server (OpenAI-compatible). */
+  llamaBaseUrl: string;
+  /** Google AI Studio API key; empty ⇒ Gemini/Gemma backends are hidden. */
+  geminiApiKey: string;
+  /** Root dir holding one subdir per user for AI chat threads (separate from userHomesRoot). */
+  aiDataRoot: string;
 };
 
 export function readConfig(): ApiConfig {
@@ -26,6 +34,10 @@ export function readConfig(): ApiConfig {
     userHomesRoot,
     usersFile: process.env.USERS_FILE ?? path.join(userHomesRoot, "users.json"),
     sessionSecret: process.env.SESSION_SECRET ?? "",
-    sessionCookieSecure: process.env.SESSION_COOKIE_SECURE === "1"
+    sessionCookieSecure: process.env.SESSION_COOKIE_SECURE === "1",
+    aiEnabled: process.env.AI_ENABLED !== "0",
+    llamaBaseUrl: process.env.LLAMA_BASE_URL ?? "http://localhost:8000",
+    geminiApiKey: process.env.GEMINI_API_KEY ?? "",
+    aiDataRoot: process.env.AI_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-ai-data")
   };
 }

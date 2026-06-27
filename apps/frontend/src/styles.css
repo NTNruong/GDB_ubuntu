@@ -1776,3 +1776,189 @@ h1.brand {
   margin-top: var(--space-sm);
   justify-content: center;
 }
+
+/* === AI learning assistant (Phase 3) ======================================
+   A fixed right-side drawer so it coexists with the explorer + debug grid
+   columns without participating in the content-area grid. */
+.ai-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(420px, 92vw);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-layer-1);
+  border-left: 1px solid var(--border-default);
+  box-shadow: -8px 0 24px hsla(0, 0%, 0%, 0.35);
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-layer-2);
+}
+
+.ai-panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ai-panel-header-actions {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.ai-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ai-icon-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.ai-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.ai-field select {
+  width: 100%;
+}
+
+.ai-field-row {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.ai-field-row .ai-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ai-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.ai-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ai-threads {
+  display: flex;
+  gap: var(--space-xs);
+  align-items: center;
+  padding: var(--space-xs) var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.ai-threads select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ai-messages {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.ai-empty {
+  margin: auto;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.ai-message {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-role {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.ai-bubble {
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-layer-2);
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.ai-message.ai-user .ai-bubble {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+}
+
+.ai-error {
+  color: hsl(0, 70%, 70%);
+  font-size: 0.82rem;
+}
+
+.ai-composer {
+  display: flex;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-layer-2);
+}
+
+.ai-input {
+  flex: 1 1 auto;
+  resize: none;
+  font-family: inherit;
+  font-size: 0.88rem;
+}
+
+.ai-send {
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-sm);
+}

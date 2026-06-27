@@ -5,6 +5,7 @@ import {
   Bug,
   ChevronRight,
   CircleX,
+  GraduationCap,
   ListTree,
   LogIn,
   LogOut,
@@ -27,6 +28,7 @@ import {
   fileExtension,
   parseArgv,
   type Breakpoint,
+  type AiContext,
   type DebugCommand,
   type DebugEvent,
   type DebugFrame,
@@ -44,6 +46,7 @@ import {
   disableJavascriptWorkerCompletions
 } from "./langCompletions";
 import { parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
+import { AiPanel } from "./AiPanel";
 import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
 import { AuthExpiredError, authApi, filesApi } from "./filesApi";
@@ -129,6 +132,7 @@ export function App() {
   // --- Accounts + file explorer (Phase 2) ---------------------------------
   const [user, setUser] = useState<string | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
+  const [aiOpen, setAiOpen] = useState(false);
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [showLogin, setShowLogin] = useState(false);
   // Presence of a path here marks it as a server-backed (explorer) tab; the
@@ -366,6 +370,30 @@ export function App() {
     },
     [resetToLoggedOut]
   );
+
+  // Snapshot the editor's current file/selection/run output for the AI panel's
+  // auto-attached context (each field capped well under the server's limit).
+  const collectContext = useCallback((): AiContext => {
+    const clip = (text: string, max = 20_000): string => (text.length > max ? text.slice(0, max) : text);
+    const context: AiContext = { language };
+    if (activePath) {
+      context.filename = activePath;
+    }
+    if (activeContent) {
+      context.code = clip(activeContent);
+    }
+    const editor = editorRef.current;
+    const selection = editor?.getSelection();
+    const model = editor?.getModel();
+    if (editor && selection && model && !selection.isEmpty()) {
+      context.selection = clip(model.getValueInRange(selection));
+    }
+    const runOutput = output.map((line) => line.text).join("");
+    if (runOutput.trim()) {
+      context.runOutput = clip(runOutput);
+    }
+    return context;
+  }, [language, activePath, activeContent, output]);
 
   const refreshTree = useCallback(async () => {
     try {
@@ -1474,6 +1502,19 @@ export function App() {
             <PanelLeft size={16} />
           </button>
         )}
+        {user && (
+          <button
+            type="button"
+            className="topbar-icon-btn"
+            data-testid="btn-ai-toggle"
+            aria-label="Toggle learning assistant"
+            title="Learning assistant"
+            aria-pressed={aiOpen}
+            onClick={() => setAiOpen((value) => !value)}
+          >
+            <GraduationCap size={16} />
+          </button>
+        )}
         <select
           aria-label="Language"
           value={language}
@@ -1856,6 +1897,15 @@ export function App() {
           </aside>
         )}
       </div>
+
+      {user && aiOpen && (
+        <AiPanel
+          onClose={() => setAiOpen(false)}
+          onAuthError={handleAuthError}
+          collectContext={collectContext}
+          currentLanguage={language}
+        />
+      )}
     </div>
   );
 }

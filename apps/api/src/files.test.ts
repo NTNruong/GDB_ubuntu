@@ -33,7 +33,11 @@ describe("file API", () => {
       userHomesRoot: root,
       usersFile: path.join(root, "users.json"),
       sessionSecret: "test-secret",
-      sessionCookieSecure: false
+      sessionCookieSecure: false,
+      aiEnabled: true,
+      llamaBaseUrl: "http://127.0.0.1:1",
+      geminiApiKey: "",
+      aiDataRoot: path.join(root, "ai-data")
     };
     await addUser(config.usersFile, "alice", "pw");
     app = createApiServer(config);

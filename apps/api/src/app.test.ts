@@ -10,7 +10,11 @@ describe("api app", () => {
     userHomesRoot: "/tmp/gdb-test-user-homes",
     usersFile: "/tmp/gdb-test-user-homes/users.json",
     sessionSecret: "test-secret",
-    sessionCookieSecure: false
+    sessionCookieSecure: false,
+    aiEnabled: true,
+    llamaBaseUrl: "http://127.0.0.1:1",
+    geminiApiKey: "",
+    aiDataRoot: "/tmp/gdb-test-ai-data"
   };
 
   it("returns language capabilities without contacting the runner", async () => {
