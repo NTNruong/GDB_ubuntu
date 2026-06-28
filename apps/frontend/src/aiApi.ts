@@ -63,6 +63,20 @@ export const aiApi = {
       method: "DELETE"
     }).then(() => undefined);
   },
+  /** Delete a conversation-tree node and its whole subtree. */
+  deleteNode(id: string, nodeId: string): Promise<void> {
+    return request<{ ok: true }>(
+      `/api/ai/threads/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeId)}`,
+      { method: "DELETE" }
+    ).then(() => undefined);
+  },
+  /** Switch the active branch to the given leaf node. */
+  setLeaf(id: string, leafId: string): Promise<void> {
+    return request<{ ok: true }>(`/api/ai/threads/${encodeURIComponent(id)}/leaf`, {
+      method: "POST",
+      ...jsonBody({ leafId })
+    }).then(() => undefined);
+  },
 
   keyInfo(): Promise<AiKeyInfoResponse> {
     return request<AiKeyInfoResponse>("/api/ai/key");

@@ -744,17 +744,33 @@ export const AiContextSchema = z.object({
 });
 export type AiContext = z.infer<typeof AiContextSchema>;
 
-export const ChatSendRequestSchema = z.object({
-  /** Omitted ⇒ a new thread is created and auto-titled from the first message. */
-  threadId: AiThreadIdSchema.optional(),
-  /** An AI_MODELS id. */
-  model: z.string().min(1).max(64),
-  workflow: z.enum(AI_WORKFLOWS),
-  skill: AiSkillSchema,
-  message: z.string().min(1).max(MAX_AI_MESSAGE_BYTES),
-  context: AiContextSchema.optional()
-});
+/** A conversation-tree node id (randomBytes base64url). */
+export const AI_NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
+export const AiNodeIdSchema = z.string().regex(AI_NODE_ID_PATTERN, { message: "Invalid node id" });
+
+export const ChatSendRequestSchema = z
+  .object({
+    /** Omitted ⇒ a new thread is created and auto-titled from the first message. */
+    threadId: AiThreadIdSchema.optional(),
+    /** An AI_MODELS id. */
+    model: z.string().min(1).max(64),
+    workflow: z.enum(AI_WORKFLOWS),
+    skill: AiSkillSchema,
+    message: z.string().min(1).max(MAX_AI_MESSAGE_BYTES),
+    context: AiContextSchema.optional(),
+    /** Branch point: attach the new turn under this node (default = current leaf). */
+    parentId: AiNodeIdSchema.optional(),
+    /** Regenerate: `parentId` is a user node; produce a new assistant sibling under it (no new user message). */
+    regenerate: z.boolean().optional()
+  })
+  // A regenerate carries no user text but the schema still needs a non-empty
+  // `message`; callers send the existing user node's text. (No extra rule needed.)
+  ;
 export type ChatSendRequest = z.infer<typeof ChatSendRequestSchema>;
+
+/** Switch the active branch to a given leaf node. */
+export const SetLeafRequestSchema = z.object({ leafId: AiNodeIdSchema });
+export type SetLeafRequest = z.infer<typeof SetLeafRequestSchema>;
 
 export const ThreadRenameRequestSchema = z.object({
   title: z.string().min(1).max(120)
@@ -774,13 +790,34 @@ export type ChatRole = "system" | "user" | "assistant";
 export type ChatMessage = { role: ChatRole; content: string };
 
 export type AiThreadMessage = { role: ChatRole; content: string; at: number };
+
+/**
+ * A node in a thread's conversation **tree** (llama.cpp-style branching). Siblings
+ * that share a `parentId` are alternative variants (from edit/regenerate); the
+ * active branch is the path from the root to `AiThread.currentLeafId`.
+ */
+export type AiThreadNode = {
+  id: string;
+  /** Parent node id; `null` for a root turn. */
+  parentId: string | null;
+  role: "user" | "assistant";
+  content: string;
+  at: number;
+  /** Agentic (Antigravity) activity captured with an assistant node. */
+  steps?: AiAgentStep[];
+  /** Model id that produced an assistant node. */
+  model?: string;
+};
+
 export type AiThread = {
   id: string;
   title: string;
   model: string;
   createdAt: number;
   updatedAt: number;
-  messages: AiThreadMessage[];
+  nodes: AiThreadNode[];
+  /** Leaf of the active branch (what the UI renders); `null` for an empty thread. */
+  currentLeafId: string | null;
   /** Antigravity agent continuity: the last interaction id (server-side memory). */
   interactionId?: string;
   /** Antigravity agent continuity: the remote sandbox id to reuse across turns. */

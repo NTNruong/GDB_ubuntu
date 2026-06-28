@@ -1,14 +1,19 @@
 import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
   GraduationCap,
   KeyRound,
+  Pencil,
   Plus,
+  RefreshCw,
   Send,
   Terminal,
   Trash2,
   Wrench,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AiAgentStep,
   AiContext,
@@ -16,15 +21,14 @@ import type {
   AiLevel,
   AiModelsResponse,
   AiSkillKind,
+  AiThreadNode,
   AiThreadSummary,
   AiWorkflow,
   ChatSendRequest,
   Language
 } from "@internal/shared";
 import { aiApi } from "./aiApi.js";
-
-/** A transcript entry; assistant turns may carry agentic `steps` (Antigravity). */
-type UiMessage = { role: "user" | "assistant"; content: string; steps?: AiAgentStep[] };
+import { activePath, nodeMap, siblings, descendToLeaf } from "./aiTree.js";
 
 type AiPanelProps = {
   onClose: () => void;
@@ -35,6 +39,9 @@ type AiPanelProps = {
   /** The editor's currently selected language (drives the language_syntax skill). */
   currentLanguage: Language;
 };
+
+/** The in-flight turn rendered below the persisted branch while streaming. */
+type Pending = { user: string | null; assistant: string; steps: AiAgentStep[] };
 
 export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage }: AiPanelProps) {
   const [meta, setMeta] = useState<AiModelsResponse | null>(null);
@@ -47,7 +54,11 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
 
   const [threads, setThreads] = useState<AiThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [nodes, setNodes] = useState<AiThreadNode[]>([]);
+  const [currentLeafId, setCurrentLeafId] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+  const [editing, setEditing] = useState<{ nodeId: string; text: string } | null>(null);
+
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,8 +70,9 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // Re-fetch the model catalog (the enabled set depends on whether a Gemini key
-  // is present); keep the current model if still available, else pick the first.
+  const path = useMemo(() => activePath(nodes, currentLeafId), [nodes, currentLeafId]);
+  const byId = useMemo(() => nodeMap(nodes), [nodes]);
+
   const reloadModels = useCallback(() => {
     return aiApi
       .models()
@@ -72,7 +84,6 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       .catch(onAuthError);
   }, [onAuthError]);
 
-  // Load the model catalog, the user's thread list, and key status.
   useEffect(() => {
     let cancelled = false;
     void reloadModels();
@@ -118,10 +129,9 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       .catch(onAuthError);
   }, [reloadModels, onAuthError]);
 
-  // Keep the transcript scrolled to the latest message.
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [path, pending]);
 
   const refreshThreads = useCallback(() => {
     aiApi
@@ -130,28 +140,36 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       .catch(onAuthError);
   }, [onAuthError]);
 
-  const openThread = useCallback(
+  const loadThread = useCallback(
     (id: string) => {
-      setError(null);
-      aiApi
+      return aiApi
         .thread(id)
         .then((thread) => {
           setThreadId(thread.id);
-          setMessages(
-            thread.messages
-              .filter((message) => message.role !== "system")
-              .map((message) => ({ role: message.role as "user" | "assistant", content: message.content }))
-          );
+          setNodes(thread.nodes);
+          setCurrentLeafId(thread.currentLeafId);
         })
         .catch(onAuthError);
     },
     [onAuthError]
   );
 
+  const openThread = useCallback(
+    (id: string) => {
+      setError(null);
+      setEditing(null);
+      void loadThread(id);
+    },
+    [loadThread]
+  );
+
   const newThread = useCallback(() => {
     abortRef.current?.abort();
     setThreadId(null);
-    setMessages([]);
+    setNodes([]);
+    setCurrentLeafId(null);
+    setPending(null);
+    setEditing(null);
     setError(null);
   }, []);
 
@@ -168,94 +186,127 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
     [threadId, newThread, refreshThreads, onAuthError]
   );
 
+  // Core send used by normal send, edit-and-resend, and regenerate.
+  const runChat = useCallback(
+    (opts: { message: string; parentId?: string; regenerate?: boolean; showUser: string | null }) => {
+      if (streaming || !model) {
+        return;
+      }
+      setError(null);
+      setEditing(null);
+      setPending({ user: opts.showUser, assistant: "", steps: [] });
+      setStreaming(true);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const skill: ChatSendRequest["skill"] =
+        skillKind === "language_syntax"
+          ? { kind: "language_syntax", language: currentLanguage }
+          : { kind: "topic_roadmap", topic, level };
+
+      const request: ChatSendRequest = {
+        ...(threadId ? { threadId } : {}),
+        model,
+        workflow,
+        skill,
+        message: opts.message,
+        ...(opts.parentId ? { parentId: opts.parentId } : {}),
+        ...(opts.regenerate ? { regenerate: true } : {}),
+        ...(attachContext ? { context: collectContext() } : {})
+      };
+
+      aiApi
+        .chatStream(request, {
+          signal: controller.signal,
+          onToken: (token) => setPending((p) => (p ? { ...p, assistant: p.assistant + token } : p)),
+          onStep: (step) => setPending((p) => (p ? { ...p, steps: [...p.steps, step] } : p)),
+          onError: (message) => setError(message),
+          onDone: ({ threadId: id }) => {
+            void loadThread(id).then(() => setPending(null));
+            refreshThreads();
+          }
+        })
+        .catch((err) => {
+          if (controller.signal.aborted) return;
+          onAuthError(err);
+          setError(err instanceof Error ? err.message : "Request failed");
+        })
+        .finally(() => {
+          if (abortRef.current === controller) abortRef.current = null;
+          setStreaming(false);
+        });
+    },
+    [
+      streaming,
+      model,
+      skillKind,
+      currentLanguage,
+      topic,
+      level,
+      threadId,
+      workflow,
+      attachContext,
+      collectContext,
+      loadThread,
+      refreshThreads,
+      onAuthError
+    ]
+  );
+
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text || streaming || !model) {
-      return;
-    }
-    setError(null);
+    if (!text) return;
     setInput("");
-    setMessages((current) => [
-      ...current,
-      { role: "user", content: text },
-      { role: "assistant", content: "", steps: [] }
-    ]);
-    setStreaming(true);
+    runChat({ message: text, parentId: currentLeafId ?? undefined, showUser: text });
+  }, [input, currentLeafId, runChat]);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
+  const regenerate = useCallback(
+    (assistant: AiThreadNode) => {
+      if (!assistant.parentId) return;
+      const userText = byId.get(assistant.parentId)?.content ?? "";
+      runChat({ message: userText || "(regenerate)", parentId: assistant.parentId, regenerate: true, showUser: null });
+    },
+    [byId, runChat]
+  );
 
-    const skill: ChatSendRequest["skill"] =
-      skillKind === "language_syntax"
-        ? { kind: "language_syntax", language: currentLanguage }
-        : { kind: "topic_roadmap", topic, level };
+  const submitEdit = useCallback(() => {
+    if (!editing) return;
+    const node = byId.get(editing.nodeId);
+    const text = editing.text.trim();
+    if (!node || !text) return;
+    // Branch a new user message under the same parent (keeps the old one as a variant).
+    runChat({ message: text, parentId: node.parentId ?? undefined, showUser: text });
+  }, [editing, byId, runChat]);
 
-    const request: ChatSendRequest = {
-      ...(threadId ? { threadId } : {}),
-      model,
-      workflow,
-      skill,
-      message: text,
-      ...(attachContext ? { context: collectContext() } : {})
-    };
+  const removeNode = useCallback(
+    (nodeId: string) => {
+      if (!threadId) return;
+      aiApi
+        .deleteNode(threadId, nodeId)
+        .then(() => loadThread(threadId))
+        .catch(onAuthError);
+    },
+    [threadId, loadThread, onAuthError]
+  );
 
-    const appendToAssistant = (token: string): void => {
-      setMessages((current) => {
-        const next = current.slice();
-        const last = next[next.length - 1];
-        if (last && last.role === "assistant") {
-          next[next.length - 1] = { ...last, content: last.content + token };
-        }
-        return next;
-      });
-    };
+  const switchVariant = useCallback(
+    (node: AiThreadNode, dir: -1 | 1) => {
+      if (!threadId) return;
+      const sibs = siblings(nodes, node);
+      const index = sibs.findIndex((s) => s.id === node.id);
+      const target = sibs[index + dir];
+      if (!target) return;
+      const leaf = descendToLeaf(nodes, target.id);
+      setCurrentLeafId(leaf);
+      aiApi.setLeaf(threadId, leaf).catch(onAuthError);
+    },
+    [threadId, nodes, onAuthError]
+  );
 
-    const appendStep = (step: AiAgentStep): void => {
-      setMessages((current) => {
-        const next = current.slice();
-        const last = next[next.length - 1];
-        if (last && last.role === "assistant") {
-          next[next.length - 1] = { ...last, steps: [...(last.steps ?? []), step] };
-        }
-        return next;
-      });
-    };
-
-    aiApi
-      .chatStream(request, {
-        signal: controller.signal,
-        onToken: appendToAssistant,
-        onStep: appendStep,
-        onError: (message) => setError(message),
-        onDone: ({ threadId: id }) => {
-          setThreadId(id);
-          refreshThreads();
-        }
-      })
-      .catch((err) => {
-        if (controller.signal.aborted) return;
-        onAuthError(err);
-        setError(err instanceof Error ? err.message : "Request failed");
-      })
-      .finally(() => {
-        if (abortRef.current === controller) abortRef.current = null;
-        setStreaming(false);
-      });
-  }, [
-    input,
-    streaming,
-    model,
-    skillKind,
-    currentLanguage,
-    topic,
-    level,
-    threadId,
-    workflow,
-    attachContext,
-    collectContext,
-    refreshThreads,
-    onAuthError
-  ]);
+  const copy = useCallback((text: string) => {
+    void navigator.clipboard?.writeText(text);
+  }, []);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -421,23 +472,125 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       )}
 
       <div className="ai-messages" ref={scrollRef}>
-        {messages.length === 0 && (
+        {path.length === 0 && !pending && (
           <p className="ai-empty">Ask anything about programming, embedded or firmware — I&apos;ll teach in Vietnamese.</p>
         )}
-        {messages.map((message, index) => (
-          <div key={index} className={`ai-message ai-${message.role}`}>
-            <span className="ai-role">{message.role === "user" ? "You" : "Tutor"}</span>
-            {message.steps && message.steps.length > 0 && (
-              <details className="ai-agent-steps" open>
-                <summary>Agent activity ({message.steps.length})</summary>
-                {message.steps.map((step, stepIndex) => (
-                  <AgentStepView key={stepIndex} step={step} />
-                ))}
-              </details>
+        {path.map((node) => {
+          const sibs = siblings(nodes, node);
+          const variantIndex = sibs.findIndex((s) => s.id === node.id);
+          const isEditing = editing?.nodeId === node.id;
+          return (
+            <div key={node.id} className={`ai-message ai-${node.role}`}>
+              <span className="ai-role">{node.role === "user" ? "You" : "Tutor"}</span>
+              {node.role === "assistant" && node.steps && node.steps.length > 0 && (
+                <details className="ai-agent-steps" open>
+                  <summary>Agent activity ({node.steps.length})</summary>
+                  {node.steps.map((step, stepIndex) => (
+                    <AgentStepView key={stepIndex} step={step} />
+                  ))}
+                </details>
+              )}
+              {isEditing ? (
+                <div className="ai-edit">
+                  <textarea
+                    value={editing?.text ?? ""}
+                    rows={3}
+                    onChange={(event) => setEditing({ nodeId: node.id, text: event.target.value })}
+                  />
+                  <div className="ai-edit-actions">
+                    <button type="button" className="ai-link" onClick={submitEdit} disabled={!editing?.text.trim()}>
+                      Send
+                    </button>
+                    <button type="button" className="ai-link" onClick={() => setEditing(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="ai-bubble">{node.content}</div>
+              )}
+              {!isEditing && (
+                <div className="ai-msg-actions">
+                  {sibs.length > 1 && (
+                    <span className="ai-variant-nav">
+                      <button
+                        type="button"
+                        className="ai-icon-btn"
+                        title="Previous variant"
+                        disabled={variantIndex <= 0}
+                        onClick={() => switchVariant(node, -1)}
+                      >
+                        <ChevronLeft size={13} />
+                      </button>
+                      <span>
+                        {variantIndex + 1}/{sibs.length}
+                      </span>
+                      <button
+                        type="button"
+                        className="ai-icon-btn"
+                        title="Next variant"
+                        disabled={variantIndex >= sibs.length - 1}
+                        onClick={() => switchVariant(node, 1)}
+                      >
+                        <ChevronRight size={13} />
+                      </button>
+                    </span>
+                  )}
+                  <button type="button" className="ai-icon-btn" title="Copy" onClick={() => copy(node.content)}>
+                    <Copy size={13} />
+                  </button>
+                  {node.role === "user" && (
+                    <button
+                      type="button"
+                      className="ai-icon-btn"
+                      title="Edit & resend"
+                      onClick={() => setEditing({ nodeId: node.id, text: node.content })}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  {node.role === "assistant" && (
+                    <button
+                      type="button"
+                      className="ai-icon-btn"
+                      title="Regenerate"
+                      disabled={streaming}
+                      onClick={() => regenerate(node)}
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                  )}
+                  <button type="button" className="ai-icon-btn" title="Delete" onClick={() => removeNode(node.id)}>
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {pending && (
+          <>
+            {pending.user !== null && (
+              <div className="ai-message ai-user">
+                <span className="ai-role">You</span>
+                <div className="ai-bubble">{pending.user}</div>
+              </div>
             )}
-            <div className="ai-bubble">{message.content || (streaming && index === messages.length - 1 ? "…" : "")}</div>
-          </div>
-        ))}
+            <div className="ai-message ai-assistant">
+              <span className="ai-role">Tutor</span>
+              {pending.steps.length > 0 && (
+                <details className="ai-agent-steps" open>
+                  <summary>Agent activity ({pending.steps.length})</summary>
+                  {pending.steps.map((step, stepIndex) => (
+                    <AgentStepView key={stepIndex} step={step} />
+                  ))}
+                </details>
+              )}
+              <div className="ai-bubble">{pending.assistant || "…"}</div>
+            </div>
+          </>
+        )}
         {error && <p className="ai-error">{error}</p>}
       </div>
 

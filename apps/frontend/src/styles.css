@@ -2034,6 +2034,56 @@ h1.brand {
   border: 1px solid var(--border-subtle);
 }
 
+/* Per-message actions (copy / edit / regenerate / delete) + variant switcher */
+.ai-msg-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.ai-message:hover .ai-msg-actions,
+.ai-message:focus-within .ai-msg-actions {
+  opacity: 1;
+}
+
+.ai-msg-actions .ai-icon-btn {
+  padding: 2px;
+}
+
+.ai-variant-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: var(--space-xs);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.ai-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ai-edit textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.ai-edit-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
 .ai-error {
   color: hsl(0, 70%, 70%);
   font-size: 0.82rem;

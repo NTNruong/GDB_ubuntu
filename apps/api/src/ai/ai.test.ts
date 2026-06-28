@@ -8,14 +8,19 @@ import { extractLlamaToken } from "./backends/llama.js";
 import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
 import { parseSseData } from "./sse.js";
 import {
-  appendMessages,
+  addNode,
   createThread,
+  deleteSubtree,
   deleteThread,
   listThreads,
+  migrateThread,
+  pathToLeaf,
   readThread,
+  setCurrentLeaf,
   titleFromMessage
 } from "./threads.js";
 import { PathError } from "../pathSafety.js";
+import { writeFile } from "node:fs/promises";
 
 async function* bytes(...chunks: string[]): AsyncGenerator<Uint8Array> {
   const encoder = new TextEncoder();
@@ -141,15 +146,13 @@ describe("ai thread store", () => {
     expect(titleFromMessage("   ")).toBe("New chat");
   });
 
-  it("creates, appends, lists and deletes threads", async () => {
+  it("creates, appends nodes, lists and deletes threads", async () => {
     const thread = await createThread(dir, "local-gemma-e4b", "First");
-    await appendMessages(dir, thread.id, [
-      { role: "user", content: "hi", at: 1 },
-      { role: "assistant", content: "hello", at: 2 }
-    ]);
+    const user = await addNode(dir, thread.id, { parentId: null, role: "user", content: "hi" });
+    await addNode(dir, thread.id, { parentId: user.id, role: "assistant", content: "hello" });
 
     const loaded = await readThread(dir, thread.id);
-    expect(loaded.messages.map((m) => m.content)).toEqual(["hi", "hello"]);
+    expect(pathToLeaf(loaded, loaded.currentLeafId).map((n) => n.content)).toEqual(["hi", "hello"]);
 
     const list = await listThreads(dir);
     expect(list).toHaveLength(1);
@@ -158,6 +161,54 @@ describe("ai thread store", () => {
     await deleteThread(dir, thread.id);
     expect(await listThreads(dir)).toHaveLength(0);
     await expect(readThread(dir, thread.id)).rejects.toBeInstanceOf(PathError);
+  });
+
+  it("branches on edit and switches the active path via the leaf", async () => {
+    const thread = await createThread(dir, "m", "t");
+    const u1 = await addNode(dir, thread.id, { parentId: null, role: "user", content: "Q1" });
+    const a1 = await addNode(dir, thread.id, { parentId: u1.id, role: "assistant", content: "A1" });
+    // Edit Q1 → a sibling user node under the same (null) parent + its answer.
+    const u2 = await addNode(dir, thread.id, { parentId: null, role: "user", content: "Q1b" });
+    const a2 = await addNode(dir, thread.id, { parentId: u2.id, role: "assistant", content: "A2" });
+
+    let loaded = await readThread(dir, thread.id);
+    // currentLeafId follows the latest add (a2) → second branch.
+    expect(pathToLeaf(loaded, loaded.currentLeafId).map((n) => n.content)).toEqual(["Q1b", "A2"]);
+    // Both Q1 and Q1b are root variants.
+    expect(loaded.nodes.filter((n) => n.parentId === null)).toHaveLength(2);
+
+    // Switch back to the first branch.
+    await setCurrentLeaf(dir, thread.id, a1.id);
+    loaded = await readThread(dir, thread.id);
+    expect(pathToLeaf(loaded, loaded.currentLeafId).map((n) => n.content)).toEqual(["Q1", "A1"]);
+
+    // Deleting u2 prunes its subtree (a2) and repoints the leaf off the dead branch.
+    await deleteSubtree(dir, thread.id, u2.id);
+    loaded = await readThread(dir, thread.id);
+    expect(loaded.nodes.some((n) => n.id === a2.id)).toBe(false);
+    expect(loaded.nodes.some((n) => n.id === u2.id)).toBe(false);
+  });
+
+  it("migrates a legacy linear thread to a node chain on read", async () => {
+    const legacy = {
+      id: "legacy01",
+      title: "Old",
+      model: "m",
+      createdAt: 1,
+      updatedAt: 2,
+      messages: [
+        { role: "user", content: "hi", at: 1 },
+        { role: "assistant", content: "hello", at: 2 }
+      ]
+    };
+    await writeFile(path.join(dir, "legacy01.json"), JSON.stringify(legacy));
+    const loaded = await readThread(dir, "legacy01");
+    expect(loaded.nodes).toHaveLength(2);
+    expect(pathToLeaf(loaded, loaded.currentLeafId).map((n) => n.content)).toEqual(["hi", "hello"]);
+    // migrateThread is a pure helper: the chain links assistant→user.
+    const migrated = migrateThread(legacy as never);
+    expect(migrated.nodes[1]?.parentId).toBe(migrated.nodes[0]?.id);
+    expect(migrated.nodes[0]?.parentId).toBeNull();
   });
 
   it("rejects an unsafe thread id", async () => {
