@@ -62,26 +62,21 @@ test("runs a C++ hello world snippet", async ({ page }) => {
   await expect(page.locator(".terminal")).toContainText("Hello World", { timeout: 30_000 });
 });
 
-test("advanced suggestions toggle: default on, toggles, not persisted, all languages", async ({ page }) => {
+test("advanced suggestions toggle: default on, toggles, persisted (settings panel)", async ({ page }) => {
   await page.goto("/");
+  // The advanced-suggestions switch now lives in the ⚙ settings popover.
+  await page.getByTestId("btn-settings").click();
   const toggle = page.getByTestId("btn-suggest-toggle");
-  // Default language is C++ → toggle visible and ON by default.
   await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
 
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
 
-  // Not persisted: a reload returns to the default ON state.
+  // Persisted: a reload keeps the OFF state (localStorage-backed settings).
   await page.reload();
-  await expect(page.getByTestId("btn-suggest-toggle")).toHaveAttribute("aria-pressed", "true");
-
-  // Every language supports the switch now — static tables for six, the gated TS worker
-  // for JavaScript (Wave 4).
-  for (const lang of ["c", "cpp", "python", "java", "go", "rust", "javascript"]) {
-    await page.getByLabel("Language").selectOption(lang);
-    await expect(page.getByTestId("btn-suggest-toggle")).toBeVisible();
-  }
+  await page.getByTestId("btn-settings").click();
+  await expect(page.getByTestId("btn-suggest-toggle")).toHaveAttribute("aria-pressed", "false");
 });
 
 test("accepting a function completion inserts its parameters (ISSUE-063)", async ({ page }) => {
@@ -192,11 +187,14 @@ test("Go suggestions are receiver-aware after a package dot (ISSUE-067)", async 
 test("JavaScript suggestions OFF hides TS worker IntelliSense (ISSUE-066)", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Language").selectOption("javascript");
+  await page.getByTestId("btn-settings").click();
   const toggle = page.getByTestId("btn-suggest-toggle");
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   // Turn the advanced-suggestions switch OFF.
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  // Close the settings popover so it doesn't overlay the editor for the type test.
+  await page.getByTestId("btn-settings").click();
 
   const editor = page.locator(".monaco-editor").first();
   await editor.click();

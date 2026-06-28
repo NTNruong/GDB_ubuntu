@@ -13,6 +13,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Settings,
   SkipForward,
   Sparkles,
   Square,
@@ -42,7 +43,6 @@ import { parseBreakpointText, toggleBreakpointText } from "./breakpoints";
 import {
   registerSuggestions,
   languageHasSuggestions,
-  supportsSuggestionToggle,
   disableJavascriptWorkerCompletions
 } from "./langCompletions";
 import { parseCompilerDiagnostics, type Diagnostic } from "./diagnostics";
@@ -51,6 +51,7 @@ import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
 import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
+import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "./settings";
 import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
 import {
@@ -123,11 +124,18 @@ export function App() {
   const [isDraggingX, setIsDraggingX] = useState(false);
   const [variablesHeight, setVariablesHeight] = useState<number | undefined>(undefined);
   const [isDraggingVSplit, setIsDraggingVSplit] = useState(false);
-  // Advanced C/C++ suggestions switch — default ON, not persisted (always ON on
-  // load). `monacoReady` flips on editor mount so the registration effect re-runs
+  // Persisted editor/UI preferences (font size, word wrap, advanced suggestions,
+  // theme). `monacoReady` flips on editor mount so the registration effect re-runs
   // (monacoRef alone doesn't trigger a render).
-  const [suggestEnabled, setSuggestEnabled] = useState(true);
+  const [settings, updateSettings] = useSettings();
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [monacoReady, setMonacoReady] = useState(false);
+
+  // Apply the persisted theme to <html> so the [data-theme="light"] token overrides
+  // (and Monaco's theme below) take effect across the whole app.
+  useEffect(() => {
+    document.documentElement.dataset.theme = settings.theme;
+  }, [settings.theme]);
 
   // --- Accounts + file explorer (Phase 2) ---------------------------------
   const [user, setUser] = useState<string | null>(null);
@@ -1392,10 +1400,10 @@ export function App() {
   useEffect(() => {
     const monaco = monacoRef.current;
     if (!monaco || !monacoReady) return;
-    if (!suggestEnabled || !languageHasSuggestions(language)) return;
+    if (!settings.suggestions || !languageHasSuggestions(language)) return;
     const disposable = registerSuggestions(monaco, language);
     return () => disposable?.dispose();
-  }, [suggestEnabled, language, monacoReady]);
+  }, [settings.suggestions, language, monacoReady]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -1587,19 +1595,88 @@ export function App() {
             ))}
           </select>
         )}
-        {supportsSuggestionToggle(language) && (
+        <div className="topbar-settings">
           <button
             type="button"
             className="topbar-icon-btn"
-            data-testid="btn-suggest-toggle"
-            aria-label="Advanced suggestions"
-            title={`Advanced suggestions: ${suggestEnabled ? "on" : "off"}`}
-            aria-pressed={suggestEnabled}
-            onClick={() => setSuggestEnabled((value) => !value)}
+            data-testid="btn-settings"
+            aria-label="Settings"
+            title="Settings"
+            aria-pressed={settingsMenuOpen}
+            onClick={() => setSettingsMenuOpen((value) => !value)}
           >
-            <Sparkles size={16} />
+            <Settings size={16} />
           </button>
-        )}
+          {settingsMenuOpen && (
+            <>
+              <div className="settings-overlay" onClick={() => setSettingsMenuOpen(false)} />
+              <div className="settings-popover" role="menu" aria-label="Editor settings">
+                <div className="settings-row">
+                  <span>Font size</span>
+                  <div className="settings-stepper">
+                    <button
+                      type="button"
+                      aria-label="Decrease font size"
+                      disabled={settings.fontSize <= FONT_SIZE_MIN}
+                      onClick={() => updateSettings({ fontSize: Math.max(FONT_SIZE_MIN, settings.fontSize - 1) })}
+                    >
+                      −
+                    </button>
+                    <span className="settings-stepper-value">{settings.fontSize}</span>
+                    <button
+                      type="button"
+                      aria-label="Increase font size"
+                      disabled={settings.fontSize >= FONT_SIZE_MAX}
+                      onClick={() => updateSettings({ fontSize: Math.min(FONT_SIZE_MAX, settings.fontSize + 1) })}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <span>Word wrap</span>
+                  <button
+                    type="button"
+                    className={`switch${settings.wordWrap ? " on" : ""}`}
+                    aria-label="Word wrap"
+                    aria-pressed={settings.wordWrap}
+                    onClick={() => updateSettings({ wordWrap: !settings.wordWrap })}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+                <div className="settings-row">
+                  <span className="settings-label">
+                    <Sparkles size={13} /> Advanced suggestions
+                  </span>
+                  <button
+                    type="button"
+                    className={`switch${settings.suggestions ? " on" : ""}`}
+                    data-testid="btn-suggest-toggle"
+                    aria-label="Advanced suggestions"
+                    aria-pressed={settings.suggestions}
+                    onClick={() => updateSettings({ suggestions: !settings.suggestions })}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+                <div className="settings-row">
+                  <span>Light theme</span>
+                  <button
+                    type="button"
+                    className={`switch${settings.theme === "light" ? " on" : ""}`}
+                    data-testid="btn-theme-toggle"
+                    aria-label="Light theme"
+                    aria-pressed={settings.theme === "light"}
+                    onClick={() => updateSettings({ theme: settings.theme === "light" ? "dark" : "light" })}
+                  >
+                    <span className="switch-knob" />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <input
           aria-label="Arguments"
           className="args-input"
@@ -1729,7 +1806,7 @@ export function App() {
           <Editor
             height="100%"
             language={language === "cpp" ? "cpp" : language}
-            theme="vs-dark"
+            theme={settings.theme === "light" ? "vs" : "vs-dark"}
             path={activePath}
             value={activeContent}
             onChange={(value) => setActiveContent(value ?? "")}
@@ -1737,7 +1814,8 @@ export function App() {
             onMount={onEditorMount}
             options={{
               minimap: { enabled: false },
-              fontSize: 14,
+              fontSize: settings.fontSize,
+              wordWrap: settings.wordWrap ? "on" : "off",
               lineNumbersMinChars: 4,
               glyphMargin: true,
               scrollBeyondLastLine: false,
