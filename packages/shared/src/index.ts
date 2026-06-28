@@ -748,6 +748,10 @@ export type AiContext = z.infer<typeof AiContextSchema>;
 export const AI_NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
 export const AiNodeIdSchema = z.string().regex(AI_NODE_ID_PATTERN, { message: "Invalid node id" });
 
+/** Reasoning effort hint for reasoning-capable local models (`off` = disable). */
+export const AI_REASONING_EFFORTS = ["off", "low", "medium", "high", "max"] as const;
+export type AiReasoningEffort = (typeof AI_REASONING_EFFORTS)[number];
+
 export const ChatSendRequestSchema = z
   .object({
     /** Omitted ⇒ a new thread is created and auto-titled from the first message. */
@@ -761,7 +765,9 @@ export const ChatSendRequestSchema = z
     /** Branch point: attach the new turn under this node (default = current leaf). */
     parentId: AiNodeIdSchema.optional(),
     /** Regenerate: `parentId` is a user node; produce a new assistant sibling under it (no new user message). */
-    regenerate: z.boolean().optional()
+    regenerate: z.boolean().optional(),
+    /** Local-model reasoning effort hint; ignored by backends that don't support it. */
+    reasoningEffort: z.enum(AI_REASONING_EFFORTS).optional()
   })
   // A regenerate carries no user text but the schema still needs a non-empty
   // `message`; callers send the existing user node's text. (No extra rule needed.)
@@ -850,9 +856,12 @@ export type AiAgentStep =
   | { kind: "image"; mimeType: string; dataBase64: string }
   | { kind: "thought"; text: string };
 
+/** Token accounting for one assistant turn (whatever the backend reports). */
+export type AiUsage = { promptTokens: number; completionTokens: number; contextSize?: number };
+
 /** SSE events streamed from POST /api/ai/chat. */
 export type AiStreamEvent =
   | { type: "token"; data: string }
   | { type: "step"; step: AiAgentStep }
-  | { type: "done"; threadId: string; title: string }
+  | { type: "done"; threadId: string; title: string; usage?: AiUsage }
   | { type: "error"; message: string };

@@ -11,6 +11,7 @@ import {
   ThreadRenameRequestSchema,
   type AiAgentStep,
   type AiKeyInfoResponse,
+  type AiUsage,
   type AiModelsResponse,
   type AiThreadListResponse,
   type AiThreadResponse,
@@ -262,6 +263,7 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     let assistant = "";
     const agentSteps: AiAgentStep[] = [];
     let agentMeta: { interactionId?: string; environmentId?: string } | undefined;
+    let usage: AiUsage | undefined;
     let persisted = false;
 
     // Persist the turn into the tree: (maybe) a user node, then the assistant node,
@@ -314,14 +316,27 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
         }
         agentMeta = next.value;
       } else {
-        for await (const token of streamChat(config, model, messages, controller.signal, effectiveGeminiKey)) {
-          assistant += token;
-          sse(reply, { type: "token", data: token });
+        // Manual iteration (not for-await) so we can read the generator's return
+        // value — the token usage reported on the final chunk.
+        const chat = streamChat(
+          config,
+          model,
+          messages,
+          controller.signal,
+          effectiveGeminiKey,
+          body.reasoningEffort
+        );
+        let next = await chat.next();
+        while (!next.done) {
+          assistant += next.value;
+          sse(reply, { type: "token", data: next.value });
+          next = await chat.next();
         }
+        usage = next.value;
       }
       // Persist BEFORE `done` so the client's post-done reload sees the new nodes.
       await persistTurn();
-      sse(reply, { type: "done", threadId: thread.id, title: thread.title });
+      sse(reply, { type: "done", threadId: thread.id, title: thread.title, ...(usage ? { usage } : {}) });
     } catch (error) {
       if (!controller.signal.aborted) {
         const message = error instanceof Error ? error.message : "AI request failed";

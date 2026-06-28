@@ -1,4 +1,4 @@
-import type { ChatMessage } from "@internal/shared";
+import type { AiUsage, ChatMessage } from "@internal/shared";
 import { parseSseData } from "../sse.js";
 
 type GeminiPart = { text: string };
@@ -53,15 +53,41 @@ export function extractGeminiToken(data: string): string {
 }
 
 /**
+ * Extract token accounting from a Gemini chunk's `usageMetadata`
+ * (`{promptTokenCount,candidatesTokenCount}`); the final chunk carries the totals.
+ */
+export function extractGeminiUsage(data: string): AiUsage | null {
+  if (data === "") {
+    return null;
+  }
+  try {
+    const json = JSON.parse(data) as {
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+    };
+    const meta = json.usageMetadata;
+    if (!meta) {
+      return null;
+    }
+    return {
+      promptTokens: meta.promptTokenCount ?? 0,
+      completionTokens: meta.candidatesTokenCount ?? 0
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Stream a generation from the Google AI Studio API
- * (`models/{model}:streamGenerateContent?alt=sse`), yielding text tokens.
+ * (`models/{model}:streamGenerateContent?alt=sse`), yielding text tokens and
+ * returning the final token usage.
  */
 export async function* streamGemini(
   apiKey: string,
   remoteModelId: string,
   messages: ChatMessage[],
   signal: AbortSignal
-): AsyncGenerator<string> {
+): AsyncGenerator<string, AiUsage | undefined> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     remoteModelId
   )}:streamGenerateContent?alt=sse`;
@@ -75,10 +101,16 @@ export async function* streamGemini(
     const text = await response.text().catch(() => "");
     throw new Error(`Gemini returned ${response.status}: ${text || "no response body"}`);
   }
+  let usage: AiUsage | undefined;
   for await (const data of parseSseData(response.body)) {
+    const chunkUsage = extractGeminiUsage(data);
+    if (chunkUsage) {
+      usage = chunkUsage;
+    }
     const token = extractGeminiToken(data);
     if (token) {
       yield token;
     }
   }
+  return usage;
 }

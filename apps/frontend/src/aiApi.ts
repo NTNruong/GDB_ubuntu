@@ -3,6 +3,7 @@ import type {
   AiKeyInfoResponse,
   AiModelsResponse,
   AiStreamEvent,
+  AiUsage,
   AiThreadListResponse,
   AiThreadResponse,
   ChatSendRequest
@@ -37,7 +38,7 @@ export type ChatStreamHandlers = {
   onToken: (token: string) => void;
   /** Agentic (Antigravity) activity item — tool/code/image step. */
   onStep?: (step: AiAgentStep) => void;
-  onDone: (event: { threadId: string; title: string }) => void;
+  onDone: (event: { threadId: string; title: string; usage?: AiUsage }) => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
 };
@@ -130,7 +131,7 @@ export const aiApi = {
       } else if (event.type === "step") {
         handlers.onStep?.(event.step);
       } else if (event.type === "done") {
-        handlers.onDone({ threadId: event.threadId, title: event.title });
+        handlers.onDone({ threadId: event.threadId, title: event.title, usage: event.usage });
       } else if (event.type === "error") {
         handlers.onError(event.message);
       }

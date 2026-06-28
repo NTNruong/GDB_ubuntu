@@ -8,21 +8,25 @@ import {
   Plus,
   RefreshCw,
   Send,
+  Settings,
   Terminal,
   Trash2,
   Wrench,
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AI_REASONING_EFFORTS } from "@internal/shared";
 import type {
   AiAgentStep,
   AiContext,
   AiKeyInfoResponse,
   AiLevel,
   AiModelsResponse,
+  AiReasoningEffort,
   AiSkillKind,
   AiThreadNode,
   AiThreadSummary,
+  AiUsage,
   AiWorkflow,
   ChatSendRequest,
   Language
@@ -53,6 +57,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
   const [topic, setTopic] = useState<string>("");
   const [level, setLevel] = useState<AiLevel>("fresher");
   const [attachContext, setAttachContext] = useState(true);
+  const [reasoningEffort, setReasoningEffort] = useState<AiReasoningEffort>("off");
+  const [usage, setUsage] = useState<AiUsage | null>(null);
 
   const [threads, setThreads] = useState<AiThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -68,12 +74,24 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
   const [keyInfo, setKeyInfo] = useState<AiKeyInfoResponse | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [showKeyForm, setShowKeyForm] = useState(false);
+  // Settings eat a lot of vertical space; collapse them behind a gear so the chat
+  // gets the height. Open for a fresh chat, auto-collapsed when opening a thread.
+  const [settingsOpen, setSettingsOpen] = useState(true);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const path = useMemo(() => activePath(nodes, currentLeafId), [nodes, currentLeafId]);
   const byId = useMemo(() => nodeMap(nodes), [nodes]);
+
+  // One-line summary shown when the settings block is collapsed.
+  const selectedModel = meta?.models.find((m) => m.id === model);
+  const isLocal = selectedModel?.backend === "llama";
+  const modelLabel = selectedModel?.label ?? model;
+  const workflowLabel = meta?.workflows.find((w) => w.id === workflow)?.label ?? workflow;
+  const topicLabel = meta?.topics.find((t) => t.id === topic)?.label ?? topic;
+  const skillSummary = skillKind === "language_syntax" ? currentLanguage : `${topicLabel} · ${level}`;
+  const settingsSummary = [modelLabel, workflowLabel, skillSummary].filter(Boolean).join(" · ");
 
   const reloadModels = useCallback(() => {
     return aiApi
@@ -150,6 +168,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
           setThreadId(thread.id);
           setNodes(thread.nodes);
           setCurrentLeafId(thread.currentLeafId);
+          setSettingsOpen(false);
         })
         .catch(onAuthError);
     },
@@ -173,6 +192,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
     setPending(null);
     setEditing(null);
     setError(null);
+    setSettingsOpen(true);
   }, []);
 
   const deleteThread = useCallback(
@@ -196,6 +216,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       }
       setError(null);
       setEditing(null);
+      setUsage(null);
       setPending({ user: opts.showUser, assistant: "", steps: [] });
       setStreaming(true);
 
@@ -215,6 +236,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         message: opts.message,
         ...(opts.parentId ? { parentId: opts.parentId } : {}),
         ...(opts.regenerate ? { regenerate: true } : {}),
+        ...(isLocal && reasoningEffort !== "off" ? { reasoningEffort } : {}),
         ...(attachContext ? { context: collectContext() } : {})
       };
 
@@ -224,7 +246,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
           onToken: (token) => setPending((p) => (p ? { ...p, assistant: p.assistant + token } : p)),
           onStep: (step) => setPending((p) => (p ? { ...p, steps: [...p.steps, step] } : p)),
           onError: (message) => setError(message),
-          onDone: ({ threadId: id }) => {
+          onDone: ({ threadId: id, usage: turnUsage }) => {
+            setUsage(turnUsage ?? null);
             void loadThread(id).then(() => setPending(null));
             refreshThreads();
           }
@@ -248,6 +271,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       level,
       threadId,
       workflow,
+      isLocal,
+      reasoningEffort,
       attachContext,
       collectContext,
       loadThread,
@@ -324,6 +349,16 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
           <span>Learning assistant</span>
         </span>
         <div className="ai-panel-header-actions">
+          <button
+            type="button"
+            className={`ai-icon-btn${settingsOpen ? " is-active" : ""}`}
+            title="Settings"
+            aria-label="Settings"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen((open) => !open)}
+          >
+            <Settings size={15} />
+          </button>
           <button type="button" className="ai-icon-btn" title="New chat" aria-label="New chat" onClick={newThread}>
             <Plus size={15} />
           </button>
@@ -333,7 +368,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         </div>
       </header>
 
-      <div className="ai-controls">
+      {settingsOpen && (
+        <div className="ai-controls">
         <label className="ai-field">
           <span>Model</span>
           <select data-testid="ai-model-select" value={model} onChange={(event) => setModel(event.target.value)}>
@@ -396,6 +432,22 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
             </label>
           </div>
         )}
+        {isLocal && (
+          <label className="ai-field">
+            <span>Reasoning effort</span>
+            <select
+              data-testid="ai-effort"
+              value={reasoningEffort}
+              onChange={(event) => setReasoningEffort(event.target.value as AiReasoningEffort)}
+            >
+              {AI_REASONING_EFFORTS.map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="ai-checkbox">
           <input type="checkbox" checked={attachContext} onChange={(event) => setAttachContext(event.target.checked)} />
           <span>Attach current code &amp; output</span>
@@ -439,7 +491,20 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
             </button>
           )}
         </div>
-      </div>
+        </div>
+      )}
+
+      {!settingsOpen && (
+        <button
+          type="button"
+          className="ai-settings-summary"
+          title="Show settings"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <Settings size={13} />
+          <span className="ai-settings-summary-text">{settingsSummary}</span>
+        </button>
+      )}
 
       {threads.length > 0 && (
         <div className="ai-threads">
@@ -597,6 +662,14 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         )}
         {error && <p className="ai-error">{error}</p>}
       </div>
+
+      {usage && (
+        <div className="ai-token-meter" title="Token usage for the last answer">
+          {usage.promptTokens.toLocaleString()} + {usage.completionTokens.toLocaleString()} ={" "}
+          {(usage.promptTokens + usage.completionTokens).toLocaleString()}
+          {usage.contextSize ? ` / ${usage.contextSize.toLocaleString()}` : ""} tokens
+        </div>
+      )}
 
       <form
         className="ai-composer"

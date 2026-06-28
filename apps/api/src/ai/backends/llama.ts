@@ -1,4 +1,4 @@
-import type { ChatMessage } from "@internal/shared";
+import type { AiReasoningEffort, AiUsage, ChatMessage } from "@internal/shared";
 import { parseSseData } from "../sse.js";
 
 /**
@@ -19,6 +19,62 @@ export function extractLlamaToken(data: string): string {
 }
 
 /**
+ * Extract token accounting from the final `stream_options.include_usage` chunk
+ * (`{usage:{prompt_tokens,completion_tokens}}`, with empty `choices`). Returns
+ * null for any chunk without a `usage` field.
+ */
+export function extractLlamaUsage(data: string): AiUsage | null {
+  if (data === "[DONE]" || data === "") {
+    return null;
+  }
+  try {
+    const json = JSON.parse(data) as { usage?: { prompt_tokens?: number; completion_tokens?: number } };
+    if (!json.usage) {
+      return null;
+    }
+    return {
+      promptTokens: json.usage.prompt_tokens ?? 0,
+      completionTokens: json.usage.completion_tokens ?? 0
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Cache the model's context window per server so we only hit `/props` once. */
+const contextSizeCache = new Map<string, number>();
+
+async function fetchContextSize(baseUrl: string, apiKey: string): Promise<number | undefined> {
+  const base = baseUrl.replace(/\/$/, "");
+  const cached = contextSizeCache.get(base);
+  if (cached !== undefined) {
+    return cached;
+  }
+  try {
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers.authorization = `Bearer ${apiKey}`;
+    }
+    const response = await fetch(`${base}/props`, { headers });
+    if (!response.ok) {
+      return undefined;
+    }
+    const json = (await response.json()) as {
+      default_generation_settings?: { n_ctx?: number };
+      n_ctx?: number;
+    };
+    const size = json.default_generation_settings?.n_ctx ?? json.n_ctx;
+    if (typeof size === "number") {
+      contextSizeCache.set(base, size);
+      return size;
+    }
+  } catch {
+    // best-effort: a missing/old /props just means the meter shows no context size
+  }
+  return undefined;
+}
+
+/**
  * Stream a chat completion from a local llama.cpp server (OpenAI-compatible
  * `/v1/chat/completions`, `stream: true`), yielding text tokens as they arrive.
  * When `apiKey` is set it is sent as `Authorization: Bearer …` — this matches
@@ -31,29 +87,49 @@ export async function* streamLlama(
   remoteModelId: string,
   messages: ChatMessage[],
   signal: AbortSignal,
-  apiKey = ""
-): AsyncGenerator<string> {
+  apiKey = "",
+  reasoningEffort: AiReasoningEffort = "off"
+): AsyncGenerator<string, AiUsage | undefined> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (apiKey) {
     headers.authorization = `Bearer ${apiKey}`;
   }
+  const body: Record<string, unknown> = {
+    model: remoteModelId,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true }
+  };
+  // Harmless on builds that don't support it; drives reasoning depth where they do.
+  if (reasoningEffort !== "off") {
+    body.reasoning_effort = reasoningEffort;
+  }
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ model: remoteModelId, messages, stream: true }),
+    body: JSON.stringify(body),
     signal
   });
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => "");
     throw new Error(`llama.cpp returned ${response.status}: ${text || "no response body"}`);
   }
+  let usage: AiUsage | undefined;
   for await (const data of parseSseData(response.body)) {
     if (data === "[DONE]") {
       break;
+    }
+    const chunkUsage = extractLlamaUsage(data);
+    if (chunkUsage) {
+      usage = chunkUsage;
     }
     const token = extractLlamaToken(data);
     if (token) {
       yield token;
     }
   }
+  if (usage) {
+    usage.contextSize = await fetchContextSize(baseUrl, apiKey);
+  }
+  return usage;
 }

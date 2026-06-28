@@ -1841,6 +1841,38 @@ h1.brand {
   border-bottom: 1px solid var(--border-subtle);
 }
 
+.ai-icon-btn.is-active {
+  color: var(--text-accent);
+  background: var(--bg-layer-3);
+}
+
+/* Compact one-line summary shown when the settings block is collapsed */
+.ai-settings-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  padding: var(--space-xs) var(--space-md);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-settings-summary:hover {
+  background: var(--bg-layer-2);
+  color: var(--text-secondary);
+}
+
+.ai-settings-summary-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-field {
   display: flex;
   flex-direction: column;
@@ -2087,6 +2119,14 @@ h1.brand {
 .ai-error {
   color: hsl(0, 70%, 70%);
   font-size: 0.82rem;
+}
+
+.ai-token-meter {
+  padding: 2px var(--space-md);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .ai-composer {

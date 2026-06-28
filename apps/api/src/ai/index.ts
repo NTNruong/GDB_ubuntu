@@ -1,4 +1,11 @@
-import { AI_MODELS, type AiModel, type AiStreamEvent, type ChatMessage } from "@internal/shared";
+import {
+  AI_MODELS,
+  type AiModel,
+  type AiReasoningEffort,
+  type AiStreamEvent,
+  type AiUsage,
+  type ChatMessage
+} from "@internal/shared";
 import type { ApiConfig } from "../config.js";
 import { streamAntigravity, type AgentRunResult } from "./backends/antigravity.js";
 import { streamGemini } from "./backends/gemini.js";
@@ -41,12 +48,20 @@ export function streamChat(
   model: AiModel,
   messages: ChatMessage[],
   signal: AbortSignal,
-  geminiApiKey: string
-): AsyncGenerator<string> {
+  geminiApiKey: string,
+  reasoningEffort: AiReasoningEffort = "off"
+): AsyncGenerator<string, AiUsage | undefined> {
   if (model.backend === "gemini") {
     return streamGemini(geminiApiKey, model.remoteModelId, messages, signal);
   }
-  return streamLlama(config.llamaBaseUrl, model.remoteModelId, messages, signal, config.llamaApiKey);
+  return streamLlama(
+    config.llamaBaseUrl,
+    model.remoteModelId,
+    messages,
+    signal,
+    config.llamaApiKey,
+    reasoningEffort
+  );
 }
 
 /**

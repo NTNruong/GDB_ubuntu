@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractAgentEvents, newAgentSeen, toAgentInput } from "./backends/antigravity.js";
-import { extractGeminiToken, toGeminiBody } from "./backends/gemini.js";
-import { extractLlamaToken } from "./backends/llama.js";
+import { extractGeminiToken, extractGeminiUsage, toGeminiBody } from "./backends/gemini.js";
+import { extractLlamaToken, extractLlamaUsage } from "./backends/llama.js";
 import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
 import { parseSseData } from "./sse.js";
 import {
@@ -59,6 +59,13 @@ describe("llama token extraction", () => {
     expect(extractLlamaToken("{not json")).toBe("");
     expect(extractLlamaToken(JSON.stringify({ choices: [{}] }))).toBe("");
   });
+  it("extracts usage from the final include_usage chunk, null otherwise", () => {
+    expect(
+      extractLlamaUsage(JSON.stringify({ choices: [], usage: { prompt_tokens: 12, completion_tokens: 8 } }))
+    ).toEqual({ promptTokens: 12, completionTokens: 8 });
+    expect(extractLlamaUsage(JSON.stringify({ choices: [{ delta: { content: "hi" } }] }))).toBeNull();
+    expect(extractLlamaUsage("[DONE]")).toBeNull();
+  });
 });
 
 describe("gemini mapping", () => {
@@ -80,6 +87,13 @@ describe("gemini mapping", () => {
       extractGeminiToken(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }))
     ).toBe("ok");
     expect(extractGeminiToken("nope")).toBe("");
+  });
+
+  it("extracts usage from usageMetadata, null otherwise", () => {
+    expect(
+      extractGeminiUsage(JSON.stringify({ usageMetadata: { promptTokenCount: 30, candidatesTokenCount: 5 } }))
+    ).toEqual({ promptTokens: 30, completionTokens: 5 });
+    expect(extractGeminiUsage(JSON.stringify({ candidates: [] }))).toBeNull();
   });
 });
 
