@@ -362,7 +362,7 @@ h1.brand {
   min-width: 0;
 }
 
-.content-area.debug-active {
+.content-area.right-open {
   grid-template-columns: minmax(0, 1fr) 6px var(--inspector-width, 30%);
 }
 
@@ -370,7 +370,7 @@ h1.brand {
   grid-template-columns: var(--explorer-width, 240px) minmax(0, 1fr);
 }
 
-.content-area.explorer-open.debug-active {
+.content-area.explorer-open.right-open {
   grid-template-columns: var(--explorer-width, 240px) minmax(0, 1fr) 6px var(--inspector-width, 30%);
 }
 
@@ -395,7 +395,7 @@ h1.brand {
    panel flows below it; the workspace overflows visibly so the page (body) scrolls.
    The editor wheel bubbles to the page at its edge (alwaysConsumeMouseWheel:false).
    Debug mode keeps the viewport-locked grid above (QC-verified ISSUE-028/047). */
-.content-area:not(.debug-active) .workspace {
+.content-area:not(.right-open) .workspace {
   overflow: visible;
   grid-template-rows: minmax(240px, var(--editor-vh, 58vh)) 6px auto;
 }
@@ -404,13 +404,13 @@ h1.brand {
    so Output/Error List grow downward (Error List never pushes the editor up). A 80vh
    cap keeps a pathologically long transcript/list from making the page endless — past
    that the panel scrolls internally (overflow:auto comes from the base rules). */
-.content-area:not(.debug-active) .result-card {
+.content-area:not(.right-open) .result-card {
   overflow: visible;
   grid-template-rows: auto auto;
 }
 
-.content-area:not(.debug-active) .terminal,
-.content-area:not(.debug-active) .diagnostics-panel {
+.content-area:not(.right-open) .terminal,
+.content-area:not(.right-open) .diagnostics-panel {
   min-height: 200px;
   max-height: 80vh;
 }
@@ -723,13 +723,56 @@ h1.brand {
   box-shadow: 0 0 4px hsla(0, 0%, 100%, 0.6);
 }
 
-.debug-side-panel {
+/* The shared right dock hosting either the Debug inspector or Chat AI (tabbed when
+   both are open). It is the grid's right column (resizable via --inspector-width). */
+.right-dock {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   background: var(--bg-layer-1);
   border-left: 1px solid var(--border-subtle);
+}
+
+.right-dock-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-layer-2);
+}
+
+.right-dock-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: var(--space-xs) var(--space-sm);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.right-dock-tabs button.selected {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+.right-dock > .debug-side-panel,
+.right-dock > .ai-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.debug-side-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg-layer-1);
 }
 
 .debug-side-tabs {
@@ -1463,12 +1506,12 @@ h1.brand {
     grid-template-columns: 1fr;
   }
 
-  .content-area.debug-active {
+  .content-area.right-open {
     grid-template-columns: 1fr;
   }
 
   .content-area.explorer-open,
-  .content-area.explorer-open.debug-active {
+  .content-area.explorer-open.right-open {
     grid-template-columns: 1fr;
   }
 
@@ -1480,6 +1523,7 @@ h1.brand {
 /* --- Accounts + file explorer (Phase 2) --------------------------------- */
 
 .topbar-icon-btn,
+.topbar-ai-btn,
 .auth-btn {
   display: inline-flex;
   align-items: center;
@@ -1500,13 +1544,15 @@ h1.brand {
 }
 
 .topbar-icon-btn:hover,
+.topbar-ai-btn:hover,
 .auth-btn:hover {
   background: var(--bg-elevated);
   color: var(--text-primary);
   border-color: var(--border-active);
 }
 
-.topbar-icon-btn[aria-pressed="true"] {
+.topbar-icon-btn[aria-pressed="true"],
+.topbar-ai-btn[aria-pressed="true"] {
   color: var(--text-accent);
   border-color: var(--border-active);
 }
@@ -1780,18 +1826,14 @@ h1.brand {
 /* === AI learning assistant (Phase 3) ======================================
    A fixed right-side drawer so it coexists with the explorer + debug grid
    columns without participating in the content-area grid. */
+/* In-flow inside .right-dock (no longer a fixed overlay — it shares the resizable
+   right column with the Debug inspector). */
 .ai-panel {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(420px, 92vw);
-  z-index: 40;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   background: var(--bg-layer-1);
-  border-left: 1px solid var(--border-default);
-  box-shadow: -8px 0 24px hsla(0, 0%, 0%, 0.35);
 }
 
 .ai-panel-header {
@@ -2129,34 +2171,49 @@ h1.brand {
   font-variant-numeric: tabular-nums;
 }
 
-.ai-attach-bar {
+/* Copilot-style context chips inside the composer: a focused-only chip is italic
+   + dashed; pinning (attaching) makes it solid. Workspace attachments are pinned. */
+.ai-ctx-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-md);
 }
 
-.ai-attach-chip {
+.ai-ctx-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   max-width: 220px;
-  padding: 2px 4px 2px 6px;
+  padding: 2px 6px;
   font-size: 0.72rem;
-  color: var(--text-secondary);
-  background: var(--bg-layer-2);
-  border: 1px solid var(--border-default);
+  font-style: italic;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--border-default);
   border-radius: var(--radius-sm);
+  cursor: pointer;
 }
 
-.ai-attach-chip-name {
+.ai-ctx-chip:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-active);
+}
+
+.ai-ctx-chip.is-pinned {
+  font-style: normal;
+  color: var(--text-secondary);
+  background: var(--bg-layer-2);
+  border-style: solid;
+}
+
+.ai-ctx-chip-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ai-attach-chip-remove {
+.ai-ctx-chip-remove {
   display: inline-flex;
   padding: 0;
   border: none;
@@ -2165,7 +2222,7 @@ h1.brand {
   cursor: pointer;
 }
 
-.ai-attach-chip-remove:hover {
+.ai-ctx-chip-remove:hover {
   color: var(--text-secondary);
 }
 
@@ -2176,19 +2233,18 @@ h1.brand {
 .ai-attach-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 0.72rem;
+  justify-content: center;
+  padding: 4px;
   color: var(--text-muted);
   background: transparent;
-  border: 1px dashed var(--border-default);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
 
 .ai-attach-btn:hover:not(:disabled) {
   color: var(--text-secondary);
-  border-color: var(--border-active);
+  background: var(--bg-layer-2);
 }
 
 .ai-attach-btn:disabled {
@@ -2246,21 +2302,27 @@ h1.brand {
 
 .ai-composer {
   display: flex;
+  flex-direction: column;
   gap: var(--space-xs);
   padding: var(--space-sm) var(--space-md);
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-layer-2);
 }
 
+.ai-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .ai-input {
-  flex: 1 1 auto;
+  width: 100%;
   resize: none;
   font-family: inherit;
   font-size: 0.88rem;
 }
 
 .ai-send {
-  align-self: flex-end;
   display: inline-flex;
   align-items: center;
   justify-content: center;

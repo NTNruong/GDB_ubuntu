@@ -1,8 +1,8 @@
 import {
+  Bot,
   ChevronLeft,
   ChevronRight,
   Copy,
-  GraduationCap,
   KeyRound,
   Paperclip,
   Pencil,
@@ -71,7 +71,10 @@ export function AiPanel({
   const [skillKind, setSkillKind] = useState<AiSkillKind>("language_syntax");
   const [topic, setTopic] = useState<string>("");
   const [level, setLevel] = useState<AiLevel>("fresher");
-  const [attachContext, setAttachContext] = useState(true);
+  // Copilot-style context pins: the current file / run output are shown as chips
+  // (italic = focused only, not sent). Pin a chip to actually send it as context.
+  const [pinnedFile, setPinnedFile] = useState(false);
+  const [pinnedOutput, setPinnedOutput] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<AiReasoningEffort>("off");
   const [usage, setUsage] = useState<AiUsage | null>(null);
 
@@ -216,6 +219,8 @@ export function AiPanel({
     setSettingsOpen(true);
     setAttachments([]);
     setPickerOpen(false);
+    setPinnedFile(false);
+    setPinnedOutput(false);
   }, []);
 
   const deleteThread = useCallback(
@@ -251,6 +256,23 @@ export function AiPanel({
           ? { kind: "language_syntax", language: currentLanguage }
           : { kind: "topic_roadmap", topic, level };
 
+      // Only pinned chips are sent as context (Copilot-style); unpinned = focused only.
+      let turnContext: AiContext | undefined;
+      if (pinnedFile || pinnedOutput) {
+        const live = collectContext();
+        const ctx: AiContext = {};
+        if (pinnedFile) {
+          if (live.filename) ctx.filename = live.filename;
+          if (live.language) ctx.language = live.language;
+          if (live.code) ctx.code = live.code;
+          if (live.selection) ctx.selection = live.selection;
+        }
+        if (pinnedOutput && live.runOutput) {
+          ctx.runOutput = live.runOutput;
+        }
+        if (Object.keys(ctx).length > 0) turnContext = ctx;
+      }
+
       const request: ChatSendRequest = {
         ...(threadId ? { threadId } : {}),
         model,
@@ -260,7 +282,7 @@ export function AiPanel({
         ...(opts.parentId ? { parentId: opts.parentId } : {}),
         ...(opts.regenerate ? { regenerate: true } : {}),
         ...(isLocal && reasoningEffort !== "off" ? { reasoningEffort } : {}),
-        ...(attachContext ? { context: collectContext() } : {}),
+        ...(turnContext ? { context: turnContext } : {}),
         ...(attachments.length > 0 ? { attachments } : {})
       };
 
@@ -297,7 +319,8 @@ export function AiPanel({
       workflow,
       isLocal,
       reasoningEffort,
-      attachContext,
+      pinnedFile,
+      pinnedOutput,
       collectContext,
       attachments,
       loadThread,
@@ -402,12 +425,17 @@ export function AiPanel({
     setAttachments((prev) => prev.filter((a) => a.path !== filePath));
   }, []);
 
+  // Live editor context for the composer chips (current file + run output).
+  const liveCtx = collectContext();
+  const currentFileName = liveCtx.filename;
+  const hasRunOutput = Boolean(liveCtx.runOutput);
+
   return (
-    <aside className="ai-panel" aria-label="AI learning assistant">
+    <aside className="ai-panel" aria-label="Chat AI">
       <header className="ai-panel-header">
         <span className="ai-panel-title">
-          <GraduationCap size={16} />
-          <span>Learning assistant</span>
+          <Bot size={16} />
+          <span>Chat AI</span>
         </span>
         <div className="ai-panel-header-actions">
           <button
@@ -509,10 +537,6 @@ export function AiPanel({
             </select>
           </label>
         )}
-        <label className="ai-checkbox">
-          <input type="checkbox" checked={attachContext} onChange={(event) => setAttachContext(event.target.checked)} />
-          <span>Attach current code &amp; output</span>
-        </label>
 
         <div className="ai-key">
           {keyInfo?.hasKey ? (
@@ -732,58 +756,6 @@ export function AiPanel({
         </div>
       )}
 
-      <div className="ai-attach-bar">
-        {attachments.map((file) => (
-          <span key={file.path} className="ai-attach-chip" title={file.path}>
-            <Paperclip size={11} />
-            <span className="ai-attach-chip-name">{file.path}</span>
-            <button
-              type="button"
-              className="ai-attach-chip-remove"
-              title="Remove attachment"
-              aria-label={`Remove ${file.path}`}
-              onClick={() => removeAttachment(file.path)}
-            >
-              <X size={11} />
-            </button>
-          </span>
-        ))}
-        <div className="ai-attach">
-          <button
-            type="button"
-            className="ai-attach-btn"
-            data-testid="ai-attach"
-            title="Attach a workspace file"
-            aria-expanded={pickerOpen}
-            disabled={attachments.length >= MAX_AI_ATTACHMENTS}
-            onClick={togglePicker}
-          >
-            <Paperclip size={13} />
-            <span>Attach</span>
-          </button>
-          {pickerOpen && (
-            <div className="ai-attach-picker" role="listbox" aria-label="Workspace files">
-              {pickerFiles.length === 0 ? (
-                <p className="ai-attach-empty">No workspace files.</p>
-              ) : (
-                pickerFiles.map((file) => (
-                  <button
-                    key={file.path}
-                    type="button"
-                    className="ai-attach-option"
-                    disabled={attachments.some((a) => a.path === file.path)}
-                    title={file.path}
-                    onClick={() => addAttachment(file.path)}
-                  >
-                    {file.path}
-                  </button>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
       <form
         className="ai-composer"
         onSubmit={(event) => {
@@ -791,6 +763,48 @@ export function AiPanel({
           send();
         }}
       >
+        {(currentFileName || hasRunOutput || attachments.length > 0) && (
+          <div className="ai-ctx-row">
+            {currentFileName && (
+              <button
+                type="button"
+                className={`ai-ctx-chip${pinnedFile ? " is-pinned" : ""}`}
+                title={pinnedFile ? "Attached — click to detach" : "Focused only — click to attach"}
+                onClick={() => setPinnedFile((v) => !v)}
+              >
+                <Paperclip size={11} />
+                <span className="ai-ctx-chip-name">{currentFileName}</span>
+              </button>
+            )}
+            {hasRunOutput && (
+              <button
+                type="button"
+                className={`ai-ctx-chip${pinnedOutput ? " is-pinned" : ""}`}
+                title={pinnedOutput ? "Output attached — click to detach" : "Click to attach run output"}
+                onClick={() => setPinnedOutput((v) => !v)}
+              >
+                <Terminal size={11} />
+                <span className="ai-ctx-chip-name">run output</span>
+              </button>
+            )}
+            {attachments.map((file) => (
+              <span key={file.path} className="ai-ctx-chip is-pinned" title={file.path}>
+                <Paperclip size={11} />
+                <span className="ai-ctx-chip-name">{file.path}</span>
+                <button
+                  type="button"
+                  className="ai-ctx-chip-remove"
+                  title="Remove attachment"
+                  aria-label={`Remove ${file.path}`}
+                  onClick={() => removeAttachment(file.path)}
+                >
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
         <textarea
           className="ai-input"
           value={input}
@@ -804,15 +818,52 @@ export function AiPanel({
             }
           }}
         />
-        {streaming ? (
-          <button type="button" className="ai-send" onClick={stop} title="Stop">
-            <X size={16} />
-          </button>
-        ) : (
-          <button type="submit" className="ai-send" disabled={!input.trim() || !model} title="Send">
-            <Send size={16} />
-          </button>
-        )}
+
+        <div className="ai-composer-toolbar">
+          <div className="ai-attach">
+            <button
+              type="button"
+              className="ai-attach-btn"
+              data-testid="ai-attach"
+              title="Attach a workspace file"
+              aria-label="Attach a workspace file"
+              aria-expanded={pickerOpen}
+              disabled={attachments.length >= MAX_AI_ATTACHMENTS}
+              onClick={togglePicker}
+            >
+              <Paperclip size={15} />
+            </button>
+            {pickerOpen && (
+              <div className="ai-attach-picker" role="listbox" aria-label="Workspace files">
+                {pickerFiles.length === 0 ? (
+                  <p className="ai-attach-empty">No workspace files.</p>
+                ) : (
+                  pickerFiles.map((file) => (
+                    <button
+                      key={file.path}
+                      type="button"
+                      className="ai-attach-option"
+                      disabled={attachments.some((a) => a.path === file.path)}
+                      title={file.path}
+                      onClick={() => addAttachment(file.path)}
+                    >
+                      {file.path}
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+          {streaming ? (
+            <button type="button" className="ai-send" onClick={stop} title="Stop">
+              <X size={16} />
+            </button>
+          ) : (
+            <button type="submit" className="ai-send" disabled={!input.trim() || !model} title="Send">
+              <Send size={16} />
+            </button>
+          )}
+        </div>
       </form>
     </aside>
   );

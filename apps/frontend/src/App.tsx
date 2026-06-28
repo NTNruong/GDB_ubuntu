@@ -2,10 +2,10 @@ import Editor, { type OnMount } from "@monaco-editor/react";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
+  Bot,
   Bug,
   ChevronRight,
   CircleX,
-  GraduationCap,
   ListTree,
   LogIn,
   LogOut,
@@ -133,6 +133,9 @@ export function App() {
   const [user, setUser] = useState<string | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(false);
+  // The right dock is shared by the Debug inspector and Chat AI; `rightTab` only
+  // matters when both are open (tabs appear), otherwise the live one is shown.
+  const [rightTab, setRightTab] = useState<"debug" | "ai">("debug");
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [showLogin, setShowLogin] = useState(false);
   // Presence of a path here marks it as a server-backed (explorer) tab; the
@@ -318,6 +321,18 @@ export function App() {
 
   const isDebugRunning = isDebugActive && debugStatus === "Running";
   const isDebugStopped = isDebugActive && debugStopped;
+
+  // The shared right dock: visible when either the Debug inspector or Chat AI is
+  // open. Tabs only appear when both are; otherwise the live panel is shown.
+  const aiVisible = Boolean(user) && aiOpen;
+  const rightOpen = isDebugActive || aiVisible;
+  const showRightTabs = isDebugActive && aiVisible;
+  const activeRightTab: "debug" | "ai" = showRightTabs ? rightTab : isDebugActive ? "debug" : "ai";
+
+  // Starting a debug session focuses its tab in the shared dock.
+  useEffect(() => {
+    if (isDebugActive) setRightTab("debug");
+  }, [isDebugActive]);
 
   const statusClass = useMemo(() => {
     const status = activeTab === "debug" ? debugStatus : runStatus;
@@ -1505,14 +1520,19 @@ export function App() {
         {user && (
           <button
             type="button"
-            className="topbar-icon-btn"
+            className="topbar-ai-btn"
             data-testid="btn-ai-toggle"
-            aria-label="Toggle learning assistant"
-            title="Learning assistant"
+            aria-label="Toggle Chat AI"
+            title="Chat AI"
             aria-pressed={aiOpen}
-            onClick={() => setAiOpen((value) => !value)}
+            onClick={() => {
+              const next = !aiOpen;
+              setAiOpen(next);
+              if (next) setRightTab("ai");
+            }}
           >
-            <GraduationCap size={16} />
+            <Bot size={16} />
+            <span>AI</span>
           </button>
         )}
         <select
@@ -1658,7 +1678,7 @@ export function App() {
       {showLogin && <LoginDialog onClose={() => setShowLogin(false)} onSubmit={handleLogin} />}
 
       <div
-        className={`content-area ${isDebugActive ? "debug-active" : ""} ${user && explorerOpen ? "explorer-open" : ""}`}
+        className={`content-area ${rightOpen ? "right-open" : ""} ${user && explorerOpen ? "explorer-open" : ""}`}
         ref={contentAreaRef}
         style={{ "--inspector-width": `${inspectorWidth}%` } as CSSProperties}
       >
@@ -1832,7 +1852,7 @@ export function App() {
         </section>
         </main>
 
-        {isDebugActive && (
+        {rightOpen && (
           <div
             className={`resize-handle-x ${isDraggingX ? "dragging" : ""}`}
             onMouseDown={startResizeX}
@@ -1840,8 +1860,26 @@ export function App() {
           />
         )}
 
-        {isDebugActive && (
-          <aside className="debug-side-panel">
+        {rightOpen && (
+          <aside className="right-dock">
+            {showRightTabs && (
+              <div className="right-dock-tabs">
+                <button
+                  className={activeRightTab === "debug" ? "selected" : ""}
+                  onClick={() => setRightTab("debug")}
+                >
+                  <Bug size={14} />
+                  <span>Debug</span>
+                </button>
+                <button className={activeRightTab === "ai" ? "selected" : ""} onClick={() => setRightTab("ai")}>
+                  <Bot size={14} />
+                  <span>AI</span>
+                </button>
+              </div>
+            )}
+
+            {activeRightTab === "debug" && isDebugActive && (
+              <div className="debug-side-panel">
             <div className="debug-side-tabs">
               <button className={debugPanelTab === "variables" ? "selected" : ""} onClick={() => setDebugPanelTab("variables")}>
                 <Variable size={14} />
@@ -1894,20 +1932,22 @@ export function App() {
                 />
               )}
             </div>
+              </div>
+            )}
+
+            {activeRightTab === "ai" && aiVisible && (
+              <AiPanel
+                onClose={() => setAiOpen(false)}
+                onAuthError={handleAuthError}
+                collectContext={collectContext}
+                currentLanguage={language}
+                listWorkspaceFiles={() => filesApi.tree().then((res) => res.entries)}
+                readWorkspaceFile={(path) => filesApi.read(path).then((res) => res.content)}
+              />
+            )}
           </aside>
         )}
       </div>
-
-      {user && aiOpen && (
-        <AiPanel
-          onClose={() => setAiOpen(false)}
-          onAuthError={handleAuthError}
-          collectContext={collectContext}
-          currentLanguage={language}
-          listWorkspaceFiles={() => filesApi.tree().then((res) => res.entries)}
-          readWorkspaceFile={(path) => filesApi.read(path).then((res) => res.content)}
-        />
-      )}
     </div>
   );
 }
