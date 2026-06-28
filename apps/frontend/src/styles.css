@@ -2129,6 +2129,121 @@ h1.brand {
   font-variant-numeric: tabular-nums;
 }
 
+.ai-attach-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+}
+
+.ai-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 220px;
+  padding: 2px 4px 2px 6px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  background: var(--bg-layer-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+}
+
+.ai-attach-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-attach-chip-remove {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ai-attach-chip-remove:hover {
+  color: var(--text-secondary);
+}
+
+.ai-attach {
+  position: relative;
+}
+
+.ai-attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ai-attach-btn:hover:not(:disabled) {
+  color: var(--text-secondary);
+  border-color: var(--border-active);
+}
+
+.ai-attach-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ai-attach-picker {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  max-width: 280px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: var(--space-xs);
+  background: var(--bg-layer-1);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+}
+
+.ai-attach-option {
+  padding: 4px 6px;
+  font-size: 0.74rem;
+  text-align: left;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-attach-option:hover:not(:disabled) {
+  background: var(--bg-layer-2);
+}
+
+.ai-attach-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-attach-empty {
+  margin: 0;
+  padding: 4px 6px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
 .ai-composer {
   display: flex;
   gap: var(--space-xs);

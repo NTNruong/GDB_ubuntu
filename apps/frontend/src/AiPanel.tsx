@@ -4,6 +4,7 @@ import {
   Copy,
   GraduationCap,
   KeyRound,
+  Paperclip,
   Pencil,
   Plus,
   RefreshCw,
@@ -15,9 +16,10 @@ import {
   X
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AI_REASONING_EFFORTS } from "@internal/shared";
+import { AI_REASONING_EFFORTS, MAX_AI_ATTACHMENTS, MAX_AI_CONTEXT_BYTES } from "@internal/shared";
 import type {
   AiAgentStep,
+  AiAttachment,
   AiContext,
   AiKeyInfoResponse,
   AiLevel,
@@ -29,11 +31,13 @@ import type {
   AiUsage,
   AiWorkflow,
   ChatSendRequest,
-  Language
+  Language,
+  TreeNode
 } from "@internal/shared";
 import { aiApi } from "./aiApi.js";
 import { AiMarkdown } from "./AiMarkdown.js";
 import { splitThinking } from "./aiContent.js";
+import { flattenFiles } from "./aiAttachments.js";
 import { activePath, nodeMap, siblings, descendToLeaf } from "./aiTree.js";
 
 type AiPanelProps = {
@@ -44,12 +48,23 @@ type AiPanelProps = {
   collectContext: () => AiContext;
   /** The editor's currently selected language (drives the language_syntax skill). */
   currentLanguage: Language;
+  /** List the user's Explorer files so they can be attached as reference context. */
+  listWorkspaceFiles: () => Promise<TreeNode[]>;
+  /** Read one Explorer file's content for an attachment. */
+  readWorkspaceFile: (path: string) => Promise<string>;
 };
 
 /** The in-flight turn rendered below the persisted branch while streaming. */
 type Pending = { user: string | null; assistant: string; steps: AiAgentStep[] };
 
-export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage }: AiPanelProps) {
+export function AiPanel({
+  onClose,
+  onAuthError,
+  collectContext,
+  currentLanguage,
+  listWorkspaceFiles,
+  readWorkspaceFile
+}: AiPanelProps) {
   const [meta, setMeta] = useState<AiModelsResponse | null>(null);
   const [model, setModel] = useState<string>("");
   const [workflow, setWorkflow] = useState<AiWorkflow>("answer");
@@ -59,6 +74,12 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
   const [attachContext, setAttachContext] = useState(true);
   const [reasoningEffort, setReasoningEffort] = useState<AiReasoningEffort>("off");
   const [usage, setUsage] = useState<AiUsage | null>(null);
+
+  // Explorer files explicitly attached as reference context (persist as chips for
+  // the panel session, reset on New chat). The picker lists the workspace tree.
+  const [attachments, setAttachments] = useState<AiAttachment[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFiles, setPickerFiles] = useState<TreeNode[]>([]);
 
   const [threads, setThreads] = useState<AiThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -193,6 +214,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
     setEditing(null);
     setError(null);
     setSettingsOpen(true);
+    setAttachments([]);
+    setPickerOpen(false);
   }, []);
 
   const deleteThread = useCallback(
@@ -237,7 +260,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         ...(opts.parentId ? { parentId: opts.parentId } : {}),
         ...(opts.regenerate ? { regenerate: true } : {}),
         ...(isLocal && reasoningEffort !== "off" ? { reasoningEffort } : {}),
-        ...(attachContext ? { context: collectContext() } : {})
+        ...(attachContext ? { context: collectContext() } : {}),
+        ...(attachments.length > 0 ? { attachments } : {})
       };
 
       aiApi
@@ -275,6 +299,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
       reasoningEffort,
       attachContext,
       collectContext,
+      attachments,
       loadThread,
       refreshThreads,
       onAuthError
@@ -339,6 +364,42 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
     abortRef.current?.abort();
     abortRef.current = null;
     setStreaming(false);
+  }, []);
+
+  const togglePicker = useCallback(() => {
+    if (pickerOpen) {
+      setPickerOpen(false);
+      return;
+    }
+    listWorkspaceFiles()
+      .then((entries) => {
+        setPickerFiles(flattenFiles(entries));
+        setPickerOpen(true);
+      })
+      .catch(onAuthError);
+  }, [pickerOpen, listWorkspaceFiles, onAuthError]);
+
+  const addAttachment = useCallback(
+    (filePath: string) => {
+      if (attachments.length >= MAX_AI_ATTACHMENTS || attachments.some((a) => a.path === filePath)) {
+        return;
+      }
+      readWorkspaceFile(filePath)
+        .then((content) => {
+          setAttachments((prev) =>
+            prev.length >= MAX_AI_ATTACHMENTS || prev.some((a) => a.path === filePath)
+              ? prev
+              : [...prev, { path: filePath, content: content.slice(0, MAX_AI_CONTEXT_BYTES) }]
+          );
+          setPickerOpen(false);
+        })
+        .catch(onAuthError);
+    },
+    [attachments, readWorkspaceFile, onAuthError]
+  );
+
+  const removeAttachment = useCallback((filePath: string) => {
+    setAttachments((prev) => prev.filter((a) => a.path !== filePath));
   }, []);
 
   return (
@@ -670,6 +731,58 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
           {usage.contextSize ? ` / ${usage.contextSize.toLocaleString()}` : ""} tokens
         </div>
       )}
+
+      <div className="ai-attach-bar">
+        {attachments.map((file) => (
+          <span key={file.path} className="ai-attach-chip" title={file.path}>
+            <Paperclip size={11} />
+            <span className="ai-attach-chip-name">{file.path}</span>
+            <button
+              type="button"
+              className="ai-attach-chip-remove"
+              title="Remove attachment"
+              aria-label={`Remove ${file.path}`}
+              onClick={() => removeAttachment(file.path)}
+            >
+              <X size={11} />
+            </button>
+          </span>
+        ))}
+        <div className="ai-attach">
+          <button
+            type="button"
+            className="ai-attach-btn"
+            data-testid="ai-attach"
+            title="Attach a workspace file"
+            aria-expanded={pickerOpen}
+            disabled={attachments.length >= MAX_AI_ATTACHMENTS}
+            onClick={togglePicker}
+          >
+            <Paperclip size={13} />
+            <span>Attach</span>
+          </button>
+          {pickerOpen && (
+            <div className="ai-attach-picker" role="listbox" aria-label="Workspace files">
+              {pickerFiles.length === 0 ? (
+                <p className="ai-attach-empty">No workspace files.</p>
+              ) : (
+                pickerFiles.map((file) => (
+                  <button
+                    key={file.path}
+                    type="button"
+                    className="ai-attach-option"
+                    disabled={attachments.some((a) => a.path === file.path)}
+                    title={file.path}
+                    onClick={() => addAttachment(file.path)}
+                  >
+                    {file.path}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       <form
         className="ai-composer"

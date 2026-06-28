@@ -714,6 +714,8 @@ export const AI_TOPICS: AiTopic[] = [
 
 export const MAX_AI_MESSAGE_BYTES = 16_000;
 export const MAX_AI_CONTEXT_BYTES = 60_000;
+/** Max workspace files the user can attach to one chat turn as reference context. */
+export const MAX_AI_ATTACHMENTS = 5;
 export const MAX_AI_THREADS = 100;
 export const MAX_AI_THREAD_MESSAGES = 200;
 /** History turns (user+assistant pairs) replayed to the model per request. */
@@ -744,6 +746,17 @@ export const AiContextSchema = z.object({
 });
 export type AiContext = z.infer<typeof AiContextSchema>;
 
+/**
+ * A workspace file the user explicitly attaches to a chat turn (picked from the
+ * Explorer). Separate from `AiContext`, which is the auto-collected current
+ * editor buffer. `content` is redacted from logs like run/debug `files[*].content`.
+ */
+export const AiAttachmentSchema = z.object({
+  path: z.string().min(1).max(MAX_USER_PATH_CHARS),
+  content: z.string().max(MAX_AI_CONTEXT_BYTES)
+});
+export type AiAttachment = z.infer<typeof AiAttachmentSchema>;
+
 /** A conversation-tree node id (randomBytes base64url). */
 export const AI_NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/;
 export const AiNodeIdSchema = z.string().regex(AI_NODE_ID_PATTERN, { message: "Invalid node id" });
@@ -762,6 +775,8 @@ export const ChatSendRequestSchema = z
     skill: AiSkillSchema,
     message: z.string().min(1).max(MAX_AI_MESSAGE_BYTES),
     context: AiContextSchema.optional(),
+    /** Workspace files the user picked from the Explorer as extra reference context. */
+    attachments: z.array(AiAttachmentSchema).max(MAX_AI_ATTACHMENTS).optional(),
     /** Branch point: attach the new turn under this node (default = current leaf). */
     parentId: AiNodeIdSchema.optional(),
     /** Regenerate: `parentId` is a user node; produce a new assistant sibling under it (no new user message). */

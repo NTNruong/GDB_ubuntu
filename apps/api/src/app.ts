@@ -36,6 +36,7 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
         "req.body.context.code",
         "req.body.context.selection",
         "req.body.context.runOutput",
+        "req.body.attachments[*].content",
         "req.body.messages[*].content",
         "req.body.apiKey"
       ]

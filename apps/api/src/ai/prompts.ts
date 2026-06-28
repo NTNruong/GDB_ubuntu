@@ -1,6 +1,7 @@
 import {
   AI_TOPICS,
   LANGUAGE_CAPABILITIES,
+  type AiAttachment,
   type AiContext,
   type AiSkill,
   type AiWorkflow,
@@ -90,6 +91,23 @@ function contextSection(context?: AiContext): string {
   return `\n\nEditor context the student is looking at (use it when relevant):\n${parts.join("\n\n")}`;
 }
 
-export function buildSystemPrompt(workflow: AiWorkflow, skill: AiSkill, context?: AiContext): string {
-  return [PERSONA, skillSection(skill), workflowSection(workflow)].join("\n\n") + contextSection(context);
+function attachmentsSection(attachments?: AiAttachment[]): string {
+  if (!attachments || attachments.length === 0) {
+    return "";
+  }
+  const parts = attachments.map((file) => `\`${file.path}\`:\n\`\`\`\n${file.content}\n\`\`\``);
+  return `\n\nAttached workspace files the student picked (use them as reference when relevant):\n${parts.join("\n\n")}`;
+}
+
+export function buildSystemPrompt(
+  workflow: AiWorkflow,
+  skill: AiSkill,
+  context?: AiContext,
+  attachments?: AiAttachment[]
+): string {
+  return (
+    [PERSONA, skillSection(skill), workflowSection(workflow)].join("\n\n") +
+    contextSection(context) +
+    attachmentsSection(attachments)
+  );
 }

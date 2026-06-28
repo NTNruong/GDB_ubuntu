@@ -238,7 +238,7 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     // Compose the model input: system prompt + the active branch's history. For a
     // regenerate the path already ends at the user node; otherwise append the new
     // message.
-    const systemPrompt = buildSystemPrompt(body.workflow, body.skill, body.context);
+    const systemPrompt = buildSystemPrompt(body.workflow, body.skill, body.context, body.attachments);
     const historyLeaf = body.regenerate ? body.parentId ?? null : branchParent;
     const history: ChatMessage[] = pathToLeaf(thread, historyLeaf)
       .slice(-MAX_AI_HISTORY_MESSAGES)

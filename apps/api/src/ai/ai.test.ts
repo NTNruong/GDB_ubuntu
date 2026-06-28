@@ -6,6 +6,7 @@ import { extractAgentEvents, newAgentSeen, toAgentInput } from "./backends/antig
 import { extractGeminiToken, extractGeminiUsage, toGeminiBody } from "./backends/gemini.js";
 import { extractLlamaToken, extractLlamaUsage } from "./backends/llama.js";
 import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
+import { buildSystemPrompt } from "./prompts.js";
 import { parseSseData } from "./sse.js";
 import {
   addNode,
@@ -141,6 +142,25 @@ describe("antigravity agent backend", () => {
     expect(extractAgentEvents({ status: "completed", output_text: "Final", steps: [] }, txtSeen)).toEqual([
       { type: "token", data: "Final" }
     ]);
+  });
+});
+
+describe("system prompt attachments", () => {
+  const skill = { kind: "language_syntax" as const, language: "python" as const };
+
+  it("renders each attached file's path and content in a fenced block", () => {
+    const prompt = buildSystemPrompt("answer", skill, undefined, [
+      { path: "pkg/util.py", content: "def add(a, b):\n    return a + b" }
+    ]);
+    expect(prompt).toContain("Attached workspace files");
+    expect(prompt).toContain("`pkg/util.py`");
+    expect(prompt).toContain("def add(a, b):");
+  });
+
+  it("omits the attachments section when none are given or the list is empty", () => {
+    const base = buildSystemPrompt("answer", skill);
+    expect(base).not.toContain("Attached workspace files");
+    expect(buildSystemPrompt("answer", skill, undefined, [])).toBe(base);
   });
 });
 

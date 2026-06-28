@@ -1904,6 +1904,8 @@ export function App() {
           onAuthError={handleAuthError}
           collectContext={collectContext}
           currentLanguage={language}
+          listWorkspaceFiles={() => filesApi.tree().then((res) => res.entries)}
+          readWorkspaceFile={(path) => filesApi.read(path).then((res) => res.content)}
         />
       )}
     </div>
