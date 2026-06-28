@@ -28,6 +28,8 @@ import type {
   Language
 } from "@internal/shared";
 import { aiApi } from "./aiApi.js";
+import { AiMarkdown } from "./AiMarkdown.js";
+import { splitThinking } from "./aiContent.js";
 import { activePath, nodeMap, siblings, descendToLeaf } from "./aiTree.js";
 
 type AiPanelProps = {
@@ -506,6 +508,8 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
                     </button>
                   </div>
                 </div>
+              ) : node.role === "assistant" ? (
+                <AssistantBody content={node.content} />
               ) : (
                 <div className="ai-bubble">{node.content}</div>
               )}
@@ -587,7 +591,7 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
                   ))}
                 </details>
               )}
-              <div className="ai-bubble">{pending.assistant || "…"}</div>
+              <AssistantBody content={pending.assistant} streaming />
             </div>
           </>
         )}
@@ -625,6 +629,22 @@ export function AiPanel({ onClose, onAuthError, collectContext, currentLanguage 
         )}
       </form>
     </aside>
+  );
+}
+
+/** Assistant reply: a collapsible Thinking block (if any) above the markdown answer. */
+function AssistantBody({ content, streaming }: { content: string; streaming?: boolean }) {
+  const { thinking, body, thinkingOpen } = splitThinking(content);
+  return (
+    <div className="ai-bubble">
+      {thinking && (
+        <details className="ai-think" open={Boolean(streaming && thinkingOpen)}>
+          <summary>Suy nghĩ / Thinking</summary>
+          <div className="ai-think-body">{thinking}</div>
+        </details>
+      )}
+      {body ? <AiMarkdown content={body} /> : <span className="ai-md-empty">…</span>}
+    </div>
   );
 }
 

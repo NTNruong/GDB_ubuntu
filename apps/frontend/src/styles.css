@@ -2111,3 +2111,191 @@ h1.brand {
   justify-content: center;
   padding: var(--space-sm);
 }
+
+/* --- Markdown rendering inside an assistant bubble --- */
+.ai-md {
+  white-space: normal;
+  line-height: 1.55;
+}
+
+.ai-md > :first-child {
+  margin-top: 0;
+}
+
+.ai-md > :last-child {
+  margin-bottom: 0;
+}
+
+.ai-md p,
+.ai-md ul,
+.ai-md ol,
+.ai-md blockquote,
+.ai-md table {
+  margin: var(--space-sm) 0;
+}
+
+.ai-md h1,
+.ai-md h2,
+.ai-md h3,
+.ai-md h4 {
+  margin: var(--space-md) 0 var(--space-xs);
+  line-height: 1.3;
+}
+
+.ai-md h1 { font-size: 1.25rem; }
+.ai-md h2 { font-size: 1.12rem; }
+.ai-md h3 { font-size: 1rem; }
+
+.ai-md ul,
+.ai-md ol {
+  padding-left: 1.4em;
+}
+
+.ai-md li {
+  margin: 2px 0;
+}
+
+.ai-md a {
+  color: var(--text-accent);
+  text-decoration: underline;
+}
+
+.ai-md blockquote {
+  border-left: 3px solid var(--border-default);
+  padding-left: var(--space-md);
+  color: var(--text-secondary);
+}
+
+.ai-md hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: var(--space-md) 0;
+}
+
+.ai-md table {
+  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  font-size: 0.85rem;
+}
+
+.ai-md th,
+.ai-md td {
+  border: 1px solid var(--border-subtle);
+  padding: var(--space-xs) var(--space-sm);
+  text-align: left;
+}
+
+.ai-md th {
+  background: var(--bg-layer-3);
+}
+
+/* Inline code (not inside a fenced block) */
+.ai-md :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--bg-layer-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 4px);
+  padding: 1px 4px;
+}
+
+/* Fenced code block + copy button */
+.ai-code {
+  position: relative;
+  margin: var(--space-sm) 0;
+}
+
+.ai-code pre {
+  margin: 0;
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-terminal);
+  border: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.ai-code-copy {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--bg-layer-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+
+.ai-code:hover .ai-code-copy {
+  opacity: 1;
+}
+
+.ai-code-copy:hover {
+  color: var(--text-primary);
+}
+
+/* Collapsible reasoning / thinking block */
+.ai-think {
+  margin-bottom: var(--space-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-layer-1, var(--bg-surface));
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.ai-think > summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ai-think-body {
+  margin-top: var(--space-xs);
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.ai-md-empty {
+  color: var(--text-muted);
+}
+
+/* Mermaid diagram */
+.ai-mermaid {
+  margin: var(--space-sm) 0;
+  padding: var(--space-sm);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-layer-1, var(--bg-surface));
+  overflow-x: auto;
+  text-align: center;
+}
+
+.ai-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* KaTeX math on the dark theme */
+.ai-md .katex {
+  color: var(--text-primary);
+  font-size: 1.05em;
+}
+
+.ai-md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--space-xs) 0;
+}
