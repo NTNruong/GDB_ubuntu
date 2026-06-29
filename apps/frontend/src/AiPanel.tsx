@@ -1,10 +1,16 @@
 import {
   ArrowLeftRight,
+  BarChart3,
+  BookOpen,
   Bot,
+  Brain,
   ChevronLeft,
   ChevronRight,
   Copy,
+  History,
   KeyRound,
+  ListTree,
+  MessageSquare,
   Paperclip,
   Pencil,
   Plus,
@@ -104,9 +110,11 @@ export function AiPanel({
   const [keyInfo, setKeyInfo] = useState<AiKeyInfoResponse | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [showKeyForm, setShowKeyForm] = useState(false);
-  // Settings eat a lot of vertical space; collapse them behind a gear so the chat
-  // gets the height. Open for a fresh chat, auto-collapsed when opening a thread.
+  // Settings live in a slide-down popover under the thin header (ISSUE-083); the
+  // gear toggles it. Open for a fresh chat, auto-collapsed when opening a thread.
   const [settingsOpen, setSettingsOpen] = useState(true);
+  // Conversation switcher is hidden behind a history icon → popover (ISSUE-083).
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -114,6 +122,8 @@ export function AiPanel({
   // scroll area reserves matching bottom padding and never hides the last message.
   const composerRef = useRef<HTMLFormElement | null>(null);
   const [composerH, setComposerH] = useState(0);
+  // The single-line composer textarea auto-grows with content (ISSUE-082).
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const path = useMemo(() => activePath(nodes, currentLeafId), [nodes, currentLeafId]);
   const byId = useMemo(() => nodeMap(nodes), [nodes]);
@@ -121,14 +131,8 @@ export function AiPanel({
   // Node ids that should be preceded by a "switched model" divider (ISSUE-081).
   const modelSwitches = useMemo(() => modelSwitchPoints(path), [path]);
 
-  // One-line summary shown when the settings block is collapsed.
   const selectedModel = meta?.models.find((m) => m.id === model);
   const isLocal = selectedModel?.backend === "llama";
-  const modelLabel = selectedModel?.label ?? model;
-  const workflowLabel = meta?.workflows.find((w) => w.id === workflow)?.label ?? workflow;
-  const topicLabel = meta?.topics.find((t) => t.id === topic)?.label ?? topic;
-  const skillSummary = skillKind === "language_syntax" ? currentLanguage : `${topicLabel} · ${level}`;
-  const settingsSummary = [modelLabel, workflowLabel, skillSummary].filter(Boolean).join(" · ");
 
   const reloadModels = useCallback(() => {
     return aiApi
@@ -448,6 +452,17 @@ export function AiPanel({
     return () => observer.disconnect();
   }, []);
 
+  // Auto-grow the composer textarea from 1 line up to its CSS max-height, and
+  // shrink back when it is cleared after send (ISSUE-082).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) {
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
   const togglePicker = useCallback(() => {
     if (pickerOpen) {
       setPickerOpen(false);
@@ -493,17 +508,64 @@ export function AiPanel({
     <aside className="ai-panel" aria-label="Chat AI">
       <header className="ai-panel-header">
         <span className="ai-panel-title">
-          <Bot size={16} />
+          <Bot size={15} />
           <span>Chat AI</span>
         </span>
+        <div className="ai-header-selects">
+          <select
+            className="ai-flat-select"
+            data-testid="ai-model-select"
+            aria-label="Model"
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+          >
+            {meta?.models.length ? (
+              meta.models.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {shortModelLabel(item)}
+                </option>
+              ))
+            ) : (
+              <option value="">No model</option>
+            )}
+          </select>
+          <select
+            className="ai-flat-select"
+            aria-label="Workflow"
+            value={workflow}
+            onChange={(event) => setWorkflow(event.target.value as AiWorkflow)}
+          >
+            {meta?.workflows.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="ai-panel-header-actions">
+          <button
+            type="button"
+            className={`ai-icon-btn${historyOpen ? " is-active" : ""}`}
+            title="Conversations"
+            aria-label="Conversations"
+            aria-expanded={historyOpen}
+            onClick={() => {
+              setHistoryOpen((open) => !open);
+              setSettingsOpen(false);
+            }}
+          >
+            <History size={15} />
+          </button>
           <button
             type="button"
             className={`ai-icon-btn${settingsOpen ? " is-active" : ""}`}
             title="Settings"
             aria-label="Settings"
             aria-expanded={settingsOpen}
-            onClick={() => setSettingsOpen((open) => !open)}
+            onClick={() => {
+              setSettingsOpen((open) => !open);
+              setHistoryOpen(false);
+            }}
           >
             <Settings size={15} />
           </button>
@@ -516,169 +578,184 @@ export function AiPanel({
         </div>
       </header>
 
-      {settingsOpen && (
-        <div className="ai-controls">
-        <label className="ai-field">
-          <span>Model</span>
-          <select data-testid="ai-model-select" value={model} onChange={(event) => setModel(event.target.value)}>
-            {meta?.models.length ? (
-              meta.models.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))
-            ) : (
-              <option value="">No model available</option>
-            )}
-          </select>
-        </label>
-        {meta?.models.find((item) => item.id === model)?.backend === "antigravity" && (
-          <p className="ai-hint ai-experimental">
-            Experimental agent — runs tools/code in Google&apos;s sandbox. Slow, very limited free quota.
-          </p>
-        )}
-        <label className="ai-field">
-          <span>Workflow</span>
-          <select value={workflow} onChange={(event) => setWorkflow(event.target.value as AiWorkflow)}>
-            {meta?.workflows.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="ai-field">
-          <span>Skill</span>
-          <select value={skillKind} onChange={(event) => setSkillKind(event.target.value as AiSkillKind)}>
-            <option value="language_syntax">Language syntax</option>
-            <option value="topic_roadmap">Topic roadmap</option>
-          </select>
-        </label>
-        {skillKind === "language_syntax" ? (
-          <p className="ai-hint">Teaching syntax for the editor language: {currentLanguage}</p>
-        ) : (
-          <div className="ai-field-row">
-            <label className="ai-field">
-              <span>Topic</span>
-              <select value={topic} onChange={(event) => setTopic(event.target.value)}>
-                {meta?.topics.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="ai-field">
-              <span>Level</span>
-              <select value={level} onChange={(event) => setLevel(event.target.value as AiLevel)}>
-                {meta?.levels.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
-        {isLocal && (
-          <label className="ai-field">
-            <span>Reasoning effort</span>
-            <select
-              data-testid="ai-effort"
-              value={reasoningEffort}
-              onChange={(event) => setReasoningEffort(event.target.value as AiReasoningEffort)}
+      {historyOpen && (
+        <div className="ai-popover ai-history-popover" role="group" aria-label="Conversations">
+          <div className="ai-popover-head">
+            <span className="ai-setting-label">
+              <MessageSquare size={13} /> Conversations
+            </span>
+            <button
+              type="button"
+              className="ai-link"
+              onClick={() => {
+                newThread();
+                setHistoryOpen(false);
+              }}
             >
-              {AI_REASONING_EFFORTS.map((effort) => (
-                <option key={effort} value={effort}>
-                  {effort}
-                </option>
+              New chat
+            </button>
+          </div>
+          {threads.length === 0 ? (
+            <p className="ai-attach-empty">No conversations yet.</p>
+          ) : (
+            <div className="ai-history-list">
+              {threads.map((thread) => (
+                <div key={thread.id} className={`ai-history-item${thread.id === threadId ? " is-active" : ""}`}>
+                  <button
+                    type="button"
+                    className="ai-history-open"
+                    title={thread.title}
+                    onClick={() => {
+                      openThread(thread.id);
+                      setHistoryOpen(false);
+                    }}
+                  >
+                    {thread.title}
+                  </button>
+                  <button
+                    type="button"
+                    className="ai-icon-btn"
+                    title="Delete conversation"
+                    aria-label="Delete conversation"
+                    onClick={() => deleteThread(thread.id)}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               ))}
-            </select>
-          </label>
-        )}
-
-        <div className="ai-key">
-          {keyInfo?.hasKey ? (
-            <div className="ai-key-status">
-              <KeyRound size={13} />
-              <span>Google key ••{keyInfo.last4}</span>
-              <button type="button" className="ai-link" onClick={removeKey}>
-                Remove
-              </button>
             </div>
-          ) : showKeyForm ? (
-            <div className="ai-key-form">
-              <input
-                type="password"
-                value={keyInput}
-                placeholder="Paste your Google API key"
-                autoComplete="off"
-                onChange={(event) => setKeyInput(event.target.value)}
-              />
-              <button type="button" className="ai-link" onClick={saveKey} disabled={!keyInput.trim()}>
-                Save
+          )}
+        </div>
+      )}
+
+      {settingsOpen && (
+        <div className="ai-popover ai-settings-popover" role="group" aria-label="Settings">
+          {meta?.models.find((item) => item.id === model)?.backend === "antigravity" && (
+            <p className="ai-hint ai-experimental">
+              Experimental agent — runs tools/code in Google&apos;s sandbox. Slow, very limited free quota.
+            </p>
+          )}
+
+          <div className="ai-setting">
+            <span className="ai-setting-label">
+              <BookOpen size={13} /> Skill
+            </span>
+            <div className="ai-segmented" role="group" aria-label="Skill">
+              <button
+                type="button"
+                className={`ai-seg-btn${skillKind === "language_syntax" ? " is-active" : ""}`}
+                onClick={() => setSkillKind("language_syntax")}
+              >
+                Syntax
               </button>
               <button
                 type="button"
-                className="ai-link"
-                onClick={() => {
-                  setShowKeyForm(false);
-                  setKeyInput("");
-                }}
+                className={`ai-seg-btn${skillKind === "topic_roadmap" ? " is-active" : ""}`}
+                onClick={() => setSkillKind("topic_roadmap")}
               >
-                Cancel
+                Roadmap
               </button>
             </div>
+          </div>
+
+          {skillKind === "language_syntax" ? (
+            <p className="ai-hint">Teaching syntax for the editor language: {currentLanguage}</p>
           ) : (
-            <button type="button" className="ai-link" onClick={() => setShowKeyForm(true)}>
-              <KeyRound size={13} /> Add your Google API key
-            </button>
+            <>
+              <div className="ai-setting">
+                <span className="ai-setting-label">
+                  <ListTree size={13} /> Topic
+                </span>
+                <select className="ai-soft-select" value={topic} onChange={(event) => setTopic(event.target.value)}>
+                  {meta?.topics.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="ai-setting">
+                <span className="ai-setting-label">
+                  <BarChart3 size={13} /> Level
+                </span>
+                <div className="ai-segmented" role="group" aria-label="Level">
+                  {meta?.levels.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`ai-seg-btn${level === item ? " is-active" : ""}`}
+                      onClick={() => setLevel(item as AiLevel)}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
-        </div>
-        </div>
-      )}
 
-      {!settingsOpen && (
-        <button
-          type="button"
-          className="ai-settings-summary"
-          title="Show settings"
-          onClick={() => setSettingsOpen(true)}
-        >
-          <Settings size={13} />
-          <span className="ai-settings-summary-text">{settingsSummary}</span>
-        </button>
-      )}
-
-      {threads.length > 0 && (
-        <div className="ai-threads">
-          <select
-            aria-label="Conversation"
-            value={threadId ?? ""}
-            onChange={(event) => {
-              const id = event.target.value;
-              if (id) openThread(id);
-              else newThread();
-            }}
-          >
-            <option value="">New conversation…</option>
-            {threads.map((thread) => (
-              <option key={thread.id} value={thread.id}>
-                {thread.title}
-              </option>
-            ))}
-          </select>
-          {threadId && (
-            <button
-              type="button"
-              className="ai-icon-btn"
-              title="Delete conversation"
-              aria-label="Delete conversation"
-              onClick={() => deleteThread(threadId)}
-            >
-              <Trash2 size={15} />
-            </button>
+          {isLocal && (
+            <div className="ai-setting">
+              <span className="ai-setting-label">
+                <Brain size={13} /> Reasoning
+              </span>
+              <div className="ai-segmented" data-testid="ai-effort" role="group" aria-label="Reasoning effort">
+                {AI_REASONING_EFFORTS.map((effort) => (
+                  <button
+                    key={effort}
+                    type="button"
+                    className={`ai-seg-btn${reasoningEffort === effort ? " is-active" : ""}`}
+                    onClick={() => setReasoningEffort(effort)}
+                  >
+                    {effort}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
+
+          <div className="ai-setting-account">
+            <span className="ai-setting-label">
+              <KeyRound size={13} /> Account
+            </span>
+            <div className="ai-key">
+              {keyInfo?.hasKey ? (
+                <div className="ai-key-status">
+                  <span>Google key ••{keyInfo.last4}</span>
+                  <button type="button" className="ai-link" onClick={removeKey}>
+                    Remove
+                  </button>
+                </div>
+              ) : showKeyForm ? (
+                <div className="ai-key-form">
+                  <input
+                    type="password"
+                    value={keyInput}
+                    placeholder="Paste your Google API key"
+                    autoComplete="off"
+                    onChange={(event) => setKeyInput(event.target.value)}
+                  />
+                  <button type="button" className="ai-link" onClick={saveKey} disabled={!keyInput.trim()}>
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    className="ai-link"
+                    onClick={() => {
+                      setShowKeyForm(false);
+                      setKeyInput("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button type="button" className="ai-link" onClick={() => setShowKeyForm(true)}>
+                  <KeyRound size={13} /> Add your Google API key
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -854,94 +931,9 @@ export function AiPanel({
           </div>
         )}
 
-        {(currentFileName || hasRunOutput || attachments.length > 0) && (
-          <div className="ai-ctx-row">
-            {currentFileName && (
-              <button
-                type="button"
-                className={`ai-ctx-chip${pinnedFile ? " is-pinned" : ""}`}
-                title={pinnedFile ? "Attached — click to detach" : "Focused only — click to attach"}
-                onClick={() => setPinnedFile((v) => !v)}
-              >
-                <Paperclip size={11} />
-                <span className="ai-ctx-chip-name">{currentFileName}</span>
-              </button>
-            )}
-            {hasRunOutput && (
-              <button
-                type="button"
-                className={`ai-ctx-chip${pinnedOutput ? " is-pinned" : ""}`}
-                title={pinnedOutput ? "Output attached — click to detach" : "Click to attach run output"}
-                onClick={() => setPinnedOutput((v) => !v)}
-              >
-                <Terminal size={11} />
-                <span className="ai-ctx-chip-name">run output</span>
-              </button>
-            )}
-            {attachments.map((file) => (
-              <span key={file.path} className="ai-ctx-chip is-pinned" title={file.path}>
-                <Paperclip size={11} />
-                <span className="ai-ctx-chip-name">{file.path}</span>
-                <button
-                  type="button"
-                  className="ai-ctx-chip-remove"
-                  title="Remove attachment"
-                  aria-label={`Remove ${file.path}`}
-                  onClick={() => removeAttachment(file.path)}
-                >
-                  <X size={11} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="ai-capsule">
-          <div className="ai-attach">
-            <button
-              type="button"
-              className="ai-attach-btn"
-              data-testid="ai-attach"
-              title="Attach a workspace file"
-              aria-label="Attach a workspace file"
-              aria-expanded={pickerOpen}
-              disabled={attachments.length >= MAX_AI_ATTACHMENTS}
-              onClick={togglePicker}
-            >
-              <Paperclip size={15} />
-            </button>
-            {pickerOpen && (
-              <div className="ai-attach-picker" role="listbox" aria-label="Workspace files">
-                {pickerFiles.length === 0 ? (
-                  <p className="ai-attach-empty">No workspace files.</p>
-                ) : (
-                  pickerFiles.map((file) => (
-                    <button
-                      key={file.path}
-                      type="button"
-                      className="ai-attach-option"
-                      disabled={attachments.some((a) => a.path === file.path)}
-                      title={file.path}
-                      onClick={() => addAttachment(file.path)}
-                    >
-                      {file.path}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-
-          {usage && (
-            <TokenRing
-              usage={usage}
-              busy={compacting}
-              canCompact={Boolean(threadId) && !streaming && !compacting}
-              onCompact={compact}
-            />
-          )}
-
+        <div className="ai-card">
           <textarea
+            ref={inputRef}
             className="ai-input"
             value={input}
             placeholder="Ask the tutor…"
@@ -955,19 +947,118 @@ export function AiPanel({
             }}
           />
 
-          {streaming ? (
-            <button type="button" className="ai-send" onClick={stop} title="Stop">
-              <X size={16} />
-            </button>
-          ) : (
-            <button type="submit" className="ai-send" disabled={!input.trim() || !model} title="Send">
-              <Send size={16} />
-            </button>
-          )}
+          <div className="ai-card-toolbar">
+            <div className="ai-toolbar-left">
+              <div className="ai-attach">
+                <button
+                  type="button"
+                  className="ai-attach-btn"
+                  data-testid="ai-attach"
+                  title="Attach a workspace file"
+                  aria-label="Attach a workspace file"
+                  aria-expanded={pickerOpen}
+                  disabled={attachments.length >= MAX_AI_ATTACHMENTS}
+                  onClick={togglePicker}
+                >
+                  <Paperclip size={15} />
+                </button>
+                {pickerOpen && (
+                  <div className="ai-attach-picker" role="listbox" aria-label="Workspace files">
+                    {pickerFiles.length === 0 ? (
+                      <p className="ai-attach-empty">No workspace files.</p>
+                    ) : (
+                      pickerFiles.map((file) => (
+                        <button
+                          key={file.path}
+                          type="button"
+                          className="ai-attach-option"
+                          disabled={attachments.some((a) => a.path === file.path)}
+                          title={file.path}
+                          onClick={() => addAttachment(file.path)}
+                        >
+                          {file.path}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {usage && (
+                <TokenRing
+                  usage={usage}
+                  busy={compacting}
+                  canCompact={Boolean(threadId) && !streaming && !compacting}
+                  onCompact={compact}
+                />
+              )}
+
+              {currentFileName && (
+                <button
+                  type="button"
+                  className={`ai-ctx-chip${pinnedFile ? " is-pinned" : ""}`}
+                  title={pinnedFile ? "Attached — click to detach" : "Focused only — click to attach"}
+                  onClick={() => setPinnedFile((v) => !v)}
+                >
+                  <Paperclip size={11} />
+                  <span className="ai-ctx-chip-name">{currentFileName}</span>
+                </button>
+              )}
+              {hasRunOutput && (
+                <button
+                  type="button"
+                  className={`ai-ctx-chip${pinnedOutput ? " is-pinned" : ""}`}
+                  title={pinnedOutput ? "Output attached — click to detach" : "Click to attach run output"}
+                  onClick={() => setPinnedOutput((v) => !v)}
+                >
+                  <Terminal size={11} />
+                  <span className="ai-ctx-chip-name">run output</span>
+                </button>
+              )}
+              {attachments.map((file) => (
+                <span key={file.path} className="ai-ctx-chip is-pinned" title={file.path}>
+                  <Paperclip size={11} />
+                  <span className="ai-ctx-chip-name">{file.path}</span>
+                  <button
+                    type="button"
+                    className="ai-ctx-chip-remove"
+                    title="Remove attachment"
+                    aria-label={`Remove ${file.path}`}
+                    onClick={() => removeAttachment(file.path)}
+                  >
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            {streaming ? (
+              <button type="button" className="ai-send" onClick={stop} title="Stop">
+                <X size={16} />
+              </button>
+            ) : (
+              <button type="submit" className="ai-send" disabled={!input.trim() || !model} title="Send">
+                <Send size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </aside>
   );
+}
+
+/**
+ * Shorten model labels for the compact header select (ISSUE-084): the local
+ * llama model collapses to "default", and the provider/agent suffix is dropped
+ * (e.g. "Gemini Flash (Google)" → "Gemini Flash", "Antigravity (agent, …)" →
+ * "Antigravity").
+ */
+function shortModelLabel(model: AiModelsResponse["models"][number]): string {
+  if (model.backend === "llama") {
+    return "default";
+  }
+  return model.label.replace(/\s*\((?:Google|agent[^)]*)\)\s*$/i, "").trim();
 }
 
 /**
@@ -1042,7 +1133,8 @@ function TokenRing({
 
 /** Divider inserted in the transcript when the answering model changes (ISSUE-081). */
 function ModelDivider({ modelId, models }: { modelId: string; models?: AiModelsResponse["models"] }) {
-  const label = models?.find((item) => item.id === modelId)?.label ?? modelId;
+  const match = models?.find((item) => item.id === modelId);
+  const label = match ? shortModelLabel(match) : modelId;
   return (
     <div className="ai-model-divider" role="separator" aria-label={`Switched to ${label}`}>
       <ArrowLeftRight size={12} />

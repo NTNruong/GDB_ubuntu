@@ -2190,11 +2190,15 @@ button.primary.danger {
   background: var(--bg-layer-1);
 }
 
+/* Thin native-style header bar (ISSUE-083): title + flat model/workflow selects
+   + icon actions. Wraps to a second line when the panel is narrow. */
 .ai-panel-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--space-sm) var(--space-md);
+  gap: var(--space-xs);
+  min-height: 38px;
+  padding: 4px var(--space-sm);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-layer-2);
 }
@@ -2202,14 +2206,50 @@ button.primary.danger {
 .ai-panel-title {
   display: flex;
   align-items: center;
-  gap: var(--space-xs);
+  gap: 4px;
   font-weight: 600;
+  font-size: 0.86rem;
   color: var(--text-primary);
+}
+
+/* Flat, borderless dropdowns that blend into the header bar. */
+.ai-header-selects {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ai-flat-select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.ai-flat-select:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.ai-flat-select:focus-visible {
+  border-color: var(--border-active);
 }
 
 .ai-panel-header-actions {
   display: flex;
-  gap: var(--space-xs);
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: auto;
 }
 
 .ai-icon-btn {
@@ -2229,66 +2269,117 @@ button.primary.danger {
   color: var(--text-primary);
 }
 
-.ai-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-md);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
 .ai-icon-btn.is-active {
   color: var(--text-accent);
   background: var(--bg-layer-3);
 }
 
-/* Compact one-line summary shown when the settings block is collapsed */
-.ai-settings-summary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-xs);
-  width: 100%;
-  padding: var(--space-xs) var(--space-md);
-  border: none;
-  border-bottom: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.76rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.ai-settings-summary:hover {
-  background: var(--bg-layer-2);
-  color: var(--text-secondary);
-}
-
-.ai-settings-summary-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-field {
+/* Slide-down popovers anchored under the thin header (settings + history). */
+.ai-popover {
+  position: absolute;
+  top: 100%;
+  left: var(--space-sm);
+  right: var(--space-sm);
+  z-index: 25;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 0.78rem;
-  color: var(--text-muted);
+  gap: var(--space-sm);
+  margin-top: 4px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 hsla(0, 0%, 100%, 0.14);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  animation: ai-pop-in 0.14s ease;
 }
 
-.ai-field select {
-  width: 100%;
+@keyframes ai-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
-.ai-field-row {
+.ai-popover-head {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: var(--space-sm);
 }
 
-.ai-field-row .ai-field {
-  flex: 1 1 0;
+/* One config row: icon label on the left, control on the right. */
+.ai-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.ai-setting-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.ai-setting-account {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding-top: var(--space-sm);
+  border-top: 1px dashed var(--border-subtle);
+}
+
+/* Segmented control: flat clickable tab buttons (ISSUE-083). */
+.ai-segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-layer-1, var(--bg-surface));
+}
+
+.ai-seg-btn {
+  min-height: 0;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 4px);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.ai-seg-btn:hover {
+  color: var(--text-secondary);
+  background: var(--bg-layer-2);
+}
+
+.ai-seg-btn.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #6366f1 60%, #a855f7);
+  box-shadow: 0 1px 6px hsla(250, 80%, 50%, 0.3);
+}
+
+/* Custom select used for the dynamic Topic list inside the popover. */
+.ai-soft-select {
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md, 6px);
+  background: var(--bg-layer-1, var(--bg-surface));
+  color: var(--text-secondary);
+  font-size: 0.76rem;
 }
 
 .ai-hint {
@@ -2348,17 +2439,48 @@ button.primary.danger {
   text-decoration: none;
 }
 
-.ai-threads {
+/* Conversation history popover list (ISSUE-083). */
+.ai-history-list {
   display: flex;
-  gap: var(--space-xs);
-  align-items: center;
-  padding: var(--space-xs) var(--space-md);
-  border-bottom: 1px solid var(--border-subtle);
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
-.ai-threads select {
+.ai-history-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.ai-history-item.is-active {
+  background: var(--bg-layer-2);
+}
+
+.ai-history-open {
   flex: 1 1 auto;
   min-width: 0;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.ai-history-open:hover {
+  color: var(--text-primary);
+}
+
+.ai-history-item.is-active .ai-history-open {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .ai-messages {
@@ -2744,29 +2866,30 @@ button.primary.danger {
   pointer-events: auto;
 }
 
-/* The capsule: a rounded glass pill holding attach · token ring · input · send. */
-.ai-capsule {
+/* Unified composer card (ISSUE-082): a moderately-rounded glass card with the
+   textarea on top and a toolbar row (attach · ring · chips · send) below. */
+.ai-card {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-xs);
+  flex-direction: column;
+  gap: 4px;
   padding: 6px 8px;
   border: 1px solid var(--glass-border);
-  border-radius: var(--radius-pill, 22px);
+  border-radius: 8px;
   background: var(--glass-bg);
   box-shadow: var(--shadow-lg), inset 0 1px 0 hsla(0, 0%, 100%, 0.18);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
 }
 
-.ai-capsule:focus-within {
+.ai-card:focus-within {
   border-color: var(--border-active);
 }
 
 .ai-input {
-  flex: 1 1 auto;
+  width: 100%;
   min-width: 0;
   max-height: 160px;
-  padding: 6px 4px;
+  padding: 4px 4px 0;
   resize: none;
   border: none;
   background: transparent;
@@ -2778,6 +2901,24 @@ button.primary.danger {
 .ai-input:focus {
   outline: none;
   box-shadow: none;
+}
+
+/* Bottom toolbar row: left cluster (attach · ring · chips), send pinned right. */
+.ai-card-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding-top: 4px;
+  border-top: 1px dashed var(--border-subtle);
+}
+
+.ai-toolbar-left {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .ai-send {
