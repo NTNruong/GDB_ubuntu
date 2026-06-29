@@ -19,6 +19,24 @@ export function extractLlamaToken(data: string): string {
 }
 
 /**
+ * Extract the incremental *reasoning* text from one streaming chunk
+ * (`{choices:[{delta:{reasoning_content}}]}`) — the field reasoning models (DeepSeek-R1,
+ * Qwen3, …) use for chain-of-thought. Returns "" otherwise. The caller wraps a run of
+ * these in `<think>…</think>` so the client's `splitThinking` renders them collapsed.
+ */
+export function extractLlamaReasoning(data: string): string {
+  if (data === "[DONE]" || data === "") {
+    return "";
+  }
+  try {
+    const json = JSON.parse(data) as { choices?: { delta?: { reasoning_content?: string } }[] };
+    return json.choices?.[0]?.delta?.reasoning_content ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Extract token accounting from the final `stream_options.include_usage` chunk
  * (`{usage:{prompt_tokens,completion_tokens}}`, with empty `choices`). Returns
  * null for any chunk without a `usage` field.
@@ -115,6 +133,9 @@ export async function* streamLlama(
     throw new Error(`llama.cpp returned ${response.status}: ${text || "no response body"}`);
   }
   let usage: AiUsage | undefined;
+  // Reasoning arrives in `reasoning_content` deltas before the answer's `content`.
+  // Wrap a run of them in `<think>…</think>` so the client's splitThinking can fold it.
+  let thinkOpen = false;
   for await (const data of parseSseData(response.body)) {
     if (data === "[DONE]") {
       break;
@@ -123,10 +144,26 @@ export async function* streamLlama(
     if (chunkUsage) {
       usage = chunkUsage;
     }
+    const reasoning = extractLlamaReasoning(data);
+    if (reasoning) {
+      if (!thinkOpen) {
+        thinkOpen = true;
+        yield "<think>";
+      }
+      yield reasoning;
+    }
     const token = extractLlamaToken(data);
     if (token) {
+      if (thinkOpen) {
+        thinkOpen = false;
+        yield "</think>";
+      }
       yield token;
     }
+  }
+  // Stream ended while still inside reasoning (no answer content): close the block.
+  if (thinkOpen) {
+    yield "</think>";
   }
   if (usage) {
     usage.contextSize = await fetchContextSize(baseUrl, apiKey);

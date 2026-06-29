@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractAgentEvents, newAgentSeen, toAgentInput } from "./backends/antigravity.js";
 import { extractGeminiToken, extractGeminiUsage, toGeminiBody } from "./backends/gemini.js";
-import { extractLlamaToken, extractLlamaUsage } from "./backends/llama.js";
+import { extractLlamaReasoning, extractLlamaToken, extractLlamaUsage } from "./backends/llama.js";
 import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
 import { buildSystemPrompt } from "./prompts.js";
 import { parseSseData } from "./sse.js";
@@ -66,6 +66,14 @@ describe("llama token extraction", () => {
     ).toEqual({ promptTokens: 12, completionTokens: 8 });
     expect(extractLlamaUsage(JSON.stringify({ choices: [{ delta: { content: "hi" } }] }))).toBeNull();
     expect(extractLlamaUsage("[DONE]")).toBeNull();
+  });
+  it("reads reasoning_content deltas, empty otherwise", () => {
+    expect(
+      extractLlamaReasoning(JSON.stringify({ choices: [{ delta: { reasoning_content: "hmm" } }] }))
+    ).toBe("hmm");
+    expect(extractLlamaReasoning(JSON.stringify({ choices: [{ delta: { content: "hi" } }] }))).toBe("");
+    expect(extractLlamaReasoning("[DONE]")).toBe("");
+    expect(extractLlamaReasoning("{not json")).toBe("");
   });
 });
 

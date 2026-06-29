@@ -737,7 +737,15 @@ export function AiPanel({
                 <details className="ai-agent-steps" open>
                   <summary>Agent activity ({pending.steps.length})</summary>
                   {pending.steps.map((step, stepIndex) => (
-                    <AgentStepView key={stepIndex} step={step} />
+                    <AgentStepView
+                      key={stepIndex}
+                      step={step}
+                      active={
+                        streaming &&
+                        stepIndex === pending.steps.length - 1 &&
+                        step.kind === "tool_call"
+                      }
+                    />
                   ))}
                 </details>
               )}
@@ -875,7 +883,10 @@ function AssistantBody({ content, streaming }: { content: string; streaming?: bo
   return (
     <div className="ai-bubble">
       {thinking && (
-        <details className="ai-think" open={Boolean(streaming && thinkingOpen)}>
+        <details
+          className={`ai-think${streaming && thinkingOpen ? " thinking-active" : ""}`}
+          open={Boolean(streaming && thinkingOpen)}
+        >
           <summary>Suy nghĩ / Thinking</summary>
           <div className="ai-think-body">{thinking}</div>
         </details>
@@ -885,8 +896,9 @@ function AssistantBody({ content, streaming }: { content: string; streaming?: bo
   );
 }
 
-/** Render one Antigravity agent activity item (code/tool/image/thought). */
-function AgentStepView({ step }: { step: AiAgentStep }) {
+/** Render one Antigravity agent activity item (code/tool/image/thought).
+ *  `active` marks a tool_call that is still running (spins the wrench). */
+function AgentStepView({ step, active }: { step: AiAgentStep; active?: boolean }) {
   if (step.kind === "code_call") {
     return (
       <div className="ai-step ai-step-code">
@@ -907,7 +919,7 @@ function AgentStepView({ step }: { step: AiAgentStep }) {
   }
   if (step.kind === "tool_call") {
     return (
-      <div className="ai-step ai-step-tool">
+      <div className={`ai-step ai-step-tool${active ? " is-running" : ""}`}>
         <span className="ai-step-label">
           <Wrench size={12} /> {step.name}
         </span>

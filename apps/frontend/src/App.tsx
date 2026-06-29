@@ -1554,7 +1554,7 @@ export function App() {
   }, [isRunActive]);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${rightOpen ? "right-open" : ""}`}>
       <header className="topbar">
         <h1 className="brand">
           <div className="brand-icon">
