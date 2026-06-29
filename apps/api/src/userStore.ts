@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import bcrypt from "bcryptjs";
-import { USERNAME_PATTERN } from "@internal/shared";
+import { USERNAME_PATTERN, type UserRole, type UserStatus } from "@internal/shared";
 
 const BCRYPT_COST = 12;
 
@@ -16,14 +16,25 @@ export type UserRecord = {
   username: string;
   passwordHash: string;
   createdAt: string;
+  /** Lifecycle: self-registered accounts start `pending` until an admin approves. */
+  status: UserStatus;
+  role: UserRole;
+  /** Bumped on password change / admin reset / "log out everywhere" to invalidate old JWTs. */
+  tokenVersion: number;
+  displayName?: string;
+  email?: string;
+  approvedAt?: string;
+  /** AES-256-GCM ciphertext of the TOTP secret (encrypted by the route, opaque here). */
+  totpSecretEnc?: string;
+  totpEnabled?: boolean;
 };
 
 type UsersFile = {
-  version: 1;
+  version: 2;
   users: UserRecord[];
 };
 
-const EMPTY_STORE: UsersFile = { version: 1, users: [] };
+const EMPTY_STORE: UsersFile = { version: 2, users: [] };
 
 // mtime-keyed cache so admin edits to users.json apply without an api restart,
 // without re-reading the file on every login.
@@ -56,11 +67,35 @@ function normalizeStore(value: unknown): UsersFile {
   if (
     typeof value === "object" &&
     value !== null &&
-    Array.isArray((value as UsersFile).users)
+    Array.isArray((value as { users?: unknown }).users)
   ) {
-    return { version: 1, users: (value as UsersFile).users };
+    const raw = (value as { users: unknown[] }).users;
+    return { version: 2, users: raw.map(migrateRecord) };
   }
   return EMPTY_STORE;
+}
+
+/**
+ * Migrate a stored record to the v2 shape. Legacy v1 records (only
+ * username/passwordHash/createdAt) become `active` `user` accounts with
+ * tokenVersion 0 — so existing CLI-seeded logins keep working. No record is
+ * auto-promoted to admin; bootstrap the first admin via `users role <name> admin`.
+ */
+function migrateRecord(value: unknown): UserRecord {
+  const u = (value ?? {}) as Partial<UserRecord> & { username?: string; passwordHash?: string };
+  return {
+    username: String(u.username ?? ""),
+    passwordHash: String(u.passwordHash ?? ""),
+    createdAt: u.createdAt ?? new Date().toISOString(),
+    status: u.status === "pending" || u.status === "disabled" ? u.status : "active",
+    role: u.role === "admin" ? "admin" : "user",
+    tokenVersion: typeof u.tokenVersion === "number" ? u.tokenVersion : 0,
+    displayName: u.displayName,
+    email: u.email,
+    approvedAt: u.approvedAt,
+    totpSecretEnc: u.totpSecretEnc,
+    totpEnabled: u.totpEnabled === true
+  };
 }
 
 function findUser(store: UsersFile, username: string): UserRecord | undefined {
@@ -68,19 +103,30 @@ function findUser(store: UsersFile, username: string): UserRecord | undefined {
 }
 
 /**
- * Verify a login against users.json. Always runs exactly one bcrypt compare
- * (decoy hash for unknown users) to keep timing uniform.
+ * Verify credentials against users.json. Always runs exactly one bcrypt compare
+ * (decoy hash for unknown users) to keep timing uniform. Returns the matching
+ * record on success (the caller then enforces status/2FA), or null. Status is
+ * NOT checked here — that is the login route's job so it can give a tailored
+ * "pending" / "disabled" message.
  */
-export async function verifyLogin(
+export async function verifyCredentials(
   usersFile: string,
   username: string,
   password: string
-): Promise<boolean> {
+): Promise<UserRecord | null> {
   const store = await loadUsers(usersFile);
   const user = findUser(store, username);
   const hash = user?.passwordHash ?? DUMMY_HASH;
   const matches = await bcrypt.compare(password, hash);
-  return Boolean(user) && matches;
+  return user && matches ? user : null;
+}
+
+/** Read a single user record (cached by mtime). Used by JWT verification. */
+export async function getUser(
+  usersFile: string,
+  username: string
+): Promise<UserRecord | undefined> {
+  return findUser(await loadUsers(usersFile), username);
 }
 
 /** Create the user's home directory if missing (mode 0700). Returns its path. */
@@ -100,26 +146,64 @@ async function writeStore(usersFile: string, store: UsersFile): Promise<void> {
   cache.delete(usersFile);
 }
 
-export async function addUser(
-  usersFile: string,
+type NewUserOptions = { role?: UserRole; status?: UserStatus };
+
+/** Build a fresh v2 record (active/user by default). */
+async function buildRecord(
   username: string,
-  password: string
-): Promise<void> {
+  password: string,
+  options: NewUserOptions
+): Promise<UserRecord> {
+  return {
+    username,
+    passwordHash: await bcrypt.hash(password, BCRYPT_COST),
+    createdAt: new Date().toISOString(),
+    status: options.status ?? "active",
+    role: options.role ?? "user",
+    tokenVersion: 0,
+    approvedAt: options.status === "pending" ? undefined : new Date().toISOString()
+  };
+}
+
+function assertValidNewUser(store: UsersFile, username: string, password: string): void {
   if (!USERNAME_PATTERN.test(username)) {
     throw new Error(`Invalid username "${username}" (3-32 chars, [a-z][a-z0-9_-])`);
   }
   if (password.length < 1) {
     throw new Error("Password must not be empty");
   }
-  const store = await loadFresh(usersFile);
   if (findUser(store, username)) {
     throw new Error(`User "${username}" already exists`);
   }
-  store.users.push({
-    username,
-    passwordHash: await bcrypt.hash(password, BCRYPT_COST),
-    createdAt: new Date().toISOString()
-  });
+}
+
+/** Admin-create a user (active by default). The CLI/admin path. */
+export async function addUser(
+  usersFile: string,
+  username: string,
+  password: string,
+  options: NewUserOptions = {}
+): Promise<void> {
+  const store = await loadFresh(usersFile);
+  assertValidNewUser(store, username, password);
+  store.users.push(await buildRecord(username, password, options));
+  await writeStore(usersFile, store);
+}
+
+/** Self-service sign-up — creates a `pending` account awaiting admin approval. */
+export async function registerPending(
+  usersFile: string,
+  username: string,
+  password: string,
+  displayName?: string
+): Promise<void> {
+  const store = await loadFresh(usersFile);
+  assertValidNewUser(store, username, password);
+  const record = await buildRecord(username, password, { status: "pending" });
+  if (displayName) {
+    record.displayName = displayName;
+  }
+  store.users.push(record);
   await writeStore(usersFile, store);
 }
 
@@ -129,18 +213,159 @@ export async function removeUser(usersFile: string, username: string): Promise<v
   if (next.length === store.users.length) {
     throw new Error(`User "${username}" not found`);
   }
-  await writeStore(usersFile, { version: 1, users: next });
+  await writeStore(usersFile, { version: 2, users: next });
 }
 
 export async function listUsers(usersFile: string): Promise<UserRecord[]> {
   return (await loadFresh(usersFile)).users;
 }
 
+/**
+ * Find a user, apply `mutate`, and persist. Reads fresh (bypasses the mtime
+ * cache) so concurrent admin edits don't clobber each other.
+ */
+async function mutateUser(
+  usersFile: string,
+  username: string,
+  mutate: (user: UserRecord) => void | Promise<void>
+): Promise<UserRecord> {
+  const store = await loadFresh(usersFile);
+  const user = findUser(store, username);
+  if (!user) {
+    throw new Error(`User "${username}" not found`);
+  }
+  await mutate(user);
+  await writeStore(usersFile, store);
+  return user;
+}
+
+/** Approve a pending account → active. */
+export function approveUser(usersFile: string, username: string): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    if (user.status !== "pending") {
+      throw new Error(`User "${username}" is not pending`);
+    }
+    user.status = "active";
+    user.approvedAt = new Date().toISOString();
+  });
+}
+
+/** Reject a pending account (delete it). No-op-safe for non-pending → throws. */
+export async function rejectUser(usersFile: string, username: string): Promise<void> {
+  const user = await getUser(usersFile, username);
+  if (!user) {
+    throw new Error(`User "${username}" not found`);
+  }
+  if (user.status !== "pending") {
+    throw new Error(`User "${username}" is not pending`);
+  }
+  await removeUser(usersFile, username);
+}
+
+export function setStatus(
+  usersFile: string,
+  username: string,
+  status: "active" | "disabled"
+): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    user.status = status;
+    if (status === "disabled") {
+      user.tokenVersion += 1; // kick existing sessions
+    }
+  });
+}
+
+export function setRole(usersFile: string, username: string, role: UserRole): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    user.role = role;
+  });
+}
+
+/** Admin reset: set a new password and bump tokenVersion (invalidates old sessions). */
+export function adminResetPassword(
+  usersFile: string,
+  username: string,
+  newPassword: string
+): Promise<UserRecord> {
+  return mutateUser(usersFile, username, async (user) => {
+    user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
+    user.tokenVersion += 1;
+  });
+}
+
+/** Self change-password: verify the old password, set the new one, bump tokenVersion. */
+export async function changePassword(
+  usersFile: string,
+  username: string,
+  oldPassword: string,
+  newPassword: string
+): Promise<UserRecord> {
+  return mutateUser(usersFile, username, async (user) => {
+    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!ok) {
+      throw new Error("Current password is incorrect");
+    }
+    user.passwordHash = await bcrypt.hash(newPassword, BCRYPT_COST);
+    user.tokenVersion += 1;
+  });
+}
+
+/** "Log out everywhere" — bump tokenVersion so all issued JWTs stop verifying. */
+export function bumpTokenVersion(usersFile: string, username: string): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    user.tokenVersion += 1;
+  });
+}
+
+export function updateProfile(
+  usersFile: string,
+  username: string,
+  patch: { displayName?: string; email?: string }
+): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    if (patch.displayName !== undefined) {
+      user.displayName = patch.displayName || undefined;
+    }
+    if (patch.email !== undefined) {
+      user.email = patch.email || undefined;
+    }
+  });
+}
+
+/** Stage an (already-encrypted) TOTP secret without enabling it yet (enrollment step 1). */
+export function stageTotpSecret(
+  usersFile: string,
+  username: string,
+  totpSecretEnc: string
+): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    user.totpSecretEnc = totpSecretEnc;
+    user.totpEnabled = false;
+  });
+}
+
+/** Flip 2FA on after a staged secret verifies (enrollment step 2). */
+export function enableTotp(usersFile: string, username: string): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    if (!user.totpSecretEnc) {
+      throw new Error("No TOTP secret staged — run setup first");
+    }
+    user.totpEnabled = true;
+  });
+}
+
+export function clearTotp(usersFile: string, username: string): Promise<UserRecord> {
+  return mutateUser(usersFile, username, (user) => {
+    user.totpSecretEnc = undefined;
+    user.totpEnabled = false;
+  });
+}
+
 /** Bypass the mtime cache (admin mutations must read the latest on disk). */
 async function loadFresh(usersFile: string): Promise<UsersFile> {
   cache.delete(usersFile);
   const store = await loadUsers(usersFile);
-  return { version: 1, users: [...store.users] };
+  return { version: 2, users: [...store.users] };
 }
 
 // --- Login rate limiter (in-memory, per ip+username) -----------------------

@@ -14,11 +14,13 @@ import {
   Play,
   RotateCcw,
   Settings,
+  Shield,
   SkipForward,
   Sparkles,
   Square,
   Terminal,
   TriangleAlert,
+  UserCog,
   Variable
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -35,6 +37,7 @@ import {
   type DebugFrame,
   type DebugVariable,
   type Language,
+  type AuthMeResponse,
   type ProjectFile,
   type RunEvent,
   type TreeNode
@@ -51,6 +54,8 @@ import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
 import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
+import { AccountPanel } from "./AccountPanel";
+import { AdminPanel } from "./AdminPanel";
 import { useConfirm } from "./ConfirmDialog";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "./settings";
 import { formatRunMetric } from "./runMetrics";
@@ -141,6 +146,11 @@ export function App() {
 
   // --- Accounts + file explorer (Phase 2) ---------------------------------
   const [user, setUser] = useState<string | null>(null);
+  // Full account record (role, 2FA, profile) for the logged-in user; `user` stays
+  // the username string so existing call sites are untouched.
+  const [me, setMe] = useState<AuthMeResponse | null>(null);
+  const [showAccount, setShowAccount] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(false);
   // The right dock is shared by the Debug inspector and Chat AI; `rightTab` only
@@ -377,6 +387,9 @@ export function App() {
 
   const resetToLoggedOut = useCallback(() => {
     setUser(null);
+    setMe(null);
+    setShowAccount(false);
+    setShowAdmin(false);
     setTree([]);
     setFiles((current) => {
       const scratch = current.filter((file) => !(file.path in serverTabsRef.current));
@@ -607,9 +620,11 @@ export function App() {
   );
 
   const handleLogin = useCallback(
-    async (username: string, password: string) => {
-      const name = await authApi.login(username, password);
+    async (username: string, password: string, totp?: string) => {
+      const account = await authApi.login(username, password, totp);
+      const name = account.username;
       setUser(name);
+      setMe(account);
       setShowLogin(false);
       await refreshTree();
 
@@ -1470,11 +1485,12 @@ export function App() {
   useEffect(() => {
     authApi
       .me()
-      .then((name) => {
-        if (!name) {
+      .then((account) => {
+        if (!account) {
           return undefined;
         }
-        setUser(name);
+        setUser(account.username);
+        setMe(account);
         return filesApi.tree();
       })
       .then((res) => {
@@ -1804,10 +1820,31 @@ export function App() {
               : runStatus}
         </span>
         {user ? (
-          <button type="button" className="auth-btn" onClick={handleLogout} title={`Signed in as ${user} — sign out`}>
-            <LogOut size={16} />
-            <span>{user}</span>
-          </button>
+          <>
+            {me?.role === "admin" && (
+              <button
+                type="button"
+                className={`auth-btn ${me.twoFactorEnabled ? "" : "auth-warn"}`}
+                onClick={() => setShowAdmin(true)}
+                title={me.twoFactorEnabled ? "User administration" : "Admin — enable 2FA"}
+              >
+                <Shield size={16} />
+                <span>Admin</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="auth-btn"
+              onClick={() => setShowAccount(true)}
+              title={`Signed in as ${user} — account settings`}
+            >
+              <UserCog size={16} />
+              <span>{me?.displayName || user}</span>
+            </button>
+            <button type="button" className="auth-btn" onClick={handleLogout} title="Sign out">
+              <LogOut size={16} />
+            </button>
+          </>
         ) : (
           <button type="button" className="auth-btn" onClick={() => setShowLogin(true)} title="Sign in">
             <LogIn size={16} />
@@ -1817,6 +1854,20 @@ export function App() {
       </header>
 
       {showLogin && <LoginDialog onClose={() => setShowLogin(false)} onSubmit={handleLogin} />}
+      {showAccount && me && (
+        <AccountPanel
+          me={me}
+          onUpdated={setMe}
+          onClose={() => setShowAccount(false)}
+          onLoggedOut={() => {
+            setShowAccount(false);
+            resetToLoggedOut();
+          }}
+        />
+      )}
+      {showAdmin && user && me?.role === "admin" && (
+        <AdminPanel currentUsername={user} onClose={() => setShowAdmin(false)} />
+      )}
       {confirmDialog}
 
       <div

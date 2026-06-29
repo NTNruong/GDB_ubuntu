@@ -50,14 +50,25 @@ The optional per-user file explorer (Phase 2) is auth-gated and stores files on 
    - `USER_HOMES_HOST_ROOT=/home/gdbrunner/gdb-user-homes` — host bind-source (must match the `volumes:` entry and `USER_HOMES_ROOT=/user-homes` inside the container).
    - `SESSION_SECRET=$(openssl rand -hex 32)` — signs the auth cookie. **If unset the api logs a warning and uses an ephemeral secret, so every restart invalidates all sessions.** Set a stable value in production.
    - `SESSION_COOKIE_SECURE=1` once the stack is served over HTTPS (the cookie is `HttpOnly; SameSite=Lax` regardless).
-3. `docker compose up -d` (env-only change → no `--build` unless code also changed), then seed the first user:
+3. `docker compose up -d` (env-only change → no `--build` unless code also changed), then seed the first **admin** (bootstrap):
    ```bash
-   docker compose exec api node apps/api/dist/cli/users.js add alice 's3cret'
-   docker compose exec api node apps/api/dist/cli/users.js list
+   docker compose exec api node apps/api/dist/cli/users.js add alice 's3cret' --admin
+   docker compose exec api node apps/api/dist/cli/users.js list      # shows role,status,2fa per user
    ```
    The user's home dir is created automatically on first login.
 
-`users.json` (default `<USER_HOMES_ROOT>/users.json`) and the per-user homes directory are the **only stateful host paths** the app owns — back them up together. There is no public self-registration; accounts are admin-managed via the CLI above.
+**Accounts model.** Users **self-register** in the UI ("Create one"), which creates a **`pending`** account; an **admin must approve it** (in-app Admin view, or `users approve <name>`) before it can sign in. Admins manage users in-app or via the CLI:
+```bash
+docker compose exec api node apps/api/dist/cli/users.js role <name> admin|user
+docker compose exec api node apps/api/dist/cli/users.js approve <name>
+docker compose exec api node apps/api/dist/cli/users.js reset <name> 'newpass'   # also bumps tokenVersion
+```
+
+> **Two one-time operator notes after this version's first deploy:**
+> 1. **Bootstrap an admin.** The v1→v2 `users.json` migration marks every existing account `active`/`user` — **nobody is admin** until you run `users role <name> admin`. Without an admin, the in-app Admin view and approvals are unavailable.
+> 2. **Everyone re-logs-in once.** Cookies now carry a `tokenVersion`; pre-existing cookies lack it and are rejected on first request after deploy. This is expected — users simply sign in again. (Admins must then enable 2FA, which is mandatory for the admin role.)
+
+`users.json` (default `<USER_HOMES_ROOT>/users.json`) and the per-user homes directory are the **only stateful host paths** the app owns — back them up together. The per-user TOTP secret is stored AES-encrypted inside `users.json` (key derived from `AI_KEY_SECRET`→`SESSION_SECRET`).
 
 ## AI learning assistant (Phase 3)
 

@@ -2176,6 +2176,180 @@ button.primary.danger {
   padding: var(--space-lg);
 }
 
+.modal-notice {
+  margin: var(--space-xs) 0 0;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.login-switch {
+  margin: 0;
+  padding: 0 var(--space-lg) var(--space-md);
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* --- Account + Admin panels (Phase 2/3) --- */
+.account-card,
+.admin-card {
+  position: relative;
+  width: min(94vw, 540px);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.account-title {
+  margin: 0;
+  font-size: 17px;
+  color: var(--text-primary);
+}
+.account-name {
+  color: var(--accent);
+}
+
+.account-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-subtle);
+}
+.account-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+.account-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.account-section label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.account-section input {
+  height: 34px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.account-section input:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+.account-section button {
+  align-self: flex-start;
+}
+.account-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.role-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+.role-admin {
+  background: hsla(160, 65%, 35%, 0.22);
+  color: var(--accent);
+}
+.role-user {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
+.totp-secret {
+  display: block;
+  padding: var(--space-sm);
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}
+.totp-link {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.danger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: transparent;
+}
+.danger-btn:hover:not(:disabled) {
+  background: hsla(0, 72%, 50%, 0.12);
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.admin-user {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.admin-user em {
+  color: var(--text-muted);
+  font-style: normal;
+}
+.admin-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.admin-actions button {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.auth-btn.auth-warn {
+  color: var(--color-warning, #e0a83e);
+  border-color: var(--color-warning, #e0a83e);
+}
+
 /* === AI learning assistant (Phase 3) ======================================
    A fixed right-side drawer so it coexists with the explorer + debug grid
    columns without participating in the content-area grid. */

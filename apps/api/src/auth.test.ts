@@ -56,7 +56,12 @@ describe("auth routes", () => {
       payload: { username: "alice", password: "correct-horse" }
     });
     expect(login.statusCode).toBe(200);
-    expect(login.json()).toEqual({ username: "alice" });
+    expect(login.json()).toMatchObject({
+      username: "alice",
+      role: "user",
+      status: "active",
+      twoFactorEnabled: false
+    });
     const cookie = login.cookies.find((c) => c.name === "gdb_session");
     expect(cookie?.httpOnly).toBe(true);
     expect(cookie?.sameSite?.toLowerCase()).toBe("lax");
@@ -68,7 +73,7 @@ describe("auth routes", () => {
     });
     await app.close();
     expect(me.statusCode).toBe(200);
-    expect(me.json()).toEqual({ username: "alice" });
+    expect(me.json()).toMatchObject({ username: "alice", role: "user", status: "active" });
   });
 
   it("returns 401 from /me without a cookie", async () => {

@@ -10,6 +10,8 @@ import {
 } from "@internal/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import WebSocket from "ws";
+import { registerAccount } from "./account.js";
+import { registerAdmin } from "./admin.js";
 import { registerAuth } from "./auth.js";
 import { registerChat } from "./chat.js";
 import type { ApiConfig } from "./config.js";
@@ -32,6 +34,10 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
         "req.body.argv",
         "req.body.content",
         "req.body.password",
+        "req.body.oldPassword",
+        "req.body.newPassword",
+        "req.body.totp",
+        "req.body.totpSecret",
         "req.body.message",
         "req.body.context.code",
         "req.body.context.selection",
@@ -50,6 +56,8 @@ export function createApiServer(config: ApiConfig): FastifyInstance {
   app.register(websocket);
 
   registerAuth(app, config);
+  registerAdmin(app, config);
+  registerAccount(app, config);
   registerFiles(app, config);
   registerChat(app, config);
 

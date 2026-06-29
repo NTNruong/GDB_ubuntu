@@ -487,11 +487,74 @@ export const UsernameSchema = z.string().regex(USERNAME_PATTERN, {
   message: "Invalid username (3-32 chars, lowercase letter first, then a-z 0-9 _ -)"
 });
 
+/** Password shape. Min 1 keeps the bar low for a trusted tailnet class; max 256 caps bcrypt input. */
+export const PasswordSchema = z.string().min(1).max(256);
+
 export const LoginRequestSchema = z.object({
   username: UsernameSchema,
-  password: z.string().min(1).max(256)
+  password: PasswordSchema,
+  /** TOTP code, required only when the account has 2FA enabled. */
+  totp: z
+    .string()
+    .regex(/^[0-9]{6}$/)
+    .optional()
 });
 export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+
+/** Self-service sign-up. The account starts `pending` until an admin approves it. */
+export const RegisterRequestSchema = z.object({
+  username: UsernameSchema,
+  password: PasswordSchema,
+  displayName: z.string().trim().max(64).optional()
+});
+export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
+
+export const ChangePasswordRequestSchema = z.object({
+  oldPassword: PasswordSchema,
+  newPassword: PasswordSchema
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;
+
+export const UpdateProfileRequestSchema = z.object({
+  displayName: z.string().trim().max(64).optional(),
+  email: z.string().trim().email().max(254).or(z.literal("")).optional()
+});
+export type UpdateProfileRequest = z.infer<typeof UpdateProfileRequestSchema>;
+
+export const UserRole = ["admin", "user"] as const;
+export type UserRole = (typeof UserRole)[number];
+export const UserStatus = ["pending", "active", "disabled"] as const;
+export type UserStatus = (typeof UserStatus)[number];
+
+export const AdminSetRoleRequestSchema = z.object({ role: z.enum(UserRole) });
+export type AdminSetRoleRequest = z.infer<typeof AdminSetRoleRequestSchema>;
+
+export const AdminSetStatusRequestSchema = z.object({
+  status: z.enum(["active", "disabled"])
+});
+export type AdminSetStatusRequest = z.infer<typeof AdminSetStatusRequestSchema>;
+
+export const AdminResetPasswordRequestSchema = z.object({ newPassword: PasswordSchema });
+export type AdminResetPasswordRequest = z.infer<typeof AdminResetPasswordRequestSchema>;
+
+/** Enable 2FA: verify a code against the secret minted by /2fa/setup. */
+export const TotpEnableRequestSchema = z.object({
+  totp: z.string().regex(/^[0-9]{6}$/)
+});
+export type TotpEnableRequest = z.infer<typeof TotpEnableRequestSchema>;
+
+/** Admin-facing view of a user record — never carries the password hash or TOTP secret. */
+export type AdminUserView = {
+  username: string;
+  role: UserRole;
+  status: UserStatus;
+  displayName?: string;
+  email?: string;
+  twoFactorEnabled: boolean;
+  createdAt: string;
+  approvedAt?: string;
+};
+export type AdminUsersResponse = { users: AdminUserView[] };
 
 export const WriteFileRequestSchema = z.object({
   path: UserPathSchema,
@@ -544,6 +607,23 @@ export type FolderFilesResponse = {
 
 export type AuthMeResponse = {
   username: string;
+  role: UserRole;
+  status: UserStatus;
+  displayName?: string;
+  email?: string;
+  twoFactorEnabled: boolean;
+};
+
+/** Returned by /api/auth/register — the account is pending until an admin approves. */
+export type RegisterResponse = {
+  username: string;
+  status: "pending";
+};
+
+/** Returned by /api/account/2fa/setup — the otpauth URI + raw secret to enroll an authenticator. */
+export type TotpSetupResponse = {
+  secret: string;
+  otpauthUri: string;
 };
 
 export function parseArgv(input: string): string[] {
