@@ -576,8 +576,10 @@ export function AiPanel({
             <X size={15} />
           </button>
         </div>
-      </header>
 
+      {/* Popovers live inside the header so their `top: 100%` anchors to the header's
+          bottom edge, not the whole panel's (ISSUE-085). The header is position:relative
+          and they are position:absolute, so they don't disturb its flex layout. */}
       {historyOpen && (
         <div className="ai-popover ai-history-popover" role="group" aria-label="Conversations">
           <div className="ai-popover-head">
@@ -758,6 +760,7 @@ export function AiPanel({
           </div>
         </div>
       )}
+      </header>
 
       <div
         className="ai-messages"

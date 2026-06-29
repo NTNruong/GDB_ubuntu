@@ -2193,6 +2193,7 @@ button.primary.danger {
 /* Thin native-style header bar (ISSUE-083): title + flat model/workflow selects
    + icon actions. Wraps to a second line when the panel is narrow. */
 .ai-panel-header {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2243,6 +2244,16 @@ button.primary.danger {
 
 .ai-flat-select:focus-visible {
   border-color: var(--border-active);
+}
+
+/* Keep the dark, blended look while the native <select> still holds :focus after a
+   click (ISSUE-086) — without this the control falls back to a light UA background
+   once hover is lost, washing out the text. :focus-visible above keeps the keyboard
+   focus ring. */
+.ai-flat-select:focus {
+  background: transparent;
+  color: var(--text-primary);
+  outline: none;
 }
 
 .ai-panel-header-actions {
@@ -2888,6 +2899,9 @@ button.primary.danger {
 .ai-input {
   width: 100%;
   min-width: 0;
+  /* Override the global `textarea { min-height: 132px }` floor (ISSUE-087) so the
+     JS auto-resize (AiPanel useEffect) can shrink the composer back to one line. */
+  min-height: 0;
   max-height: 160px;
   padding: 4px 4px 0;
   resize: none;
