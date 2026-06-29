@@ -146,6 +146,34 @@
   box-sizing: border-box;
 }
 
+/* --- Themed scrollbars (token-based → adapts to light/dark). The tab bar keeps
+   its own hidden-scrollbar rules (more specific). --- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border: 2px solid transparent;
+  border-radius: var(--radius-pill);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-active);
+  background-clip: padding-box;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -951,6 +979,33 @@ h1.brand {
   text-transform: uppercase;
 }
 
+/* stdin / arguments / breakpoints are now distinct groups inside the input card. */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.input-group.input-stdin {
+  flex: 1 1 auto;
+}
+
+.input-stdin textarea {
+  flex: 1 1 auto;
+  min-height: 88px;
+}
+
+.argv-field {
+  width: 100%;
+}
+
+.input-breakpoints {
+  flex: 0 0 auto;
+  padding-top: var(--space-xs);
+  border-top: 1px solid var(--border-subtle);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -1606,6 +1661,19 @@ h1.brand {
   border-color: var(--border-active);
 }
 
+.topbar-ai-teaser {
+  color: var(--text-muted);
+  border-style: dashed;
+}
+
+.topbar-ai-teaser span {
+  max-width: 180px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .auth-btn span {
   max-width: 140px;
   overflow: hidden;
@@ -1865,12 +1933,23 @@ h1.brand {
 
 /* Unsaved-changes dot on a server-backed editor tab. */
 .tab-dirty {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   margin-left: 2px;
   border-radius: 50%;
-  background: var(--text-secondary);
+  background: var(--color-warning);
   flex-shrink: 0;
+  animation: dirty-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes dirty-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 hsla(40, 90%, 60%, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 4px hsla(40, 90%, 60%, 0);
+  }
 }
 
 .tab-scratch-badge {
@@ -1985,6 +2064,101 @@ h1.brand {
 .modal-submit {
   margin-top: var(--space-sm);
   justify-content: center;
+}
+
+/* --- Confirm dialog (replaces window.confirm) --- */
+.confirm-card {
+  width: min(92vw, 420px);
+  padding-bottom: var(--space-md);
+}
+
+.confirm-body {
+  gap: var(--space-md);
+}
+
+.confirm-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-xs);
+}
+
+.confirm-cancel {
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+}
+
+.confirm-cancel:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+button.primary.danger {
+  background: linear-gradient(135deg, var(--color-error), hsl(0, 60%, 38%));
+  border-color: var(--color-error);
+  box-shadow: 0 0 12px hsla(0, 72%, 50%, 0.25);
+}
+
+/* --- Redesigned login dialog --- */
+.login-card {
+  position: relative;
+  width: min(92vw, 380px);
+  padding-bottom: var(--space-lg);
+  overflow: hidden;
+}
+
+.login-close {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  z-index: 1;
+}
+
+.login-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-xl) var(--space-lg) var(--space-md);
+  text-align: center;
+  background: linear-gradient(160deg, hsla(160, 65%, 35%, 0.18), transparent 70%);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-xs);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, var(--accent), hsl(160, 50%, 28%));
+  color: #fff;
+  box-shadow: 0 0 16px var(--accent-glow);
+}
+
+.login-hero h2 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--text-primary);
+}
+
+.login-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.login-card .modal-body {
+  padding: var(--space-lg);
 }
 
 /* === AI learning assistant (Phase 3) ======================================

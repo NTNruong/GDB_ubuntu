@@ -1,4 +1,4 @@
-import { LogIn, X } from "lucide-react";
+import { Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 type LoginDialogProps = {
@@ -42,14 +42,16 @@ export function LoginDialog({ onClose, onSubmit }: LoginDialogProps) {
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal-card" role="dialog" aria-label="Sign in" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>
-            <LogIn size={16} /> Sign in
-          </h2>
-          <button type="button" className="modal-close" aria-label="Close" onClick={onClose}>
-            <X size={16} />
-          </button>
+      <div className="modal-card login-card" role="dialog" aria-label="Sign in" onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-close login-close" aria-label="Close" onClick={onClose}>
+          <X size={16} />
+        </button>
+        <div className="login-hero">
+          <div className="login-brand">
+            <Terminal size={22} />
+          </div>
+          <h2>Welcome back</h2>
+          <p className="login-sub">Sign in to your workspace, files &amp; Chat AI.</p>
         </div>
         <form className="modal-body" onSubmit={submit}>
           <label htmlFor="login-username">Username</label>

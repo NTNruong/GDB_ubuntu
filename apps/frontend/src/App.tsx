@@ -51,6 +51,7 @@ import { Explorer } from "./Explorer";
 import { FileTabs, type TabMeta } from "./FileTabs";
 import { AuthExpiredError, authApi, filesApi } from "./filesApi";
 import { LoginDialog } from "./LoginDialog";
+import { useConfirm } from "./ConfirmDialog";
 import { FONT_SIZE_MAX, FONT_SIZE_MIN, useSettings } from "./settings";
 import { formatRunMetric } from "./runMetrics";
 import { baseOf, dirOf, gatherFolderRun } from "./runGather";
@@ -127,6 +128,7 @@ export function App() {
   // Persisted editor/UI preferences (font size, word wrap, advanced suggestions,
   // theme). `monacoReady` flips on editor mount so the registration effect re-runs
   // (monacoRef alone doesn't trigger a render).
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [settings, updateSettings] = useSettings();
   const [settingsMenuOpen, setSettingsMenuOpen] = useState(false);
   const [monacoReady, setMonacoReady] = useState(false);
@@ -319,12 +321,19 @@ export function App() {
   }, []);
 
   const deleteFile = useCallback(
-    (path: string) => {
-      if (window.confirm(`Delete "${path}"? This cannot be undone.`)) {
+    async (path: string) => {
+      if (
+        await confirm({
+          title: "Delete file",
+          message: `Delete "${path}"? This cannot be undone.`,
+          confirmLabel: "Delete",
+          danger: true
+        })
+      ) {
         removeFile(path);
       }
     },
-    [removeFile]
+    [removeFile, confirm]
   );
 
   const isDebugRunning = isDebugActive && debugStatus === "Running";
@@ -531,7 +540,14 @@ export function App() {
           ? `Delete folder "${node.path}" and close ${openTabs.length} open file${openTabs.length === 1 ? "" : "s"}` +
             `${dirtyCount > 0 ? ` (${dirtyCount} with unsaved changes)` : ""}? This cannot be undone.`
           : `Delete "${node.path}"? This cannot be undone.`;
-      if (!window.confirm(message)) {
+      if (
+        !(await confirm({
+          title: node.type === "dir" ? "Delete folder" : "Delete file",
+          message,
+          confirmLabel: "Delete",
+          danger: true
+        }))
+      ) {
         return;
       }
       try {
@@ -606,7 +622,13 @@ export function App() {
       }
       const list = candidates.map((file) => file.path).join(", ");
       const plural = candidates.length === 1 ? "" : "s";
-      if (!window.confirm(`Save your edited scratch file${plural} (${list}) into /home/${name}?`)) {
+      if (
+        !(await confirm({
+          title: "Save scratch files?",
+          message: `Save your edited scratch file${plural} (${list}) into /home/${name}?`,
+          confirmLabel: "Save"
+        }))
+      ) {
         return;
       }
 
@@ -1478,6 +1500,33 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [user, saveActiveServerTab]);
 
+  // IDE-style shortcuts: Ctrl/Cmd+Enter = Run, Ctrl/Cmd+D = Debug, Esc = Stop.
+  // Run/Debug work for anonymous users too, so this is not gated on `user`. The
+  // chat composer (.ai-panel) keeps its own keys, and an open modal owns Escape.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const inAiPanel = Boolean(target?.closest?.(".ai-panel"));
+      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        if (inAiPanel) return;
+        event.preventDefault();
+        if (!isRunActive && !isDebugActive) void startRun();
+      } else if ((event.ctrlKey || event.metaKey) && (event.key === "d" || event.key === "D")) {
+        if (inAiPanel) return;
+        event.preventDefault();
+        if (!isRunActive && !isDebugActive && capability.debug) void startDebug();
+      } else if (event.key === "Escape") {
+        if (inAiPanel || document.querySelector(".modal-backdrop")) return;
+        if (isRunActive || isDebugActive) {
+          event.preventDefault();
+          handleStop();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isRunActive, isDebugActive, capability.debug, startRun, startDebug, handleStop]);
+
   // Guard against losing unsaved server-tab edits on tab close/reload (ISSUE-048).
   // Attached only while something is dirty; cleared when clean or on logout.
   useEffect(() => {
@@ -1543,10 +1592,23 @@ export function App() {
             <span>AI</span>
           </button>
         )}
+        {!user && (
+          <button
+            type="button"
+            className="topbar-ai-btn topbar-ai-teaser"
+            data-testid="btn-ai-teaser"
+            title="Sign in to access Chat AI"
+            onClick={() => setShowLogin(true)}
+          >
+            <Bot size={16} />
+            <span>Sign in to access Chat AI</span>
+          </button>
+        )}
         <select
           aria-label="Language"
           value={language}
-          onChange={(event) => {
+          onChange={async (event) => {
+            const select = event.currentTarget;
             const next = event.target.value as Language;
             if (next === language) {
               return;
@@ -1561,8 +1623,17 @@ export function App() {
             }
             const currentCap = LANGUAGE_CAPABILITIES.find((item) => item.id === language);
             const pristine = files.length === 1 && files[0]?.content === (currentCap?.defaultSource ?? "");
-            if (!pristine && !window.confirm("Switching language will clear all files. Continue?")) {
-              event.target.value = language;
+            if (
+              !pristine &&
+              !(await confirm({
+                title: "Switch language",
+                message: "Switching language will clear all files. Continue?",
+                confirmLabel: "Switch",
+                danger: true
+              }))
+            ) {
+              // Cancelled: revert the (uncontrolled-until-render) select back to the current language.
+              select.value = language;
               return;
             }
             const cap = LANGUAGE_CAPABILITIES.find((item) => item.id === next);
@@ -1677,13 +1748,6 @@ export function App() {
             </>
           )}
         </div>
-        <input
-          aria-label="Arguments"
-          className="args-input"
-          value={argvInput}
-          placeholder="argv"
-          onChange={(event) => setArgvInput(event.target.value)}
-        />
         <button type="button" className="primary" onClick={startRun} disabled={isRunActive || isDebugActive} title="Run">
           <Play size={16} />
           <span>Run</span>
@@ -1753,6 +1817,7 @@ export function App() {
       </header>
 
       {showLogin && <LoginDialog onClose={() => setShowLogin(false)} onSubmit={handleLogin} />}
+      {confirmDialog}
 
       <div
         className={`content-area ${rightOpen ? "right-open" : ""} ${user && explorerOpen ? "explorer-open" : ""}`}
@@ -1839,10 +1904,24 @@ export function App() {
 
         <section className="bottom-panel">
           <div className="input-card">
-            <label htmlFor="stdin">stdin</label>
-            <textarea id="stdin" value={stdin} onChange={(event) => setStdin(event.target.value)} spellCheck={false} />
-            <label>breakpoints</label>
-            <div className="breakpoint-info">
+            <div className="input-group input-stdin">
+              <label htmlFor="stdin">stdin</label>
+              <textarea id="stdin" value={stdin} onChange={(event) => setStdin(event.target.value)} spellCheck={false} />
+            </div>
+            <div className="input-group">
+              <label htmlFor="argv">arguments</label>
+              <input
+                id="argv"
+                className="argv-field"
+                aria-label="Arguments"
+                value={argvInput}
+                placeholder="argv (space-separated)"
+                onChange={(event) => setArgvInput(event.target.value)}
+              />
+            </div>
+            <div className="input-group input-breakpoints">
+              <label>breakpoints</label>
+              <div className="breakpoint-info">
               <input
                 id="breakpoints"
                 type="text"
@@ -1863,6 +1942,7 @@ export function App() {
                   Clear all
                 </button>
               )}
+              </div>
             </div>
           </div>
 
