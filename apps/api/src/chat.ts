@@ -5,6 +5,8 @@ import {
   AI_WORKFLOW_INFO,
   ApiKeyRequestSchema,
   ChatSendRequestSchema,
+  CompactThreadRequestSchema,
+  DEFAULT_COMPACT_KEEP,
   LANGUAGE_CAPABILITIES,
   MAX_AI_HISTORY_MESSAGES,
   SetLeafRequestSchema,
@@ -22,9 +24,10 @@ import type { ApiConfig } from "./config.js";
 import { enabledModels, findEnabledModel, streamAgent, streamChat } from "./ai/index.js";
 import { toAgentInput } from "./ai/backends/antigravity.js";
 import { deleteUserKey, loadUserKey, storeUserKey, userKeyInfo } from "./ai/keystore.js";
-import { buildSystemPrompt } from "./ai/prompts.js";
+import { buildSummaryPrompt, buildSystemPrompt } from "./ai/prompts.js";
 import {
   addNode,
+  compactThread,
   createThread,
   deleteSubtree,
   deleteThread,
@@ -188,6 +191,81 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
         const dir = await aiDirFor(request, config);
         await setCurrentLeaf(dir, request.params.id, parsed.data.leafId);
         return reply.send({ ok: true });
+      } catch (error) {
+        return fail(reply, error);
+      }
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: unknown; Reply: AiThreadResponse | ErrorResponse }>(
+    "/api/ai/threads/:id/compact",
+    guard,
+    async (request, reply) => {
+      const parsed = CompactThreadRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "Invalid compact request" });
+      }
+      const dir = await aiDirFor(request, config);
+      const userKey = config.aiKeySecret ? await loadUserKey(dir, config.aiKeySecret) : null;
+      const effectiveGeminiKey = userKey ?? config.geminiApiKey;
+
+      // The agentic Antigravity model can't write a plain summary; fall back to the
+      // first enabled text (streamChat) model when it's selected.
+      const requested = findEnabledModel(config, parsed.data.model, Boolean(userKey));
+      const summaryModel =
+        requested && requested.backend !== "antigravity"
+          ? requested
+          : enabledModels(config, Boolean(userKey)).find((model) => model.backend !== "antigravity");
+      if (!summaryModel) {
+        return reply.code(400).send({ error: "No text model is available to summarize" });
+      }
+
+      let thread;
+      try {
+        thread = await readThread(dir, request.params.id);
+      } catch (error) {
+        return fail(reply, error);
+      }
+
+      const keep = parsed.data.keepRecent ?? DEFAULT_COMPACT_KEEP;
+      const fullPath = pathToLeaf(thread, thread.currentLeafId);
+      if (fullPath.length <= keep) {
+        return reply.send(thread); // nothing old enough to compact
+      }
+      const older = fullPath.slice(0, -keep);
+      const messages: ChatMessage[] = [
+        { role: "system", content: buildSummaryPrompt() },
+        ...older.map((node) => ({ role: node.role, content: node.content })),
+        { role: "user", content: "Hãy tóm tắt cuộc trò chuyện ở trên thành một bản recap ngắn gọn." }
+      ];
+
+      const controller = new AbortController();
+      request.raw.on("close", () => controller.abort());
+
+      let summary = "";
+      try {
+        const gen = streamChat(config, summaryModel, messages, controller.signal, effectiveGeminiKey);
+        let next = await gen.next();
+        while (!next.done) {
+          summary += next.value;
+          next = await gen.next();
+        }
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return reply.code(499).send({ error: "Compact cancelled" });
+        }
+        const message = error instanceof Error ? error.message : "Summarization failed";
+        app.log.warn({ err: error, model: summaryModel.id }, "ai compact summarization failed");
+        return reply.code(502).send({ error: message });
+      }
+
+      if (!summary.trim()) {
+        return reply.code(502).send({ error: "Summarization produced no text" });
+      }
+
+      try {
+        const compacted = await compactThread(dir, request.params.id, summary.trim(), keep);
+        return reply.send(compacted);
       } catch (error) {
         return fail(reply, error);
       }

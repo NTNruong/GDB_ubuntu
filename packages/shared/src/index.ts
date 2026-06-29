@@ -793,6 +793,20 @@ export type ChatSendRequest = z.infer<typeof ChatSendRequestSchema>;
 export const SetLeafRequestSchema = z.object({ leafId: AiNodeIdSchema });
 export type SetLeafRequest = z.infer<typeof SetLeafRequestSchema>;
 
+/**
+ * "Compact context": summarize everything older than the last `keepRecent` nodes
+ * on the active branch into a single summary node, discarding the rest. `model`
+ * picks the backend used to write the summary (an agentic model falls back to a
+ * text model server-side).
+ */
+export const CompactThreadRequestSchema = z.object({
+  model: z.string().min(1).max(64),
+  keepRecent: z.number().int().min(1).max(50).optional()
+});
+export type CompactThreadRequest = z.infer<typeof CompactThreadRequestSchema>;
+/** Nodes kept on the active branch when compacting (the rest are summarized). */
+export const DEFAULT_COMPACT_KEEP = 4;
+
 export const ThreadRenameRequestSchema = z.object({
   title: z.string().min(1).max(120)
 });
@@ -828,6 +842,12 @@ export type AiThreadNode = {
   steps?: AiAgentStep[];
   /** Model id that produced an assistant node. */
   model?: string;
+  /**
+   * Marks a synthetic node produced by the "compact context" action: a single
+   * summary that replaces the older part of the branch. Stored as `role:"assistant"`
+   * so it carries forward as context, but rendered as a divider, not a chat bubble.
+   */
+  kind?: "summary";
 };
 
 export type AiThread = {

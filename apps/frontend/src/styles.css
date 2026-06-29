@@ -1053,6 +1053,7 @@ h1.brand {
 
 .tabbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 8px;
   border-bottom: 1px solid var(--border-subtle);
@@ -2181,6 +2182,7 @@ button.primary.danger {
 /* In-flow inside .right-dock (no longer a fixed overlay — it shares the resizable
    right column with the Debug inspector). */
 .ai-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -2515,12 +2517,78 @@ button.primary.danger {
   font-size: 0.82rem;
 }
 
-.ai-token-meter {
-  padding: 2px var(--space-md);
+/* Token progress ring inside the composer capsule (ISSUE-079/080). Colored ring
+   when the model reports a real context window; click compacts the context. */
+.ai-token-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.ai-token-ring:disabled {
+  cursor: default;
+}
+
+.ai-token-ring.is-busy {
+  animation: ai-ring-pulse 1s ease-in-out infinite;
+}
+
+@keyframes ai-ring-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.ai-token-ring-track {
+  stroke: var(--border-default);
+}
+
+.ai-token-ring .ai-ring-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  width: max-content;
+  max-width: 220px;
+  padding: var(--space-xs) var(--space-sm);
   font-size: 0.72rem;
-  color: var(--text-muted);
-  text-align: right;
+  line-height: 1.35;
+  color: var(--text-secondary);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   font-variant-numeric: tabular-nums;
+}
+
+.ai-token-ring:hover:not(:disabled) .ai-ring-tip,
+.ai-token-ring:focus-visible .ai-ring-tip {
+  display: flex;
+}
+
+.ai-ring-tip strong {
+  color: var(--text-primary);
+}
+
+.ai-ring-tip-hint {
+  color: var(--text-muted);
 }
 
 /* Copilot-style context chips inside the composer: a focused-only chip is italic
@@ -2586,11 +2654,16 @@ button.primary.danger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
+  box-shadow: none;
   cursor: pointer;
 }
 
@@ -2652,33 +2725,133 @@ button.primary.danger {
   color: var(--text-muted);
 }
 
+/* Floating liquid-glass composer (ISSUE-078): the form is absolutely positioned
+   over the bottom of the messages area; .ai-messages reserves matching bottom
+   padding (set inline from the measured height) so the last message stays clear. */
 .ai-composer {
+  position: absolute;
+  left: var(--space-md);
+  right: var(--space-md);
+  bottom: var(--space-md);
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
-  padding: var(--space-sm) var(--space-md);
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-layer-2);
+  pointer-events: none;
 }
 
-.ai-composer-toolbar {
+.ai-composer > * {
+  pointer-events: auto;
+}
+
+/* The capsule: a rounded glass pill holding attach · token ring · input · send. */
+.ai-capsule {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  padding: 6px 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill, 22px);
+  background: var(--glass-bg);
+  box-shadow: var(--shadow-lg), inset 0 1px 0 hsla(0, 0%, 100%, 0.18);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.ai-capsule:focus-within {
+  border-color: var(--border-active);
 }
 
 .ai-input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 160px;
+  padding: 6px 4px;
   resize: none;
+  border: none;
+  background: transparent;
   font-family: inherit;
   font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.ai-input:focus {
+  outline: none;
+  box-shadow: none;
 }
 
 .ai-send {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-sm);
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(135deg, #22d3ee, #6366f1 55%, #a855f7);
+  box-shadow: 0 2px 10px hsla(250, 80%, 50%, 0.35);
+  cursor: pointer;
+}
+
+.ai-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Transient confirmation after a compact action. */
+.ai-toast {
+  align-self: center;
+  padding: 4px var(--space-sm);
+  font-size: 0.74rem;
+  color: var(--text-primary);
+  background: hsla(150, 60%, 40%, 0.18);
+  border: 1px solid hsla(150, 60%, 45%, 0.4);
+  border-radius: var(--radius-pill, 22px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* In-transcript notice rendered for a compaction summary node (ISSUE-080). */
+.ai-compaction-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-sm) var(--space-md);
+  border: 1px dashed hsla(150, 50%, 45%, 0.5);
+  border-radius: var(--radius-md);
+  background: hsla(150, 50%, 40%, 0.08);
+}
+
+.ai-compaction-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: hsl(150, 45%, 55%);
+}
+
+/* Divider inserted when the answering model changes mid-thread (ISSUE-081). */
+.ai-model-divider {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: 6px;
+  margin: var(--space-xs) 0;
+  padding: 3px var(--space-sm);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-pill, 22px);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 /* --- Markdown rendering inside an assistant bubble --- */

@@ -243,6 +243,47 @@ export async function deleteSubtree(userDir: string, id: string, nodeId: string)
   await writeThread(userDir, thread);
 }
 
+/**
+ * Destructively compact the active branch: replace everything older than the last
+ * `keepRecent` nodes on the current path with a single `kind:"summary"` node, and
+ * drop all off-branch variants. The summary is stored as `role:"assistant"` so it
+ * carries forward as context. No-op (returns unchanged) if nothing is old enough.
+ */
+export async function compactThread(
+  userDir: string,
+  id: string,
+  summaryContent: string,
+  keepRecent: number
+): Promise<AiThread> {
+  const thread = await readThread(userDir, id);
+  const keep = Math.max(1, keepRecent);
+  const fullPath = pathToLeaf(thread, thread.currentLeafId);
+  if (fullPath.length <= keep) {
+    return thread;
+  }
+  const recent = fullPath.slice(-keep);
+  const head = recent[0];
+  if (!head) {
+    return thread;
+  }
+  const summary: AiThreadNode = {
+    id: generateNodeId(),
+    parentId: null,
+    role: "assistant",
+    kind: "summary",
+    content: summaryContent,
+    at: Date.now()
+  };
+  // Re-root the kept tail under the summary; everything else (old prefix + other
+  // branches) is discarded.
+  head.parentId = summary.id;
+  thread.nodes = [summary, ...recent];
+  thread.currentLeafId = recent[recent.length - 1]?.id ?? summary.id;
+  thread.updatedAt = Date.now();
+  await writeThread(userDir, thread);
+  return thread;
+}
+
 /** Switch the active branch to `leafId`. */
 export async function setCurrentLeaf(userDir: string, id: string, leafId: string): Promise<void> {
   const thread = await readThread(userDir, id);

@@ -99,6 +99,20 @@ function attachmentsSection(attachments?: AiAttachment[]): string {
   return `\n\nAttached workspace files the student picked (use them as reference when relevant):\n${parts.join("\n\n")}`;
 }
 
+/**
+ * System prompt for the "compact context" action: condense the earlier part of an
+ * ongoing tutoring conversation into a compact recap the model can carry forward,
+ * without inventing new teaching content.
+ */
+export function buildSummaryPrompt(): string {
+  return [
+    "You are compacting an ongoing programming-tutor conversation to free up context.",
+    "Summarize the earlier messages into a concise recap that preserves the key facts, decisions, code snippets, the student's goal, and any unresolved questions.",
+    'Write the recap primarily in Vietnamese with inline English technical-term glosses, e.g. "con trỏ (pointer)", as compact bullet points.',
+    "Do not add new explanations or answer anything new — only condense what was already said."
+  ].join(" ");
+}
+
 export function buildSystemPrompt(
   workflow: AiWorkflow,
   skill: AiSkill,

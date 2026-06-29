@@ -78,6 +78,13 @@ export const aiApi = {
       ...jsonBody({ leafId })
     }).then(() => undefined);
   },
+  /** Summarize-and-compact the active branch; returns the rebuilt thread. */
+  compactThread(id: string, model: string, keepRecent?: number): Promise<AiThreadResponse> {
+    return request<AiThreadResponse>(`/api/ai/threads/${encodeURIComponent(id)}/compact`, {
+      method: "POST",
+      ...jsonBody({ model, ...(keepRecent ? { keepRecent } : {}) })
+    });
+  },
 
   keyInfo(): Promise<AiKeyInfoResponse> {
     return request<AiKeyInfoResponse>("/api/ai/key");

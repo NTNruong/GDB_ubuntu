@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Bot,
   ChevronLeft,
   ChevronRight,
@@ -10,13 +11,15 @@ import {
   RefreshCw,
   Send,
   Settings,
+  Sparkles,
   Terminal,
   Trash2,
   Wrench,
   X
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AI_REASONING_EFFORTS, MAX_AI_ATTACHMENTS, MAX_AI_CONTEXT_BYTES } from "@internal/shared";
+import { levelForRatio, tokenRingColor } from "./aiTokens.js";
 import type {
   AiAgentStep,
   AiAttachment,
@@ -38,7 +41,7 @@ import { aiApi } from "./aiApi.js";
 import { AiMarkdown } from "./AiMarkdown.js";
 import { splitThinking } from "./aiContent.js";
 import { flattenFiles } from "./aiAttachments.js";
-import { activePath, nodeMap, siblings, descendToLeaf } from "./aiTree.js";
+import { activePath, modelSwitchPoints, nodeMap, siblings, descendToLeaf } from "./aiTree.js";
 
 type AiPanelProps = {
   onClose: () => void;
@@ -94,6 +97,9 @@ export function AiPanel({
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Transient confirmation shown above the composer after a compact action.
+  const [notice, setNotice] = useState<string | null>(null);
+  const [compacting, setCompacting] = useState(false);
 
   const [keyInfo, setKeyInfo] = useState<AiKeyInfoResponse | null>(null);
   const [keyInput, setKeyInput] = useState("");
@@ -104,9 +110,16 @@ export function AiPanel({
 
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // The composer floats over the messages (ISSUE-078); track its height so the
+  // scroll area reserves matching bottom padding and never hides the last message.
+  const composerRef = useRef<HTMLFormElement | null>(null);
+  const [composerH, setComposerH] = useState(0);
 
   const path = useMemo(() => activePath(nodes, currentLeafId), [nodes, currentLeafId]);
   const byId = useMemo(() => nodeMap(nodes), [nodes]);
+
+  // Node ids that should be preceded by a "switched model" divider (ISSUE-081).
+  const modelSwitches = useMemo(() => modelSwitchPoints(path), [path]);
 
   // One-line summary shown when the settings block is collapsed.
   const selectedModel = meta?.models.find((m) => m.id === model);
@@ -389,6 +402,52 @@ export function AiPanel({
     setStreaming(false);
   }, []);
 
+  // ISSUE-080: summarize the older part of the thread into one node, then clear
+  // attachments/pins so the next turn carries far fewer tokens.
+  const compact = useCallback(() => {
+    if (!threadId || streaming || compacting) {
+      return;
+    }
+    setError(null);
+    setCompacting(true);
+    aiApi
+      .compactThread(threadId, model)
+      .then((thread) => {
+        setNodes(thread.nodes);
+        setCurrentLeafId(thread.currentLeafId);
+        setAttachments([]);
+        setPinnedFile(false);
+        setPinnedOutput(false);
+        setUsage(null);
+        setNotice("Đã thu gọn ngữ cảnh — tin cũ được tóm tắt, đính kèm đã gỡ.");
+      })
+      .catch((err) => {
+        onAuthError(err);
+        setError(err instanceof Error ? err.message : "Compact failed");
+      })
+      .finally(() => setCompacting(false));
+  }, [threadId, streaming, compacting, model, onAuthError]);
+
+  useEffect(() => {
+    if (!notice) {
+      return;
+    }
+    const timer = window.setTimeout(() => setNotice(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) {
+      return;
+    }
+    const update = () => setComposerH(el.offsetHeight);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const togglePicker = useCallback(() => {
     if (pickerOpen) {
       setPickerOpen(false);
@@ -623,16 +682,40 @@ export function AiPanel({
         </div>
       )}
 
-      <div className="ai-messages" ref={scrollRef}>
+      <div
+        className="ai-messages"
+        ref={scrollRef}
+        style={composerH ? { paddingBottom: composerH + 12 } : undefined}
+      >
         {path.length === 0 && !pending && (
           <p className="ai-empty">Ask anything about programming, embedded or firmware — I&apos;ll teach in Vietnamese.</p>
         )}
         {path.map((node) => {
+          const divider = modelSwitches.has(node.id) ? (
+            <ModelDivider modelId={modelSwitches.get(node.id) ?? ""} models={meta?.models} />
+          ) : null;
+
+          if (node.kind === "summary") {
+            return (
+              <Fragment key={node.id}>
+                {divider}
+                <div className="ai-compaction-notice">
+                  <span className="ai-compaction-title">
+                    <Sparkles size={12} /> Ngữ cảnh đã thu gọn / Context compacted
+                  </span>
+                  <AssistantBody content={node.content} />
+                </div>
+              </Fragment>
+            );
+          }
+
           const sibs = siblings(nodes, node);
           const variantIndex = sibs.findIndex((s) => s.id === node.id);
           const isEditing = editing?.nodeId === node.id;
           return (
-            <div key={node.id} className={`ai-message ai-${node.role}`}>
+            <Fragment key={node.id}>
+              {divider}
+              <div className={`ai-message ai-${node.role}`}>
               <span className="ai-role">{node.role === "user" ? "You" : "Tutor"}</span>
               {node.role === "assistant" && node.steps && node.steps.length > 0 && (
                 <details className="ai-agent-steps" open>
@@ -719,7 +802,8 @@ export function AiPanel({
                   </button>
                 </div>
               )}
-            </div>
+              </div>
+            </Fragment>
           );
         })}
 
@@ -756,21 +840,20 @@ export function AiPanel({
         {error && <p className="ai-error">{error}</p>}
       </div>
 
-      {usage && (
-        <div className="ai-token-meter" title="Token usage for the last answer">
-          {usage.promptTokens.toLocaleString()} + {usage.completionTokens.toLocaleString()} ={" "}
-          {(usage.promptTokens + usage.completionTokens).toLocaleString()}
-          {usage.contextSize ? ` / ${usage.contextSize.toLocaleString()}` : ""} tokens
-        </div>
-      )}
-
       <form
+        ref={composerRef}
         className="ai-composer"
         onSubmit={(event) => {
           event.preventDefault();
           send();
         }}
       >
+        {notice && (
+          <div className="ai-toast" role="status">
+            {notice}
+          </div>
+        )}
+
         {(currentFileName || hasRunOutput || attachments.length > 0) && (
           <div className="ai-ctx-row">
             {currentFileName && (
@@ -813,21 +896,7 @@ export function AiPanel({
           </div>
         )}
 
-        <textarea
-          className="ai-input"
-          value={input}
-          placeholder="Ask the tutor…"
-          rows={2}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              send();
-            }
-          }}
-        />
-
-        <div className="ai-composer-toolbar">
+        <div className="ai-capsule">
           <div className="ai-attach">
             <button
               type="button"
@@ -862,6 +931,30 @@ export function AiPanel({
               </div>
             )}
           </div>
+
+          {usage && (
+            <TokenRing
+              usage={usage}
+              busy={compacting}
+              canCompact={Boolean(threadId) && !streaming && !compacting}
+              onCompact={compact}
+            />
+          )}
+
+          <textarea
+            className="ai-input"
+            value={input}
+            placeholder="Ask the tutor…"
+            rows={1}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send();
+              }
+            }}
+          />
+
           {streaming ? (
             <button type="button" className="ai-send" onClick={stop} title="Stop">
               <X size={16} />
@@ -874,6 +967,87 @@ export function AiPanel({
         </div>
       </form>
     </aside>
+  );
+}
+
+/**
+ * Composer token meter (ISSUE-079): an SVG ring when the model reports a real
+ * context window (`usage.contextSize`, local llama only) — colored across 10
+ * levels by usage ratio — otherwise a neutral dot showing the raw token count.
+ * Clicking it triggers the compact-context action (ISSUE-080).
+ */
+function TokenRing({
+  usage,
+  busy,
+  canCompact,
+  onCompact
+}: {
+  usage: AiUsage;
+  busy: boolean;
+  canCompact: boolean;
+  onCompact: () => void;
+}) {
+  const used = usage.promptTokens + usage.completionTokens;
+  const ctxWindow = usage.contextSize;
+  const ratio = ctxWindow ? Math.min(1, used / ctxWindow) : 0;
+  const pct = ctxWindow ? Math.round(ratio * 100) : null;
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const color = ctxWindow ? tokenRingColor(ratio) : "var(--text-muted)";
+  const level = ctxWindow ? levelForRatio(ratio) : 0;
+
+  return (
+    <button
+      type="button"
+      className={`ai-token-ring${busy ? " is-busy" : ""}`}
+      data-level={level}
+      aria-label="Token usage — click to compact context"
+      disabled={!canCompact}
+      onClick={onCompact}
+    >
+      <svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true">
+        <circle className="ai-token-ring-track" cx="10" cy="10" r={radius} fill="none" strokeWidth="2.5" />
+        {ctxWindow ? (
+          <circle
+            cx="10"
+            cy="10"
+            r={radius}
+            fill="none"
+            strokeWidth="2.5"
+            stroke={color}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={circumference * (1 - ratio)}
+            transform="rotate(-90 10 10)"
+          />
+        ) : (
+          <circle cx="10" cy="10" r="2.5" fill="var(--text-muted)" />
+        )}
+      </svg>
+      <span className="ai-ring-tip" role="tooltip">
+        {pct !== null ? (
+          <strong>Usage: {pct}%</strong>
+        ) : (
+          <strong>{used.toLocaleString()} tokens</strong>
+        )}
+        <span>
+          Tokens: {used.toLocaleString()}
+          {ctxWindow ? ` / ${ctxWindow.toLocaleString()}` : ""}
+        </span>
+        <span className="ai-ring-tip-hint">{busy ? "Đang thu gọn…" : "Bấm để thu gọn ngữ cảnh"}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Divider inserted in the transcript when the answering model changes (ISSUE-081). */
+function ModelDivider({ modelId, models }: { modelId: string; models?: AiModelsResponse["models"] }) {
+  const label = models?.find((item) => item.id === modelId)?.label ?? modelId;
+  return (
+    <div className="ai-model-divider" role="separator" aria-label={`Switched to ${label}`}>
+      <ArrowLeftRight size={12} />
+      <span>Đã chuyển sang model {label}</span>
+    </div>
   );
 }
 
