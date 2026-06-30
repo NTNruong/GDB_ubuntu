@@ -170,6 +170,12 @@ describe("system prompt attachments", () => {
     expect(base).not.toContain("Attached workspace files");
     expect(buildSystemPrompt("answer", skill, undefined, [])).toBe(base);
   });
+
+  it("instructs the model to wrap reasoning in a single <think> block (ISSUE-091)", () => {
+    const prompt = buildSystemPrompt("answer", skill);
+    expect(prompt).toContain("<think>");
+    expect(prompt).toContain("</think>");
+  });
 });
 
 describe("ai thread store", () => {

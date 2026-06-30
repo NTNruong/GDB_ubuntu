@@ -1,4 +1,4 @@
-import { Terminal, X } from "lucide-react";
+import { ShieldCheck, Terminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { authApi, LoginError } from "./filesApi";
 
@@ -22,6 +22,13 @@ export function LoginDialog({ onClose, onSubmit }: LoginDialogProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const userRef = useRef<HTMLInputElement | null>(null);
+  const totpRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (needTotp) {
+      totpRef.current?.focus();
+    }
+  }, [needTotp]);
 
   useEffect(() => {
     userRef.current?.focus();
@@ -81,51 +88,60 @@ export function LoginDialog({ onClose, onSubmit }: LoginDialogProps) {
         </button>
         <div className="login-hero">
           <div className="login-brand">
-            <Terminal size={22} />
+            {needTotp ? <ShieldCheck size={22} /> : <Terminal size={22} />}
           </div>
-          <h2>{isRegister ? "Create account" : "Welcome back"}</h2>
+          <h2>{needTotp ? "Enter 2FA code" : isRegister ? "Create account" : "Welcome back"}</h2>
           <p className="login-sub">
-            {isRegister
-              ? "New accounts need administrator approval before first sign-in."
-              : "Sign in to your workspace, files & Chat AI."}
+            {needTotp
+              ? "Password verified — enter the 6-digit code from your authenticator app."
+              : isRegister
+                ? "New accounts need administrator approval before first sign-in."
+                : "Sign in to your workspace, files & Chat AI."}
           </p>
         </div>
         <form className="modal-body" onSubmit={submit}>
-          <label htmlFor="login-username">Username</label>
-          <input
-            id="login-username"
-            ref={userRef}
-            value={username}
-            autoComplete="username"
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          {isRegister && (
+          {!needTotp && (
             <>
-              <label htmlFor="login-display">Display name (optional)</label>
+              <label htmlFor="login-username">Username</label>
               <input
-                id="login-display"
-                value={displayName}
-                autoComplete="nickname"
-                onChange={(e) => setDisplayName(e.target.value)}
+                id="login-username"
+                ref={userRef}
+                value={username}
+                autoComplete="username"
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              {isRegister && (
+                <>
+                  <label htmlFor="login-display">Display name (optional)</label>
+                  <input
+                    id="login-display"
+                    value={displayName}
+                    autoComplete="nickname"
+                    onChange={(e) => setDisplayName(e.target.value)}
+                  />
+                </>
+              )}
+              <label htmlFor="login-password">Password</label>
+              <input
+                id="login-password"
+                type="password"
+                value={password}
+                autoComplete={isRegister ? "new-password" : "current-password"}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </>
           )}
-          <label htmlFor="login-password">Password</label>
-          <input
-            id="login-password"
-            type="password"
-            value={password}
-            autoComplete={isRegister ? "new-password" : "current-password"}
-            onChange={(e) => setPassword(e.target.value)}
-          />
           {needTotp && !isRegister && (
             <>
               <label htmlFor="login-totp">Authenticator code</label>
               <input
                 id="login-totp"
+                ref={totpRef}
+                className="login-totp-input"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 placeholder="123456"
+                maxLength={6}
                 value={totp}
                 onChange={(e) => setTotp(e.target.value)}
               />
@@ -138,9 +154,24 @@ export function LoginDialog({ onClose, onSubmit }: LoginDialogProps) {
             className="primary modal-submit"
             disabled={busy || !username || !password || (needTotp && !totp)}
           >
-            {busy ? "Please wait…" : isRegister ? "Create account" : "Sign in"}
+            {busy ? "Please wait…" : needTotp ? "Confirm & sign in" : isRegister ? "Create account" : "Sign in"}
           </button>
+          {needTotp && (
+            <button
+              type="button"
+              className="link-btn login-back"
+              onClick={() => {
+                setNeedTotp(false);
+                setTotp("");
+                setError(null);
+                userRef.current?.focus();
+              }}
+            >
+              Use a different account
+            </button>
+          )}
         </form>
+        {!needTotp && (
         <p className="login-switch">
           {isRegister ? (
             <>
@@ -158,6 +189,7 @@ export function LoginDialog({ onClose, onSubmit }: LoginDialogProps) {
             </>
           )}
         </p>
+        )}
       </div>
     </div>
   );

@@ -1140,8 +1140,10 @@ function ModelDivider({ modelId, models }: { modelId: string; models?: AiModelsR
   const label = match ? shortModelLabel(match) : modelId;
   return (
     <div className="ai-model-divider" role="separator" aria-label={`Switched to ${label}`}>
-      <ArrowLeftRight size={12} />
-      <span>Đã chuyển sang model {label}</span>
+      <span className="ai-model-divider-label">
+        <ArrowLeftRight size={12} />
+        <span>Đã chuyển sang model {label}</span>
+      </span>
     </div>
   );
 }

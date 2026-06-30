@@ -2172,6 +2172,19 @@ button.primary.danger {
   color: var(--text-muted);
 }
 
+/* Isolated 2FA step (ISSUE-089): centered, spaced 6-digit code + a way back. */
+.login-totp-input {
+  text-align: center;
+  letter-spacing: 0.2em;
+  font-size: 1.05rem;
+}
+
+.login-back {
+  align-self: center;
+  margin-top: var(--space-sm);
+  font-size: 13px;
+}
+
 .login-card .modal-body {
   padding: var(--space-lg);
 }
@@ -2428,6 +2441,14 @@ button.primary.danger {
   background: transparent;
   color: var(--text-primary);
   outline: none;
+}
+
+/* Force the native dropdown list dark too (ISSUE-090) — UA-default options render
+   white on Win/Linux Chromium + Firefox; the select itself stays transparent/blended. */
+.ai-flat-select option,
+.ai-soft-select option {
+  background: var(--bg-layer-2);
+  color: var(--text-primary);
 }
 
 .ai-panel-header-actions {
@@ -3166,21 +3187,36 @@ button.primary.danger {
 }
 
 /* Divider inserted when the answering model changes mid-thread (ISSUE-081). */
+/* Full-width dashed model-switch divider (ISSUE-092): label centered between dashes. */
 .ai-model-divider {
-  display: inline-flex;
-  align-self: center;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  margin: var(--space-xs) 0;
-  padding: 3px var(--space-sm);
+  width: 100%;
+  margin: var(--space-md) 0;
   font-size: 0.72rem;
-  color: var(--text-secondary);
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-pill, 22px);
-  box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.ai-model-divider::before,
+.ai-model-divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px dashed var(--border-default);
+}
+
+.ai-model-divider::before {
+  margin-right: var(--space-md);
+}
+
+.ai-model-divider::after {
+  margin-left: var(--space-md);
+}
+
+.ai-model-divider-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
 }
 
 /* --- Markdown rendering inside an assistant bubble --- */
