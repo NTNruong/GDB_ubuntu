@@ -1,0 +1,5 @@
+# Only the sample + manifest + docs are tracked. Real corpus markdown
+# (esp. copyrighted vendor manuals) stays local — never commit it.
+*.md
+!README.md
+!example-cmsis-nvic.md

@@ -41,6 +41,7 @@ import type {
   AiWorkflow,
   ChatSendRequest,
   Language,
+  RagCitation,
   TreeNode
 } from "@internal/shared";
 import { aiApi } from "./aiApi.js";
@@ -64,7 +65,12 @@ type AiPanelProps = {
 };
 
 /** The in-flight turn rendered below the persisted branch while streaming. */
-type Pending = { user: string | null; assistant: string; steps: AiAgentStep[] };
+type Pending = {
+  user: string | null;
+  assistant: string;
+  steps: AiAgentStep[];
+  citations?: RagCitation[];
+};
 
 export function AiPanel({
   onClose,
@@ -88,6 +94,8 @@ export function AiPanel({
   // Google models (Gemini/Gemma) can return reasoning as thought parts; this toggle
   // asks for them and folds them into a collapsible Thinking block (ISSUE-095).
   const [showThinking, setShowThinking] = useState(false);
+  // Ground answers in the RAG documentation corpus (retrieval-augmented).
+  const [useDocs, setUseDocs] = useState(false);
   const [usage, setUsage] = useState<AiUsage | null>(null);
 
   // Explorer files explicitly attached as reference context (persist as chips for
@@ -304,6 +312,7 @@ export function AiPanel({
         ...(opts.regenerate ? { regenerate: true } : {}),
         ...(isLocal && reasoningEffort !== "off" ? { reasoningEffort } : {}),
         ...(isGoogle && showThinking ? { showThinking: true } : {}),
+        ...(useDocs ? { useDocs: true } : {}),
         ...(turnContext ? { context: turnContext } : {}),
         ...(attachments.length > 0 ? { attachments } : {})
       };
@@ -313,6 +322,7 @@ export function AiPanel({
           signal: controller.signal,
           onToken: (token) => setPending((p) => (p ? { ...p, assistant: p.assistant + token } : p)),
           onStep: (step) => setPending((p) => (p ? { ...p, steps: [...p.steps, step] } : p)),
+          onDocs: (citations) => setPending((p) => (p ? { ...p, citations } : p)),
           onError: (message) => setError(message),
           onDone: ({ threadId: id, usage: turnUsage }) => {
             setUsage(turnUsage ?? null);
@@ -343,6 +353,7 @@ export function AiPanel({
       reasoningEffort,
       isGoogle,
       showThinking,
+      useDocs,
       pinnedFile,
       pinnedOutput,
       collectContext,
@@ -747,6 +758,28 @@ export function AiPanel({
             </div>
           )}
 
+          <div className="ai-setting">
+            <span className="ai-setting-label">
+              <BookOpen size={13} /> Docs
+            </span>
+            <div className="ai-segmented" data-testid="ai-use-docs" role="group" aria-label="Use documentation">
+              <button
+                type="button"
+                className={`ai-seg-btn${!useDocs ? " is-active" : ""}`}
+                onClick={() => setUseDocs(false)}
+              >
+                off
+              </button>
+              <button
+                type="button"
+                className={`ai-seg-btn${useDocs ? " is-active" : ""}`}
+                onClick={() => setUseDocs(true)}
+              >
+                on
+              </button>
+            </div>
+          </div>
+
           <div className="ai-setting-account">
             <span className="ai-setting-label">
               <KeyRound size={13} /> Account
@@ -945,6 +978,21 @@ export function AiPanel({
                 </details>
               )}
               <AssistantBody content={pending.assistant} streaming />
+              {pending.citations && pending.citations.length > 0 && (
+                <div className="ai-citations">
+                  <span className="ai-citations-label">Sources</span>
+                  <ol>
+                    {pending.citations.map((cite) => (
+                      <li key={cite.n}>
+                        <a href={cite.sourceUrl} target="_blank" rel="noreferrer">
+                          {cite.doc}
+                          {cite.headingPath ? ` — ${cite.headingPath}` : ""}
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
             </div>
           </>
         )}

@@ -17,7 +17,10 @@ describe("api app", () => {
     geminiApiKey: "",
     aiDataRoot: "/tmp/gdb-test-ai-data",
     aiKeySecret: "test-ai-key-secret",
-    antigravityMaxMs: 180000
+    antigravityMaxMs: 180000,
+    ragDataRoot: "/tmp/gdb-test-rag-data",
+    ragEmbeddingModel: "gemini-embedding-001",
+    ragEmbedDim: 768
   };
 
   it("returns language capabilities without contacting the runner", async () => {

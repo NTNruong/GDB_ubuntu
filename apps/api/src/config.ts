@@ -28,6 +28,15 @@ export type ApiConfig = {
   aiKeySecret: string;
   /** Wall-clock cap (ms) on a single Antigravity agent run before we stop + cancel. */
   antigravityMaxMs: number;
+  /** Root dir holding the RAG vector store (corpus index), separate from chat data. */
+  ragDataRoot: string;
+  /**
+   * Google embedding model id used by the RAG pipeline. Default `gemini-embedding-001`
+   * (GA, stable). Set `gemini-embedding-2` (or another) once confirmed available.
+   */
+  ragEmbeddingModel: string;
+  /** Output embedding dimensionality (Matryoshka truncation). Keeps the index compact. */
+  ragEmbedDim: number;
 };
 
 export function readConfig(): ApiConfig {
@@ -50,6 +59,9 @@ export function readConfig(): ApiConfig {
     // unset in .env — still falls back to SESSION_SECRET instead of disabling the
     // per-user key store with a "" secret (ISSUE-073).
     aiKeySecret: process.env.AI_KEY_SECRET || process.env.SESSION_SECRET || "",
-    antigravityMaxMs: Number.parseInt(process.env.ANTIGRAVITY_MAX_MS ?? "180000", 10)
+    antigravityMaxMs: Number.parseInt(process.env.ANTIGRAVITY_MAX_MS ?? "180000", 10),
+    ragDataRoot: process.env.RAG_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-rag-data"),
+    ragEmbeddingModel: process.env.RAG_EMBEDDING_MODEL ?? "gemini-embedding-001",
+    ragEmbedDim: Number.parseInt(process.env.RAG_EMBED_DIM ?? "768", 10)
   };
 }

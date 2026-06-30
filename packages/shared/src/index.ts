@@ -866,7 +866,9 @@ export const ChatSendRequestSchema = z
     /** Local-model reasoning effort hint; ignored by backends that don't support it. */
     reasoningEffort: z.enum(AI_REASONING_EFFORTS).optional(),
     /** Show the model's reasoning: Google models return it as `<think>…</think>`; off drops thought parts. */
-    showThinking: z.boolean().optional()
+    showThinking: z.boolean().optional(),
+    /** Ground the answer in the RAG documentation corpus (retrieval-augmented). */
+    useDocs: z.boolean().optional()
   })
   // A regenerate carries no user text but the schema still needs a non-empty
   // `message`; callers send the existing user node's text. (No extra rule needed.)
@@ -978,9 +980,17 @@ export type AiAgentStep =
 /** Token accounting for one assistant turn (whatever the backend reports). */
 export type AiUsage = { promptTokens: number; completionTokens: number; contextSize?: number };
 
+/**
+ * One retrieved documentation source surfaced for a RAG-grounded answer. `n` is
+ * the inline citation number ([n]) the model is told to use; the rest lets the UI
+ * render a clickable source under the answer.
+ */
+export type RagCitation = { n: number; doc: string; headingPath: string; sourceUrl: string };
+
 /** SSE events streamed from POST /api/ai/chat. */
 export type AiStreamEvent =
   | { type: "token"; data: string }
   | { type: "step"; step: AiAgentStep }
+  | { type: "docs"; citations: RagCitation[] }
   | { type: "done"; threadId: string; title: string; usage?: AiUsage }
   | { type: "error"; message: string };

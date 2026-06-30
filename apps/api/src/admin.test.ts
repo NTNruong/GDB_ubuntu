@@ -27,7 +27,10 @@ describe("admin + account routes", () => {
       geminiApiKey: "",
       aiDataRoot: path.join(root, "ai-data"),
       aiKeySecret: "test-ai-key-secret",
-      antigravityMaxMs: 180000
+      antigravityMaxMs: 180000,
+      ragDataRoot: path.join(root, "rag-data"),
+      ragEmbeddingModel: "gemini-embedding-001",
+      ragEmbedDim: 768
     };
     await addUser(config.usersFile, "boss", "boss-pw", { role: "admin" });
     await addUser(config.usersFile, "user1", "user-pw"); // plain user

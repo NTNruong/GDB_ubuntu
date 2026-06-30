@@ -27,7 +27,10 @@ describe("auth routes", () => {
       geminiApiKey: "",
       aiDataRoot: path.join(root, "ai-data"),
       aiKeySecret: "test-ai-key-secret",
-      antigravityMaxMs: 180000
+      antigravityMaxMs: 180000,
+      ragDataRoot: path.join(root, "rag-data"),
+      ragEmbeddingModel: "gemini-embedding-001",
+      ragEmbedDim: 768
     };
     await addUser(config.usersFile, "alice", "correct-horse");
   });

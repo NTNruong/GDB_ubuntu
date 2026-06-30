@@ -2800,6 +2800,36 @@ button.primary.danger {
   font-size: 0.8rem;
 }
 
+.ai-citations {
+  margin-top: var(--space-xs);
+  border-top: 1px dashed var(--border-subtle);
+  padding-top: var(--space-xs);
+  font-size: 0.78rem;
+}
+
+.ai-citations-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.ai-citations ol {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.ai-citations a {
+  color: var(--accent, #6ea8fe);
+  text-decoration: none;
+}
+
+.ai-citations a:hover {
+  text-decoration: underline;
+}
+
 .ai-agent-steps > summary {
   cursor: pointer;
   color: var(--text-muted);

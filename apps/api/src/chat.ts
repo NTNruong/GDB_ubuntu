@@ -17,11 +17,16 @@ import {
   type AiModelsResponse,
   type AiThreadListResponse,
   type AiThreadResponse,
-  type ChatMessage
+  type ChatMessage,
+  type RagCitation
 } from "@internal/shared";
+import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiConfig } from "./config.js";
 import { enabledModels, findEnabledModel, streamAgent, streamChat } from "./ai/index.js";
+import { makeGeminiEmbedder } from "./rag/embedding.js";
+import { formatDocContext, searchDocs } from "./rag/search.js";
+import { JsonVectorStore } from "./rag/store.js";
 import { toAgentInput } from "./ai/backends/antigravity.js";
 import { deleteUserKey, loadUserKey, storeUserKey, userKeyInfo } from "./ai/keystore.js";
 import { buildSummaryPrompt, buildSystemPrompt } from "./ai/prompts.js";
@@ -313,10 +318,43 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
       return reply.code(400).send({ error: `Unknown parentId "${body.parentId}"` });
     }
 
-    // Compose the model input: system prompt + the active branch's history. For a
-    // regenerate the path already ends at the user node; otherwise append the new
-    // message.
-    const systemPrompt = buildSystemPrompt(body.workflow, body.skill, body.context, body.attachments);
+    // RAG: when the user asks to ground the answer in the documentation corpus,
+    // retrieve the most relevant chunks and fold them into the system prompt.
+    // Best-effort — a retrieval failure (no key, no index, model error) must not
+    // break the chat, so we log and continue without docs.
+    let docCitations: RagCitation[] = [];
+    let docContext = "";
+    if (body.useDocs && effectiveGeminiKey) {
+      try {
+        const embedder = makeGeminiEmbedder(effectiveGeminiKey, config);
+        if (embedder) {
+          const store = new JsonVectorStore(
+            path.join(config.ragDataRoot, "index.json"),
+            config.ragEmbeddingModel,
+            config.ragEmbedDim
+          );
+          const hits = await searchDocs(store, embedder, body.message);
+          if (hits.length > 0) {
+            docContext = formatDocContext(hits);
+            docCitations = hits.map((hit, index) => ({
+              n: index + 1,
+              doc: hit.doc,
+              headingPath: hit.headingPath,
+              sourceUrl: hit.sourceUrl
+            }));
+          }
+        }
+      } catch (error) {
+        app.log.warn({ err: error }, "rag retrieval failed; answering without docs");
+      }
+    }
+
+    // Compose the model input: system prompt (+ retrieved doc context) + the active
+    // branch's history. For a regenerate the path already ends at the user node;
+    // otherwise append the new message.
+    const systemPrompt =
+      buildSystemPrompt(body.workflow, body.skill, body.context, body.attachments) +
+      (docContext ? `\n\n${docContext}` : "");
     const historyLeaf = body.regenerate ? body.parentId ?? null : branchParent;
     const history: ChatMessage[] = pathToLeaf(thread, historyLeaf)
       .slice(-MAX_AI_HISTORY_MESSAGES)
@@ -337,6 +375,11 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
       connection: "keep-alive",
       "x-accel-buffering": "no"
     });
+
+    // Surface the retrieved sources before tokens so the UI can render citations.
+    if (docCitations.length > 0) {
+      sse(reply, { type: "docs", citations: docCitations });
+    }
 
     let assistant = "";
     const agentSteps: AiAgentStep[] = [];

@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "file": "example-cmsis-nvic.md",
+      "doc": "CMSIS-Core (NVIC)",
+      "sourceUrl": "https://arm-software.github.io/CMSIS_6/latest/Core/group__NVIC__gr.html",
+      "bucket": "public"
+    }
+  ]
+}

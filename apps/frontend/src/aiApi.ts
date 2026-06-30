@@ -6,7 +6,8 @@ import type {
   AiUsage,
   AiThreadListResponse,
   AiThreadResponse,
-  ChatSendRequest
+  ChatSendRequest,
+  RagCitation
 } from "@internal/shared";
 import { AuthExpiredError } from "./filesApi.js";
 
@@ -38,6 +39,8 @@ export type ChatStreamHandlers = {
   onToken: (token: string) => void;
   /** Agentic (Antigravity) activity item — tool/code/image step. */
   onStep?: (step: AiAgentStep) => void;
+  /** RAG sources retrieved for this turn (emitted before tokens when useDocs). */
+  onDocs?: (citations: RagCitation[]) => void;
   onDone: (event: { threadId: string; title: string; usage?: AiUsage }) => void;
   onError: (message: string) => void;
   signal?: AbortSignal;
@@ -137,6 +140,8 @@ export const aiApi = {
         handlers.onToken(event.data);
       } else if (event.type === "step") {
         handlers.onStep?.(event.step);
+      } else if (event.type === "docs") {
+        handlers.onDocs?.(event.citations);
       } else if (event.type === "done") {
         handlers.onDone({ threadId: event.threadId, title: event.title, usage: event.usage });
       } else if (event.type === "error") {
