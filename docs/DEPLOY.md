@@ -147,6 +147,7 @@ Polaris/gfx803 is dropped by ROCm → use the **Vulkan (RADV)** backend. Run lla
 - `GEMINI_API_KEY=` — **optional** server-wide fallback. Usually leave empty and let each user save their own key (below).
 - `AI_KEY_SECRET=$(openssl rand -hex 32)` — encrypts per-user keys at rest. **Defaults to `SESSION_SECRET`**, so if that is already set you can skip this; keep it stable or stored keys become undecryptable.
 - `AI_DATA_HOST_ROOT=/home/gdbrunner/gdb-ai-data` — host bind for per-user chat threads + encrypted keys (separate from `USER_HOMES_HOST_ROOT` so chats never show in the file explorer). `mkdir -p` it as the service user. This is a **stateful path — back it up** alongside `users.json`.
+- `RAG_DATA_HOST_ROOT=/opt/gdb-rag/index` — host bind for the RAG doc index (built on the host by `bin/rag-ingest.sh`, mounted **read-only** into the api as `/rag-data`). `RAG_EMBEDDING_MODEL` (default `gemini-embedding-001`) and `RAG_EMBED_DIM` (default `768`) **must match what ingest used**, or the store rejects the vectors. Full runbook → [RAG.md](RAG.md).
 
 Then `docker compose up -d` (env-only → no `--build`).
 

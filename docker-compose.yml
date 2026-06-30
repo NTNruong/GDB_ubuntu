@@ -43,6 +43,14 @@ services:
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       AI_KEY_SECRET: "${AI_KEY_SECRET:-}"
       AI_DATA_ROOT: "/ai-data"
+      # RAG doc knowledge base (Phase A). The index is BUILT ON THE HOST by the
+      # rag:ingest CLI (bin/rag-ingest.sh) and this container only READS it via the
+      # read-only /rag-data bind below. RAG_EMBEDDING_MODEL / RAG_EMBED_DIM MUST
+      # match what ingest used or the store rejects the vectors. Full runbook:
+      # docs/RAG.md.
+      RAG_DATA_ROOT: "/rag-data"
+      RAG_EMBEDDING_MODEL: "${RAG_EMBEDDING_MODEL:-gemini-embedding-001}"
+      RAG_EMBED_DIM: "${RAG_EMBED_DIM:-768}"
     extra_hosts:
       # Lets the api container reach a llama.cpp server running on the host.
       - "host.docker.internal:host-gateway"
@@ -54,6 +62,10 @@ services:
       # Per-user AI chat threads + encrypted API keys (separate from user homes
       # so they never appear in the file explorer). Must match AI_DATA_ROOT.
       - ${AI_DATA_HOST_ROOT:-/tmp/gdb-ubuntu-ai-data}:/ai-data
+      # RAG index dir, host-built by rag:ingest. Read-only here (only the chat
+      # route reads it). Point RAG_DATA_HOST_ROOT at the host index dir, e.g.
+      # /opt/gdb-rag/index. Must match RAG_DATA_ROOT above.
+      - ${RAG_DATA_HOST_ROOT:-/tmp/gdb-ubuntu-rag-data}:/rag-data:ro
     expose:
       - "4000"
     depends_on:

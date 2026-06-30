@@ -2,6 +2,15 @@
 
 Source documents for the AI tutor's retrieval knowledge base (Phase A pilot).
 
+> This in-repo `corpus/` is only the **template + sample** (`example-cmsis-nvic.md`
+> + the manifest schema). The **real corpus lives off-repo** on the server at
+> `/opt/gdb-rag/corpus-md` (so copyrighted vendor PDFs never touch git). Full
+> operator runbook — download links, markitdown/Docling, ingest, the `/rag-data`
+> bind, verification — is in [docs/RAG.md](../../../docs/RAG.md).
+
+Manifest schema (matches [src/rag/ingest.ts](../src/rag/ingest.ts)):
+`{ "entries": [ { "file": "name.md", "doc": "Label", "sourceUrl": "https://…", "bucket": "public" } ] }`
+
 ## Pipeline
 
 1. **Convert to Markdown** (out of band — keeps the Node side dependency-light):
