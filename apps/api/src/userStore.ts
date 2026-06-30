@@ -24,9 +24,11 @@ export type UserRecord = {
   displayName?: string;
   email?: string;
   approvedAt?: string;
-  /** AES-256-GCM ciphertext of the TOTP secret (encrypted by the route, opaque here). */
+  /** AES-256-GCM ciphertext of the active TOTP secret (encrypted by the route, opaque here). */
   totpSecretEnc?: string;
   totpEnabled?: boolean;
+  /** A not-yet-verified TOTP secret staged during (re-)enrollment; promoted to `totpSecretEnc` on enable. */
+  totpPendingEnc?: string;
 };
 
 type UsersFile = {
@@ -94,7 +96,8 @@ function migrateRecord(value: unknown): UserRecord {
     email: u.email,
     approvedAt: u.approvedAt,
     totpSecretEnc: u.totpSecretEnc,
-    totpEnabled: u.totpEnabled === true
+    totpEnabled: u.totpEnabled === true,
+    totpPendingEnc: u.totpPendingEnc
   };
 }
 
@@ -332,24 +335,30 @@ export function updateProfile(
   });
 }
 
-/** Stage an (already-encrypted) TOTP secret without enabling it yet (enrollment step 1). */
+/**
+ * Stage an (already-encrypted) TOTP secret as *pending* (enrollment step 1).
+ * Crucially this never touches the active `totpSecretEnc`/`totpEnabled`, so a user
+ * (or admin) who starts a re-enrollment ("Change 2FA") but cancels keeps their
+ * existing 2FA — abandoning setup can no longer silently disable an admin's 2FA.
+ */
 export function stageTotpSecret(
   usersFile: string,
   username: string,
-  totpSecretEnc: string
+  totpPendingEnc: string
 ): Promise<UserRecord> {
   return mutateUser(usersFile, username, (user) => {
-    user.totpSecretEnc = totpSecretEnc;
-    user.totpEnabled = false;
+    user.totpPendingEnc = totpPendingEnc;
   });
 }
 
-/** Flip 2FA on after a staged secret verifies (enrollment step 2). */
+/** Promote the staged secret to active and flip 2FA on, once its code verifies (enrollment step 2). */
 export function enableTotp(usersFile: string, username: string): Promise<UserRecord> {
   return mutateUser(usersFile, username, (user) => {
-    if (!user.totpSecretEnc) {
+    if (!user.totpPendingEnc) {
       throw new Error("No TOTP secret staged — run setup first");
     }
+    user.totpSecretEnc = user.totpPendingEnc;
+    user.totpPendingEnc = undefined;
     user.totpEnabled = true;
   });
 }
@@ -357,6 +366,7 @@ export function enableTotp(usersFile: string, username: string): Promise<UserRec
 export function clearTotp(usersFile: string, username: string): Promise<UserRecord> {
   return mutateUser(usersFile, username, (user) => {
     user.totpSecretEnc = undefined;
+    user.totpPendingEnc = undefined;
     user.totpEnabled = false;
   });
 }

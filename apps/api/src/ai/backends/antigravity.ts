@@ -12,13 +12,14 @@ export function toAgentInput(systemPrompt: string, userMessage: string, isContin
   return isContinuation ? userMessage : `${systemPrompt}\n\n---\n\n${userMessage}`;
 }
 
-type AgentContent = { type?: string; text?: string; data?: string; mime_type?: string };
+type AgentContent = { type?: string; text?: string; data?: string; mime_type?: string; thought?: boolean };
 type AgentStepRaw = {
   type?: string;
   id?: string;
   call_id?: string;
   name?: string;
   result?: string;
+  text?: string;
   is_error?: boolean;
   arguments?: { language?: string; code?: string };
   content?: AgentContent[];
@@ -32,9 +33,34 @@ export type AgentSnapshot = {
 };
 
 /** Mutable de-dup state carried across successive snapshot reads. */
-export type AgentSeen = { textLen: number; stepKeys: Set<string> };
+export type AgentSeen = {
+  textLen: number;
+  /** How much reasoning text has already been emitted, plus the `<think>` open/close state. */
+  thoughtLen: number;
+  thinkOpen: boolean;
+  thinkClosed: boolean;
+  stepKeys: Set<string>;
+};
 export function newAgentSeen(): AgentSeen {
-  return { textLen: 0, stepKeys: new Set<string>() };
+  return { textLen: 0, thoughtLen: 0, thinkOpen: false, thinkClosed: false, stepKeys: new Set<string>() };
+}
+
+/**
+ * Best-effort: pull reasoning text out of one step. The Interactions API is a
+ * preview with no published thought-part schema, so we tolerate several shapes —
+ * a `thought` step, or a `thought:true` / `type:"thought"` content part.
+ */
+function thoughtTextOf(step: AgentStepRaw): string {
+  let out = "";
+  if (step.type === "thought") {
+    out += step.text ?? "";
+  }
+  for (const part of step.content ?? []) {
+    if ((part.type === "thought" || part.thought === true) && part.text) {
+      out += part.text;
+    }
+  }
+  return out;
 }
 
 /**
@@ -46,12 +72,14 @@ export function newAgentSeen(): AgentSeen {
 export function extractAgentEvents(snapshot: AgentSnapshot, seen: AgentSeen): AiStreamEvent[] {
   const events: AiStreamEvent[] = [];
   let fullText = "";
+  let thoughtText = "";
   const steps = snapshot.steps ?? [];
   for (let i = 0; i < steps.length; i += 1) {
     const step = steps[i];
     if (!step) {
       continue;
     }
+    thoughtText += thoughtTextOf(step);
     const key = `${step.type}:${step.id ?? step.call_id ?? i}`;
     if (step.type === "model_output") {
       for (const part of step.content ?? []) {
@@ -93,12 +121,32 @@ export function extractAgentEvents(snapshot: AgentSnapshot, seen: AgentSeen): Ai
       }
     }
   }
+  // Reasoning first (best-effort): stream the thought delta inside a single leading
+  // `<think>…</think>` block so the client folds it like Gemini's thinking. Stop once
+  // the answer has begun (`thinkClosed`) — late thoughts are dropped rather than garbled.
+  if (thoughtText.length > seen.thoughtLen && !seen.thinkClosed) {
+    let chunk = "";
+    if (!seen.thinkOpen) {
+      seen.thinkOpen = true;
+      chunk += "<think>";
+    }
+    chunk += thoughtText.slice(seen.thoughtLen);
+    seen.thoughtLen = thoughtText.length;
+    events.push({ type: "token", data: chunk });
+  }
+
   // Prefer `output_text` once it is at least as complete as the streamed text.
   const candidate = snapshot.output_text ?? "";
   const text = candidate.length > fullText.length ? candidate : fullText;
   if (text.length > seen.textLen) {
-    events.push({ type: "token", data: text.slice(seen.textLen) });
+    let chunk = "";
+    if (seen.thinkOpen && !seen.thinkClosed) {
+      seen.thinkClosed = true;
+      chunk += "</think>";
+    }
+    chunk += text.slice(seen.textLen);
     seen.textLen = text.length;
+    events.push({ type: "token", data: chunk });
   }
   return events;
 }

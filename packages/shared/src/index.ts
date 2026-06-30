@@ -624,6 +624,8 @@ export type RegisterResponse = {
 export type TotpSetupResponse = {
   secret: string;
   otpauthUri: string;
+  /** A self-contained SVG (string) encoding `otpauthUri`, so the client can render a scannable QR without a QR library. */
+  qrSvg: string;
 };
 
 export function parseArgv(input: string): string[] {
@@ -862,7 +864,9 @@ export const ChatSendRequestSchema = z
     /** Regenerate: `parentId` is a user node; produce a new assistant sibling under it (no new user message). */
     regenerate: z.boolean().optional(),
     /** Local-model reasoning effort hint; ignored by backends that don't support it. */
-    reasoningEffort: z.enum(AI_REASONING_EFFORTS).optional()
+    reasoningEffort: z.enum(AI_REASONING_EFFORTS).optional(),
+    /** Show the model's reasoning: Google models return it as `<think>…</think>`; off drops thought parts. */
+    showThinking: z.boolean().optional()
   })
   // A regenerate carries no user text but the schema still needs a non-empty
   // `message`; callers send the existing user node's text. (No extra rule needed.)

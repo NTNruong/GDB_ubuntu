@@ -85,6 +85,9 @@ export function AiPanel({
   const [pinnedFile, setPinnedFile] = useState(false);
   const [pinnedOutput, setPinnedOutput] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<AiReasoningEffort>("off");
+  // Google models (Gemini/Gemma) can return reasoning as thought parts; this toggle
+  // asks for them and folds them into a collapsible Thinking block (ISSUE-095).
+  const [showThinking, setShowThinking] = useState(false);
   const [usage, setUsage] = useState<AiUsage | null>(null);
 
   // Explorer files explicitly attached as reference context (persist as chips for
@@ -133,6 +136,7 @@ export function AiPanel({
 
   const selectedModel = meta?.models.find((m) => m.id === model);
   const isLocal = selectedModel?.backend === "llama";
+  const isGoogle = selectedModel?.backend === "gemini";
 
   const reloadModels = useCallback(() => {
     return aiApi
@@ -299,6 +303,7 @@ export function AiPanel({
         ...(opts.parentId ? { parentId: opts.parentId } : {}),
         ...(opts.regenerate ? { regenerate: true } : {}),
         ...(isLocal && reasoningEffort !== "off" ? { reasoningEffort } : {}),
+        ...(isGoogle && showThinking ? { showThinking: true } : {}),
         ...(turnContext ? { context: turnContext } : {}),
         ...(attachments.length > 0 ? { attachments } : {})
       };
@@ -336,6 +341,8 @@ export function AiPanel({
       workflow,
       isLocal,
       reasoningEffort,
+      isGoogle,
+      showThinking,
       pinnedFile,
       pinnedOutput,
       collectContext,
@@ -712,6 +719,30 @@ export function AiPanel({
                     {effort}
                   </button>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {isGoogle && (
+            <div className="ai-setting">
+              <span className="ai-setting-label">
+                <Brain size={13} /> Thinking
+              </span>
+              <div className="ai-segmented" data-testid="ai-show-thinking" role="group" aria-label="Show thinking">
+                <button
+                  type="button"
+                  className={`ai-seg-btn${!showThinking ? " is-active" : ""}`}
+                  onClick={() => setShowThinking(false)}
+                >
+                  off
+                </button>
+                <button
+                  type="button"
+                  className={`ai-seg-btn${showThinking ? " is-active" : ""}`}
+                  onClick={() => setShowThinking(true)}
+                >
+                  show
+                </button>
               </div>
             </div>
           )}

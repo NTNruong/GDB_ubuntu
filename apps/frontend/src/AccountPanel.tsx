@@ -1,6 +1,6 @@
 import { LogOut, ShieldCheck, X } from "lucide-react";
 import { useState } from "react";
-import type { AuthMeResponse } from "@internal/shared";
+import type { AuthMeResponse, TotpSetupResponse } from "@internal/shared";
 import { accountApi, authApi } from "./filesApi";
 
 type AccountPanelProps = {
@@ -16,7 +16,7 @@ export function AccountPanel({ me, onUpdated, onClose, onLoggedOut }: AccountPan
   const [email, setEmail] = useState(me.email ?? "");
   const [oldPw, setOldPw] = useState("");
   const [newPw, setNewPw] = useState("");
-  const [setup, setSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
+  const [setup, setSetup] = useState<TotpSetupResponse | null>(null);
   const [totp, setTotp] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -70,6 +70,12 @@ export function AccountPanel({ me, onUpdated, onClose, onLoggedOut }: AccountPan
       setMsg("Two-factor authentication disabled.");
     });
 
+  const cancelTotp = () => {
+    setSetup(null);
+    setTotp("");
+    setErr(null);
+  };
+
   const logoutEverywhere = () =>
     run(async () => {
       await accountApi.logoutAll();
@@ -120,20 +126,50 @@ export function AccountPanel({ me, onUpdated, onClose, onLoggedOut }: AccountPan
           </button>
         </section>
 
-        <section className="account-section">
+        <section className="account-section totp-section">
           <h3>
             <ShieldCheck size={15} /> Two-factor authentication{" "}
             {me.twoFactorEnabled ? <span className="role-chip role-admin">on</span> : null}
           </h3>
+
+          {/* Status + actions. While the setup overlay is open they sit underneath it. */}
           {me.twoFactorEnabled ? (
-            <button type="button" disabled={busy || me.role === "admin"} onClick={disableTotp}>
-              {me.role === "admin" ? "Required for admins" : "Disable 2FA"}
+            <div className="totp-actions">
+              <button type="button" disabled={busy} onClick={startTotp}>
+                Change 2FA
+              </button>
+              {me.role === "admin" ? (
+                <button type="button" disabled title="Admins must keep 2FA enabled">
+                  Required for admins
+                </button>
+              ) : (
+                <button type="button" className="danger-btn" disabled={busy} onClick={disableTotp}>
+                  Disable 2FA
+                </button>
+              )}
+            </div>
+          ) : (
+            <button type="button" className="primary" disabled={busy} onClick={startTotp}>
+              Enable 2FA
             </button>
-          ) : setup ? (
-            <>
-              <p className="account-hint">
-                Add this secret to your authenticator app, then enter the 6-digit code:
-              </p>
+          )}
+
+          {/* Enrollment overlay: scan the QR (or copy the secret), then verify a code. */}
+          {setup && (
+            <div className="totp-overlay-card" role="group" aria-label="Two-factor setup">
+              <button type="button" className="modal-close" aria-label="Cancel" onClick={cancelTotp}>
+                <X size={15} />
+              </button>
+              <h4>{me.twoFactorEnabled ? "Change 2FA" : "Set up 2FA"}</h4>
+              <p className="account-hint">Scan this QR with your authenticator app, then enter the 6-digit code.</p>
+              <div className="qr-container">
+                <img
+                  className="totp-qr"
+                  alt="Two-factor QR code"
+                  src={`data:image/svg+xml,${encodeURIComponent(setup.qrSvg)}`}
+                />
+              </div>
+              <p className="account-hint">Can&apos;t scan? Add this secret manually:</p>
               <code className="totp-secret">{setup.secret}</code>
               <a className="totp-link" href={setup.otpauthUri}>
                 Open in authenticator app
@@ -144,14 +180,15 @@ export function AccountPanel({ me, onUpdated, onClose, onLoggedOut }: AccountPan
                 value={totp}
                 onChange={(e) => setTotp(e.target.value)}
               />
-              <button type="button" className="primary" disabled={busy || !totp} onClick={enableTotp}>
-                Verify & enable
-              </button>
-            </>
-          ) : (
-            <button type="button" className="primary" disabled={busy} onClick={startTotp}>
-              Enable 2FA
-            </button>
+              <div className="totp-actions">
+                <button type="button" className="primary" disabled={busy || !totp} onClick={enableTotp}>
+                  Verify & enable
+                </button>
+                <button type="button" disabled={busy} onClick={cancelTotp}>
+                  Cancel
+                </button>
+              </div>
+            </div>
           )}
         </section>
 

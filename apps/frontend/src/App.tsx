@@ -125,6 +125,10 @@ export function App() {
   const [runElapsed, setRunElapsed] = useState(0);
   const [debugPanelTab, setDebugPanelTab] = useState<"variables" | "stack">("variables");
   const [editorHeight, setEditorHeight] = useState(58);
+  // When the editor is dragged near the bottom, collapse the left input-card (stdin/
+  // args/breakpoints) so only the Output/Error tabs remain — never the tabs (ISSUE-093,
+  // unlike the removed ISSUE-029 toggle which hid the tabs too).
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [inspectorWidth, setInspectorWidth] = useState(30);
   const [isDraggingX, setIsDraggingX] = useState(false);
@@ -837,7 +841,10 @@ export function App() {
       // clientY/rect.top are both viewport coordinates, so this is correct even when scrolled.
       const editorPx = moveEvent.clientY - rect.top;
       const next = isDebugActive ? (editorPx / rect.height) * 100 : (editorPx / window.innerHeight) * 100;
-      setEditorHeight(Math.min(85, Math.max(20, next)));
+      const clamped = Math.min(85, Math.max(20, next));
+      setEditorHeight(clamped);
+      // Past ~80% the bottom panel is too short for the inputs — collapse the left card.
+      setBottomCollapsed(clamped >= 80);
     };
 
     const onMouseUp = () => {
@@ -1891,7 +1898,7 @@ export function App() {
           />
         )}
         <main
-          className="workspace"
+          className={`workspace ${bottomCollapsed ? "bottom-collapsed" : ""}`}
           ref={workspaceRef}
           style={
             {
@@ -1950,7 +1957,10 @@ export function App() {
           <div
             className={`resize-handle ${isDragging ? "dragging" : ""}`}
             onMouseDown={startResize}
-            onDoubleClick={() => setEditorHeight(58)}
+            onDoubleClick={() => {
+              setEditorHeight(58);
+              setBottomCollapsed(false);
+            }}
           />
 
         <section className="bottom-panel">

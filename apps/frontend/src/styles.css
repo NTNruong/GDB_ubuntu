@@ -501,6 +501,18 @@ h1.brand {
   max-height: 80vh;
 }
 
+/* Bottom panel dragged near the bottom (ISSUE-093): hide only the left input-card so
+   the editor reclaims the height; the Output/Error tabs (result-card) stay visible. */
+.content-area .workspace.bottom-collapsed {
+  grid-template-rows: minmax(200px, 1fr) 6px auto;
+}
+.workspace.bottom-collapsed .bottom-panel {
+  grid-template-columns: 1fr;
+}
+.workspace.bottom-collapsed .input-card {
+  display: none;
+}
+
 .resize-handle {
   display: flex;
   align-items: center;
@@ -979,6 +991,9 @@ h1.brand {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
+  /* When the panel is short (or the right dock squeezes the layout), scroll the
+     inputs instead of letting stdin/args/breakpoints overlap each other (ISSUE-093). */
+  overflow: auto;
 }
 
 .input-card label {
@@ -2315,6 +2330,45 @@ button.primary.danger {
   color: var(--accent);
 }
 
+/* A row of status/setup buttons that may sit side by side (e.g. Change / Disable). */
+.totp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+.totp-actions button {
+  align-self: flex-start;
+}
+
+/* Enrollment overlay raised over the 2FA section while setting up / changing 2FA. */
+.totp-overlay-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border: 1px solid var(--border-active, var(--accent));
+  border-radius: var(--radius-lg, 8px);
+  background: var(--bg-layer-1, var(--bg-surface));
+  box-shadow: var(--shadow-lg);
+}
+.totp-overlay-card h4 {
+  margin: 0;
+  font-size: 13px;
+}
+.qr-container {
+  align-self: center;
+  padding: 10px;
+  background: #fff;
+  border-radius: var(--radius-md);
+}
+.totp-qr {
+  display: block;
+  width: 180px;
+  height: 180px;
+}
+
 .danger-btn {
   display: inline-flex;
   align-items: center;
@@ -3385,6 +3439,36 @@ button.primary.danger {
 @keyframes blink {
   to {
     visibility: hidden;
+  }
+}
+
+/* While reasoning streams, sweep a bright band across the "Thinking" label from
+   left to right (llama.cpp web-ui style) so the user can tell the model is working
+   and not stuck (ISSUE-095). */
+.ai-think.thinking-active > summary {
+  background-image: linear-gradient(
+    90deg,
+    var(--text-muted) 0%,
+    var(--text-muted) 40%,
+    var(--text-primary) 50%,
+    var(--text-muted) 60%,
+    var(--text-muted) 100%
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: think-shimmer 1.6s linear infinite;
+}
+
+@keyframes think-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -150% 0;
   }
 }
 

@@ -402,7 +402,8 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
           messages,
           controller.signal,
           effectiveGeminiKey,
-          body.reasoningEffort
+          body.reasoningEffort,
+          body.showThinking
         );
         let next = await chat.next();
         while (!next.done) {

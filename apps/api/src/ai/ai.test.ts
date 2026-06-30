@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractAgentEvents, newAgentSeen, toAgentInput } from "./backends/antigravity.js";
-import { extractGeminiToken, extractGeminiUsage, toGeminiBody } from "./backends/gemini.js";
+import {
+  GeminiThinkingFilter,
+  extractGeminiParts,
+  extractGeminiUsage,
+  toGeminiBody
+} from "./backends/gemini.js";
 import { extractLlamaReasoning, extractLlamaToken, extractLlamaUsage } from "./backends/llama.js";
 import { decryptSecret, encryptSecret, loadUserKey, storeUserKey, userKeyInfo } from "./keystore.js";
 import { buildSystemPrompt } from "./prompts.js";
@@ -91,11 +96,44 @@ describe("gemini mapping", () => {
     ]);
   });
 
-  it("extracts candidate text and tolerates malformed json", () => {
+  it("requests thought summaries only when showThinking is set (ISSUE-095)", () => {
+    const off = toGeminiBody([{ role: "user", content: "hi" }]);
+    expect(off.generationConfig).toBeUndefined();
+    const on = toGeminiBody([{ role: "user", content: "hi" }], true);
+    expect(on.generationConfig).toEqual({ thinkingConfig: { includeThoughts: true } });
+  });
+
+  it("extracts parts with their thought flag and tolerates malformed json", () => {
     expect(
-      extractGeminiToken(JSON.stringify({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }))
-    ).toBe("ok");
-    expect(extractGeminiToken("nope")).toBe("");
+      extractGeminiParts(
+        JSON.stringify({ candidates: [{ content: { parts: [{ text: "why", thought: true }, { text: "ok" }] } }] })
+      )
+    ).toEqual([
+      { text: "why", thought: true },
+      { text: "ok", thought: false }
+    ]);
+    expect(extractGeminiParts("nope")).toEqual([]);
+  });
+
+  it("wraps reasoning parts in a single <think> block when showThinking is on (ISSUE-095)", () => {
+    const filter = new GeminiThinkingFilter(true);
+    expect(filter.push({ text: "step1 ", thought: true })).toBe("<think>step1 ");
+    expect(filter.push({ text: "step2", thought: true })).toBe("step2");
+    expect(filter.push({ text: "Answer", thought: false })).toBe("</think>Answer");
+    expect(filter.flush()).toBe("");
+  });
+
+  it("drops thought parts when showThinking is off (Gemma still emits them)", () => {
+    const filter = new GeminiThinkingFilter(false);
+    expect(filter.push({ text: "secret reasoning", thought: true })).toBe("");
+    expect(filter.push({ text: "Answer", thought: false })).toBe("Answer");
+    expect(filter.flush()).toBe("");
+  });
+
+  it("closes a still-open thinking block at end of stream", () => {
+    const filter = new GeminiThinkingFilter(true);
+    expect(filter.push({ text: "only thoughts", thought: true })).toBe("<think>only thoughts");
+    expect(filter.flush()).toBe("</think>");
   });
 
   it("extracts usage from usageMetadata, null otherwise", () => {
@@ -150,6 +188,33 @@ describe("antigravity agent backend", () => {
     expect(extractAgentEvents({ status: "completed", output_text: "Final", steps: [] }, txtSeen)).toEqual([
       { type: "token", data: "Final" }
     ]);
+  });
+
+  it("wraps best-effort thoughts in a leading <think> block before the answer (ISSUE-095)", () => {
+    const seen = newAgentSeen();
+    // A thought step arrives first → opens <think> and streams the reasoning.
+    expect(
+      extractAgentEvents({ steps: [{ type: "thought", id: "t1", text: "look for main.c" }] }, seen)
+    ).toEqual([{ type: "token", data: "<think>look for main.c" }]);
+    // Then the answer arrives → closes the block and appends the answer.
+    expect(
+      extractAgentEvents(
+        {
+          steps: [
+            { type: "thought", id: "t1", text: "look for main.c" },
+            { type: "model_output", content: [{ type: "text", text: "Compiled." }] }
+          ]
+        },
+        seen
+      )
+    ).toEqual([{ type: "token", data: "</think>Compiled." }]);
+  });
+
+  it("ignores thoughts when the agent never emits any (best-effort no-op)", () => {
+    const seen = newAgentSeen();
+    expect(
+      extractAgentEvents({ steps: [{ type: "model_output", content: [{ type: "text", text: "Hi" }] }] }, seen)
+    ).toEqual([{ type: "token", data: "Hi" }]);
   });
 });
 

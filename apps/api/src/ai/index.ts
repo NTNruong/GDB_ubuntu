@@ -49,10 +49,11 @@ export function streamChat(
   messages: ChatMessage[],
   signal: AbortSignal,
   geminiApiKey: string,
-  reasoningEffort: AiReasoningEffort = "off"
+  reasoningEffort: AiReasoningEffort = "off",
+  showThinking = false
 ): AsyncGenerator<string, AiUsage | undefined> {
   if (model.backend === "gemini") {
-    return streamGemini(geminiApiKey, model.remoteModelId, messages, signal);
+    return streamGemini(geminiApiKey, model.remoteModelId, messages, signal, showThinking);
   }
   return streamLlama(
     config.llamaBaseUrl,
