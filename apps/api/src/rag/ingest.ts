@@ -12,6 +12,7 @@ import path from "node:path";
 import { readConfig } from "../config.js";
 import { chunkMarkdown } from "./chunk.js";
 import { GeminiEmbedder } from "./embedding.js";
+import { QuotaExhaustedError, getEmbedRateLimiter } from "./rateLimiter.js";
 import { JsonVectorStore, type StoredChunk } from "./store.js";
 
 type ManifestEntry = {
@@ -46,37 +47,75 @@ async function main(): Promise<void> {
   const corpusDir = path.dirname(manifestPath);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Manifest;
 
-  const embedder = new GeminiEmbedder(config.geminiApiKey, config.ragEmbeddingModel, config.ragEmbedDim);
+  // Patient wait budget: ride out per-minute throttling instead of crashing, but stop
+  // cleanly (rather than hang ~24h) once the daily cap is hit — a re-run then resumes.
+  const maxWaitMs = Number.parseInt(process.env.RAG_INGEST_MAX_WAIT_MS ?? "300000", 10);
+  const limiter = getEmbedRateLimiter({
+    rpm: config.ragEmbedRpm,
+    tpm: config.ragEmbedTpm,
+    rpd: config.ragEmbedRpd
+  });
+  const embedder = new GeminiEmbedder(
+    config.geminiApiKey,
+    config.ragEmbeddingModel,
+    config.ragEmbedDim,
+    undefined,
+    5,
+    limiter,
+    maxWaitMs
+  );
   const store = new JsonVectorStore(
     path.join(config.ragDataRoot, "index.json"),
     config.ragEmbeddingModel,
     config.ragEmbedDim
   );
+  // Resume support: skip chunks already embedded (same id) so an interrupted run — or one
+  // stopped by the daily quota — picks up where it left off without re-spending quota.
+  const existing = await store.existingIds();
 
   let total = 0;
+  let skipped = 0;
   for (const entry of manifest.entries) {
     const markdown = await readFile(path.join(corpusDir, entry.file), "utf8");
     const chunks = chunkMarkdown(markdown);
     const stored: StoredChunk[] = [];
-    for (const [index, chunk] of chunks.entries()) {
-      const embedding = await embedder.embed(chunk.text, "document");
-      if (delayMs > 0) {
-        await sleep(delayMs);
+    try {
+      for (const [index, chunk] of chunks.entries()) {
+        const id = `${slug(entry.doc)}#${index}`;
+        if (existing.has(id)) {
+          skipped += 1;
+          continue;
+        }
+        const embedding = await embedder.embed(chunk.text, "document");
+        if (delayMs > 0) {
+          await sleep(delayMs);
+        }
+        stored.push({
+          id,
+          doc: entry.doc,
+          headingPath: chunk.headingPath,
+          sourceUrl: entry.sourceUrl,
+          text: chunk.text,
+          embedding
+        });
       }
-      stored.push({
-        id: `${slug(entry.doc)}#${index}`,
-        doc: entry.doc,
-        headingPath: chunk.headingPath,
-        sourceUrl: entry.sourceUrl,
-        text: chunk.text,
-        embedding
-      });
+    } catch (error) {
+      if (error instanceof QuotaExhaustedError) {
+        // Persist whatever this doc managed before the cap so the resume run is shorter.
+        await store.add(stored);
+        total += stored.length;
+        process.stdout.write(
+          `Daily embedding quota reached after ${total} new chunks (${skipped} skipped). Re-run to resume.\n`
+        );
+        return;
+      }
+      throw error;
     }
     await store.add(stored);
     total += stored.length;
-    process.stdout.write(`${entry.doc}: ${stored.length} chunks\n`);
+    process.stdout.write(`${entry.doc}: ${stored.length} chunks (${skipped} skipped so far)\n`);
   }
-  process.stdout.write(`Indexed ${total} chunks (model ${config.ragEmbeddingModel}, dim ${config.ragEmbedDim}) → ${path.join(config.ragDataRoot, "index.json")}\n`);
+  process.stdout.write(`Indexed ${total} new chunks (${skipped} skipped, model ${config.ragEmbeddingModel}, dim ${config.ragEmbedDim}) → ${path.join(config.ragDataRoot, "index.json")}\n`);
 }
 
 main().catch((error: unknown) => {

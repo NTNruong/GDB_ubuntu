@@ -30,6 +30,8 @@ export interface VectorStore {
   search(embedding: number[], k: number): Promise<RagHit[]>;
   size(): Promise<number>;
   clear(): Promise<void>;
+  /** Ids already stored, so an interrupted ingest can resume without re-embedding. */
+  existingIds(): Promise<Set<string>>;
 }
 
 /** Cosine similarity. Returns 0 if either vector is zero-length/mismatched. */
@@ -115,6 +117,10 @@ export class JsonVectorStore implements VectorStore {
 
   async size(): Promise<number> {
     return (await this.load()).length;
+  }
+
+  async existingIds(): Promise<Set<string>> {
+    return new Set((await this.load()).map((chunk) => chunk.id));
   }
 
   async clear(): Promise<void> {

@@ -80,11 +80,18 @@ const TOOLS: Tool[] = [
       if (!ctx.store || !ctx.embedder) {
         return { result: "Documentation search is unavailable (no index or API key)." };
       }
-      const hits = await searchDocs(ctx.store, ctx.embedder, query);
-      if (hits.length === 0) {
-        return { result: "No relevant documentation found." };
+      // A retrieval error (e.g. the embedding quota limiter throwing) must not abort the
+      // whole agent turn — degrade to "no docs" like the plain chat path does.
+      try {
+        const hits = await searchDocs(ctx.store, ctx.embedder, query);
+        if (hits.length === 0) {
+          return { result: "No relevant documentation found." };
+        }
+        return { result: formatDocContext(hits) };
+      } catch (error) {
+        ctx.log.warn({ err: error }, "search_docs failed; continuing without docs");
+        return { result: "Documentation search is temporarily unavailable." };
       }
-      return { result: formatDocContext(hits) };
     }
   },
   {

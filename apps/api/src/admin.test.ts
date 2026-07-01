@@ -30,7 +30,10 @@ describe("admin + account routes", () => {
       antigravityMaxMs: 180000,
       ragDataRoot: path.join(root, "rag-data"),
       ragEmbeddingModel: "gemini-embedding-001",
-      ragEmbedDim: 768
+      ragEmbedDim: 768,
+      ragEmbedRpm: 90,
+      ragEmbedTpm: 27000,
+      ragEmbedRpd: 900
     };
     await addUser(config.usersFile, "boss", "boss-pw", { role: "admin" });
     await addUser(config.usersFile, "user1", "user-pw"); // plain user

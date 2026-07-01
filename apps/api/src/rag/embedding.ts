@@ -1,4 +1,5 @@
 import type { ApiConfig } from "../config.js";
+import { type EmbedRateLimiter, estimateTokens, getEmbedRateLimiter } from "./rateLimiter.js";
 
 /**
  * Embedding "task type": query vs document, for asymmetric retrieval (a query
@@ -68,7 +69,11 @@ export class GeminiEmbedder implements Embedder {
     /** Override taskType usage; defaults to what the model supports. */
     useTaskType?: boolean,
     /** Extra attempts on 429/503 before giving up (rate-limit resilience, ISSUE-097). */
-    private readonly maxRetries = 5
+    private readonly maxRetries = 5,
+    /** Proactive quota limiter (shared singleton); omitted in unit tests. */
+    private readonly limiter?: EmbedRateLimiter,
+    /** How long the limiter may block before throwing (query = short, ingest = patient). */
+    private readonly maxWaitMs = 10_000
   ) {
     this.modelId = model;
     this.useTaskType = useTaskType ?? modelSupportsTaskType(model);
@@ -89,6 +94,11 @@ export class GeminiEmbedder implements Embedder {
     };
     if (this.useTaskType) {
       body.taskType = kind === "query" ? "RETRIEVAL_QUERY" : "RETRIEVAL_DOCUMENT";
+    }
+    // Block before the call so we stay under quota (throws QuotaExhaustedError past the
+    // wait budget — the query path degrades to no-docs, ingest stops cleanly to resume).
+    if (this.limiter) {
+      await this.limiter.acquire(this.model, estimateTokens(input), this.maxWaitMs);
     }
     for (let attempt = 1; ; attempt++) {
       const response = await fetch(url, {
@@ -116,10 +126,23 @@ export class GeminiEmbedder implements Embedder {
   }
 }
 
-/** Build a Gemini embedder from the resolved key + RAG config, or null if no key. */
-export function makeGeminiEmbedder(apiKey: string, config: ApiConfig): GeminiEmbedder | null {
+/**
+ * Build a Gemini embedder from the resolved key + RAG config, or null if no key.
+ * Wires the shared quota limiter with a `maxWaitMs` budget — short by default so a busy
+ * chat query degrades to no-docs quickly; ingest passes a long budget to throttle instead.
+ */
+export function makeGeminiEmbedder(
+  apiKey: string,
+  config: ApiConfig,
+  maxWaitMs = 10_000
+): GeminiEmbedder | null {
   if (!apiKey) {
     return null;
   }
-  return new GeminiEmbedder(apiKey, config.ragEmbeddingModel, config.ragEmbedDim);
+  const limiter = getEmbedRateLimiter({
+    rpm: config.ragEmbedRpm,
+    tpm: config.ragEmbedTpm,
+    rpd: config.ragEmbedRpd
+  });
+  return new GeminiEmbedder(apiKey, config.ragEmbeddingModel, config.ragEmbedDim, undefined, 5, limiter, maxWaitMs);
 }

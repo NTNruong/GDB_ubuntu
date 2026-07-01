@@ -20,7 +20,10 @@ describe("api app", () => {
     antigravityMaxMs: 180000,
     ragDataRoot: "/tmp/gdb-test-rag-data",
     ragEmbeddingModel: "gemini-embedding-001",
-    ragEmbedDim: 768
+    ragEmbedDim: 768,
+    ragEmbedRpm: 90,
+    ragEmbedTpm: 27000,
+    ragEmbedRpd: 900
   };
 
   it("returns language capabilities without contacting the runner", async () => {

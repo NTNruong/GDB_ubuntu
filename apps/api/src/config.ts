@@ -38,6 +38,10 @@ export type ApiConfig = {
   ragEmbeddingModel: string;
   /** Output embedding dimensionality (Matryoshka truncation). Keeps the index compact. */
   ragEmbedDim: number;
+  /** Proactive embedding quota caps (free-tier defaults at ~90% of Google's limits). */
+  ragEmbedRpm: number;
+  ragEmbedTpm: number;
+  ragEmbedRpd: number;
 };
 
 export function readConfig(): ApiConfig {
@@ -63,6 +67,11 @@ export function readConfig(): ApiConfig {
     antigravityMaxMs: Number.parseInt(process.env.ANTIGRAVITY_MAX_MS ?? "180000", 10),
     ragDataRoot: process.env.RAG_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-rag-data"),
     ragEmbeddingModel: process.env.RAG_EMBEDDING_MODEL ?? "gemini-embedding-2",
-    ragEmbedDim: Number.parseInt(process.env.RAG_EMBED_DIM ?? "768", 10)
+    ragEmbedDim: Number.parseInt(process.env.RAG_EMBED_DIM ?? "768", 10),
+    // Free tier is ~100 RPM / 30K TPM / 1K RPD per embedding model; default to ~90% so
+    // the limiter leaves headroom for Google's own accounting slop (band-aid, ISSUE-097).
+    ragEmbedRpm: Number.parseInt(process.env.RAG_EMBED_RPM ?? "90", 10),
+    ragEmbedTpm: Number.parseInt(process.env.RAG_EMBED_TPM ?? "27000", 10),
+    ragEmbedRpd: Number.parseInt(process.env.RAG_EMBED_RPD ?? "900", 10)
   };
 }

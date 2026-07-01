@@ -42,7 +42,10 @@ describe("ai chat API", () => {
       antigravityMaxMs: 180000,
       ragDataRoot: path.join(root, "rag-data"),
       ragEmbeddingModel: "gemini-embedding-001",
-      ragEmbedDim: 768
+      ragEmbedDim: 768,
+      ragEmbedRpm: 90,
+      ragEmbedTpm: 27000,
+      ragEmbedRpd: 900
     };
     await addUser(config.usersFile, "alice", "pw");
     app = createApiServer(config);
