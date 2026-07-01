@@ -37,4 +37,17 @@ describe("chunkMarkdown", () => {
   it("ignores empty/whitespace sections", () => {
     expect(chunkMarkdown("# Empty\n\n   \n")).toEqual([]);
   });
+
+  it("drops inline base64 image lines (token bloat)", () => {
+    const md = [
+      "# Diagram",
+      "Real text before.",
+      "![fig](data:image/png;base64,iVBORw0KGgoAAAANSU=)",
+      "Real text after."
+    ].join("\n");
+    const chunks = chunkMarkdown(md);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.text).toBe("Real text before.\nReal text after.");
+    expect(chunks[0]?.text).not.toContain("base64");
+  });
 });

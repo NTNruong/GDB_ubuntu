@@ -27,7 +27,7 @@ echo "$PILOT_PDFS" | while IFS='|' read -r name url; do
     echo "skip  $name (already in drop/)"
   else
     echo "fetch $name"
-    curl -fL --retry 3 -o "$dest" "$url"
+    curl -fL --http1.1 --retry 3 -o "$dest" "$url"
   fi
 done
 

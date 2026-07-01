@@ -31,11 +31,17 @@ function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function main(): Promise<void> {
   const config = readConfig();
   if (!config.geminiApiKey) {
     throw new Error("GEMINI_API_KEY is required to embed the corpus");
   }
+  // Throttle between embedding calls so a large corpus doesn't blow the Gemini
+  // per-minute quota (the embedder also retries 429s). CLI-only knob → read the
+  // env here rather than bloating ApiConfig (ISSUE-097).
+  const delayMs = Number.parseInt(process.env.RAG_INGEST_DELAY_MS ?? "200", 10);
   const manifestPath = path.resolve(process.argv[2] ?? "corpus/corpus.manifest.json");
   const corpusDir = path.dirname(manifestPath);
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Manifest;
@@ -54,6 +60,9 @@ async function main(): Promise<void> {
     const stored: StoredChunk[] = [];
     for (const [index, chunk] of chunks.entries()) {
       const embedding = await embedder.embed(chunk.text, "document");
+      if (delayMs > 0) {
+        await sleep(delayMs);
+      }
       stored.push({
         id: `${slug(entry.doc)}#${index}`,
         doc: entry.doc,

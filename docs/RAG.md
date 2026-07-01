@@ -21,7 +21,8 @@ api :  bind /opt/gdb-rag/index → /rag-data (read-only); chat reads /rag-data/i
 Ingestion runs **on the host** and writes the index; the **container only reads** it
 (bind is `:ro`). The embedding **model + dimensions must match** on both sides — the
 store rejects vectors built with a different model/dim. Pilot uses
-`gemini-embedding-001` / `768`.
+`gemini-embedding-2` / `768` (multimodal, 3072-dim native, truncated to 768 via
+Matryoshka to keep the index compact).
 
 ## Folder layout on the server (`/opt/gdb-rag/`)
 
@@ -46,7 +47,7 @@ Then wire the api container to read the index (deploy `.env` next to `docker-com
 ```ini
 RAG_DATA_HOST_ROOT=/opt/gdb-rag/index
 # optional — only if you change the model/dim from the defaults below:
-# RAG_EMBEDDING_MODEL=gemini-embedding-001
+# RAG_EMBEDDING_MODEL=gemini-embedding-2
 # RAG_EMBED_DIM=768
 ```
 
@@ -138,6 +139,13 @@ Prints `Indexed N chunks (model …, dim …) → /opt/gdb-rag/index/index.json`
 is an **upsert by id** (`<doc-slug>#<n>`), so re-ingest after editing the corpus; to
 fully rebuild, delete `index/index.json` first.
 
+**Rate limits (429 / "too many requests"):** the free `gemini-embedding-2` tier is
+~100 requests/min (30K tokens/min, 1K/day). `bin/rag-ingest.sh` throttles with `RAG_INGEST_DELAY_MS` (default
+`700`ms ≈ safe for the free tier), and the embedder **retries 429/503 with backoff**
+(honoring Google's `Retry-After`), so a big corpus won't fail the whole job — it just
+slows down. Lower `RAG_INGEST_DELAY_MS` on a paid tier for speed; raise it if you still
+see backoff churn.
+
 Then make the container see it:
 
 ```bash
@@ -163,6 +171,8 @@ still answers, just without grounding — it never hard-fails the turn.
 | `Indexed 0 chunks` | Manifest `file` paths don't resolve, or the `.md` is empty (bad conversion). |
 | Container answers but never cites | `RAG_DATA_HOST_ROOT` not pointing at `/opt/gdb-rag/index`, or container not restarted. |
 | Store rejects vectors / dim error | `RAG_EMBEDDING_MODEL` / `RAG_EMBED_DIM` in the container differ from what ingest used. Keep both sides identical; to change model/dim, rebuild the index. |
+| `429` / rate-limit during ingest | Free tier ~100 req/min. Raise `RAG_INGEST_DELAY_MS` (ingest already retries with backoff, so it recovers on its own — this just avoids the churn). |
+| Huge/slow ingest after a Docling manual | Inline base64 images are dropped at chunk time, but a table-heavy manual is still many chunks; that's expected. |
 | Garbled register tables | Converted with markitdown — re-convert that manual with Docling. |
 
 ## Licensing

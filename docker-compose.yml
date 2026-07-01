@@ -49,7 +49,7 @@ services:
       # match what ingest used or the store rejects the vectors. Full runbook:
       # docs/RAG.md.
       RAG_DATA_ROOT: "/rag-data"
-      RAG_EMBEDDING_MODEL: "${RAG_EMBEDDING_MODEL:-gemini-embedding-001}"
+      RAG_EMBEDDING_MODEL: "${RAG_EMBEDDING_MODEL:-gemini-embedding-2}"
       RAG_EMBED_DIM: "${RAG_EMBED_DIM:-768}"
     extra_hosts:
       # Lets the api container reach a llama.cpp server running on the host.

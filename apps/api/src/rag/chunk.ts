@@ -75,6 +75,12 @@ export function chunkMarkdown(markdown: string, options: Partial<ChunkOptions> =
   };
 
   for (const line of lines) {
+    // Drop inline base64 image data (Docling/markitdown can embed
+    // `data:image/…;base64,…`) — it is pure token bloat that wastes the
+    // embedding quota without adding retrievable text (ISSUE-097).
+    if (line.includes("data:image/") || line.includes("base64,")) {
+      continue;
+    }
     const heading = parseHeading(line);
     if (heading) {
       flush();

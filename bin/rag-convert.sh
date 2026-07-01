@@ -21,15 +21,21 @@ mkdir -p "$OUTDIR"
 [ -f "$RAG_ROOT/.venv/bin/activate" ] && . "$RAG_ROOT/.venv/bin/activate"
 
 convert_one() {
-  tool="$1"; src="$2"; out="$3"
-  dest="$OUTDIR/$out"
-  echo "[$tool] $src -> $dest"
-  case "$tool" in
-    markitdown) markitdown "$src" > "$dest" ;;
-    docling)    docling "$src" --to md --output "$dest" ;;
-    *) echo "unknown converter: $tool (use markitdown|docling)" >&2; exit 2 ;;
-  esac
-}
+      tool="$1"; src="$2"; out="$3"
+      dest="$OUTDIR/$out"
+
+      if [ -f "$dest" ] && [ -s "$dest" ]; then
+        echo "skip  [$tool] $out (already converted)"
+        return 0
+      fi
+
+      echo "[$tool] $src -> $dest"
+      case "$tool" in
+        markitdown) markitdown "$src" > "$dest" ;;
+        docling)    docling "$src" --to md --output "$dest" ;;
+        *) echo "unknown converter: $tool (use markitdown|docling)" >&2; exit 2 ;;
+      esac
+    }
 
 if [ "${1:-}" = "--pilot" ]; then
   # table-heavy RM -> docling; everything else -> markitdown
@@ -39,6 +45,10 @@ if [ "${1:-}" = "--pilot" ]; then
   convert_one markitdown "$RAG_ROOT/drop/freertos-mastering.pdf"                         freertos-mastering.md
   convert_one docling    "$RAG_ROOT/drop/stm32f4-rm0090.pdf"                             stm32f4-rm0090.md
   convert_one markitdown "$RAG_ROOT/drop/auburn-embedded-c.pdf"                          auburn-embedded-c.md
+  convert_one markitdown "$RAG_ROOT/drop/cortex-m4-programming-manual.pdf"               cortex-m4-programming-manual.md
+  convert_one markitdown "$RAG_ROOT/drop/nucleo-64-boards.pdf"                         nucleo-64-boards.md
+  convert_one markitdown "$RAG_ROOT/drop/rm0383-stm32f411-reference-manual.pdf"        rm0383-stm32f411-reference-manual.md
+  convert_one markitdown "$RAG_ROOT/drop/stm32f411-datasheet.pdf"                      stm32f411-datasheet.md
   echo "Pilot conversion done -> $OUTDIR (now edit corpus.manifest.json)."
   exit 0
 fi

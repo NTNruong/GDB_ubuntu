@@ -7,7 +7,7 @@
 #   RAG_ROOT=/opt/gdb-rag GEMINI_KEY_FILE=/opt/gdb-rag/gemini-key.txt bin/rag-ingest.sh
 #
 # The embedding model/dim MUST match the api container's RAG_EMBEDDING_MODEL /
-# RAG_EMBED_DIM (defaults: gemini-embedding-001 / 768). Full runbook: docs/RAG.md
+# RAG_EMBED_DIM (defaults: gemini-embedding-2 / 768). Full runbook: docs/RAG.md
 set -euo pipefail
 
 RAG_ROOT="${RAG_ROOT:-/opt/gdb-rag}"
@@ -27,8 +27,12 @@ if [ ! -f "$MANIFEST" ]; then
 fi
 
 export RAG_DATA_ROOT="$RAG_ROOT/index"
-export RAG_EMBEDDING_MODEL="${RAG_EMBEDDING_MODEL:-gemini-embedding-001}"
+export RAG_EMBEDDING_MODEL="${RAG_EMBEDDING_MODEL:-gemini-embedding-2}"
 export RAG_EMBED_DIM="${RAG_EMBED_DIM:-768}"
+# Throttle between embed calls to stay under the per-minute quota. The default
+# gemini-embedding-2 free tier is ~100 req/min → ~700ms is safe; the embedder
+# also retries 429s with backoff, so ingest won't crash if you set it lower.
+export RAG_INGEST_DELAY_MS="${RAG_INGEST_DELAY_MS:-700}"
 export GEMINI_API_KEY
 
 echo "Ingesting $MANIFEST -> $RAG_DATA_ROOT (model $RAG_EMBEDDING_MODEL, dim $RAG_EMBED_DIM)"

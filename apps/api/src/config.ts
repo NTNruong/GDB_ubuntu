@@ -31,8 +31,9 @@ export type ApiConfig = {
   /** Root dir holding the RAG vector store (corpus index), separate from chat data. */
   ragDataRoot: string;
   /**
-   * Google embedding model id used by the RAG pipeline. Default `gemini-embedding-001`
-   * (GA, stable). Set `gemini-embedding-2` (or another) once confirmed available.
+   * Google embedding model id used by the RAG pipeline. Default `gemini-embedding-2`
+   * (multimodal, 3072-dim native, Matryoshka down to `ragEmbedDim`). Set
+   * `gemini-embedding-001` to fall back to the older GA model.
    */
   ragEmbeddingModel: string;
   /** Output embedding dimensionality (Matryoshka truncation). Keeps the index compact. */
@@ -61,7 +62,7 @@ export function readConfig(): ApiConfig {
     aiKeySecret: process.env.AI_KEY_SECRET || process.env.SESSION_SECRET || "",
     antigravityMaxMs: Number.parseInt(process.env.ANTIGRAVITY_MAX_MS ?? "180000", 10),
     ragDataRoot: process.env.RAG_DATA_ROOT ?? path.join(tmpdir(), "gdb-ubuntu-rag-data"),
-    ragEmbeddingModel: process.env.RAG_EMBEDDING_MODEL ?? "gemini-embedding-001",
+    ragEmbeddingModel: process.env.RAG_EMBEDDING_MODEL ?? "gemini-embedding-2",
     ragEmbedDim: Number.parseInt(process.env.RAG_EMBED_DIM ?? "768", 10)
   };
 }
