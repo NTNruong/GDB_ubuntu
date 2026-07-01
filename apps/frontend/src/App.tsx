@@ -477,6 +477,55 @@ export function App() {
     [appendOutput, handleAuthError]
   );
 
+  // Open a server file and reveal a specific line — for the AI agent's
+  // "click a proposed-edit card → jump to file:line" navigation. Combines
+  // openServerFile with the jumpToDiagnostic reveal pattern.
+  const openFileAtLine = useCallback(
+    async (path: string, line: number) => {
+      await openServerFile(path);
+      setTimeout(() => {
+        const editor = editorRef.current;
+        if (!editor) {
+          return;
+        }
+        editor.focus();
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line, column: 1 });
+      }, 60);
+    },
+    [openServerFile]
+  );
+
+  // Apply an agent-proposed edit: splice the [startLine,endLine] range (1-based,
+  // inclusive) with `replacement`, write it, and load the result into a tab.
+  // Returns the pre-edit content so the card can Undo.
+  const applyAgentEdit = useCallback(
+    async (path: string, startLine: number, endLine: number, replacement: string): Promise<string> => {
+      const res = await filesApi.read(path);
+      const previous = res.content;
+      const lines = previous.split("\n");
+      const next = [
+        ...lines.slice(0, Math.max(0, startLine - 1)),
+        ...replacement.split("\n"),
+        ...lines.slice(endLine)
+      ].join("\n");
+      await filesApi.write(path, next);
+      await openServerFile(path);
+      await refreshTree();
+      return previous;
+    },
+    [openServerFile, refreshTree]
+  );
+
+  // Undo an applied edit by restoring the captured pre-edit content.
+  const undoAgentEdit = useCallback(
+    async (path: string, previous: string) => {
+      await filesApi.write(path, previous);
+      await openServerFile(path);
+    },
+    [openServerFile]
+  );
+
   const saveActiveServerTab = useCallback(async () => {
     const path = activePathRef.current;
     const saved = serverTabsRef.current[path];
@@ -2162,6 +2211,9 @@ export function App() {
                 currentLanguage={language}
                 listWorkspaceFiles={() => filesApi.tree().then((res) => res.entries)}
                 readWorkspaceFile={(path) => filesApi.read(path).then((res) => res.content)}
+                onOpenFileAtLine={openFileAtLine}
+                onApplyEdit={applyAgentEdit}
+                onUndoEdit={undoAgentEdit}
               />
             )}
           </aside>

@@ -709,6 +709,8 @@ export type AiModel = {
   /** Model id the backend itself expects (OpenAI model / Gemini model path). */
   remoteModelId: string;
   description?: string;
+  /** Supports the agentic tool-loop (function calling). Enables the Agent toggle. */
+  agent?: boolean;
 };
 
 /**
@@ -729,7 +731,8 @@ export const AI_MODELS: AiModel[] = [
     label: "Gemini Flash (Google)",
     backend: "gemini",
     remoteModelId: "gemini-flash-latest",
-    description: "Google AI Studio free tier — fast, general purpose."
+    description: "Google AI Studio free tier — fast, general purpose.",
+    agent: true
   },
   {
     id: "gemma-26b",
@@ -868,7 +871,9 @@ export const ChatSendRequestSchema = z
     /** Show the model's reasoning: Google models return it as `<think>…</think>`; off drops thought parts. */
     showThinking: z.boolean().optional(),
     /** Ground the answer in the RAG documentation corpus (retrieval-augmented). */
-    useDocs: z.boolean().optional()
+    useDocs: z.boolean().optional(),
+    /** Run the agentic tool-loop (read code, search docs, propose edits) — only for agent-capable models. */
+    useAgent: z.boolean().optional()
   })
   // A regenerate carries no user text but the schema still needs a non-empty
   // `message`; callers send the existing user node's text. (No extra rule needed.)
@@ -975,7 +980,18 @@ export type AiAgentStep =
   | { kind: "tool_call"; name: string }
   | { kind: "tool_result"; isError: boolean }
   | { kind: "image"; mimeType: string; dataBase64: string }
-  | { kind: "thought"; text: string };
+  | { kind: "thought"; text: string }
+  // A code edit the agent proposes on the learner's file — rendered as an
+  // interactive diff card (Apply/Undo, click → jump to file:line). The agent
+  // never writes code silently: it emits this; the user applies it.
+  | {
+      kind: "proposed_edit";
+      path: string;
+      startLine: number;
+      endLine: number;
+      replacement: string;
+      note?: string;
+    };
 
 /** Token accounting for one assistant turn (whatever the backend reports). */
 export type AiUsage = { promptTokens: number; completionTokens: number; contextSize?: number };

@@ -2868,6 +2868,58 @@ button.primary.danger {
   color: hsl(0, 70%, 72%);
 }
 
+/* Agent proposed-edit card (interactive diff + Apply/Undo). */
+.ai-step-edit {
+  border: 1px solid var(--border, #333);
+  border-radius: var(--radius-sm, 6px);
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--bg-layer-1, #1b1b1b);
+}
+
+.ai-edit-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #6ea8fe);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+
+.ai-edit-head:hover {
+  text-decoration: underline;
+}
+
+.ai-edit-note {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  margin: 2px 0;
+}
+
+.ai-edit-diff {
+  margin: 4px 0 !important;
+  color: hsl(140, 45%, 70%);
+  font-size: 0.74rem;
+}
+
+.ai-edit-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.ai-edit-applied {
+  color: hsl(140, 45%, 65%);
+  font-size: 0.72rem;
+}
+
+.ai-edit-error {
+  color: hsl(0, 70%, 72%);
+  font-size: 0.72rem;
+}
+
 .ai-step-img img {
   max-width: 100%;
   border-radius: var(--radius-sm, 6px);

@@ -62,6 +62,19 @@ type AiPanelProps = {
   listWorkspaceFiles: () => Promise<TreeNode[]>;
   /** Read one Explorer file's content for an attachment. */
   readWorkspaceFile: (path: string) => Promise<string>;
+  /** Agent: open a server file and reveal a line (click a proposed-edit card). */
+  onOpenFileAtLine: (path: string, line: number) => Promise<void>;
+  /** Agent: apply a proposed edit; resolves with the pre-edit content (for Undo). */
+  onApplyEdit: (path: string, startLine: number, endLine: number, replacement: string) => Promise<string>;
+  /** Agent: undo an applied edit by restoring the captured pre-edit content. */
+  onUndoEdit: (path: string, previous: string) => Promise<void>;
+};
+
+/** Edit callbacks threaded down to a proposed_edit step card. */
+type EditHandlers = {
+  onOpen: (path: string, line: number) => Promise<void>;
+  onApply: (path: string, startLine: number, endLine: number, replacement: string) => Promise<string>;
+  onUndo: (path: string, previous: string) => Promise<void>;
 };
 
 /** The in-flight turn rendered below the persisted branch while streaming. */
@@ -78,7 +91,10 @@ export function AiPanel({
   collectContext,
   currentLanguage,
   listWorkspaceFiles,
-  readWorkspaceFile
+  readWorkspaceFile,
+  onOpenFileAtLine,
+  onApplyEdit,
+  onUndoEdit
 }: AiPanelProps) {
   const [meta, setMeta] = useState<AiModelsResponse | null>(null);
   const [model, setModel] = useState<string>("");
@@ -96,6 +112,7 @@ export function AiPanel({
   const [showThinking, setShowThinking] = useState(false);
   // Ground answers in the RAG documentation corpus (retrieval-augmented).
   const [useDocs, setUseDocs] = useState(false);
+  const [useAgent, setUseAgent] = useState(false);
   const [usage, setUsage] = useState<AiUsage | null>(null);
 
   // Explorer files explicitly attached as reference context (persist as chips for
@@ -145,6 +162,11 @@ export function AiPanel({
   const selectedModel = meta?.models.find((m) => m.id === model);
   const isLocal = selectedModel?.backend === "llama";
   const isGoogle = selectedModel?.backend === "gemini";
+  const canAgent = selectedModel?.agent === true;
+  const editHandlers = useMemo<EditHandlers>(
+    () => ({ onOpen: onOpenFileAtLine, onApply: onApplyEdit, onUndo: onUndoEdit }),
+    [onOpenFileAtLine, onApplyEdit, onUndoEdit]
+  );
 
   const reloadModels = useCallback(() => {
     return aiApi
@@ -313,6 +335,7 @@ export function AiPanel({
         ...(isLocal && reasoningEffort !== "off" ? { reasoningEffort } : {}),
         ...(isGoogle && showThinking ? { showThinking: true } : {}),
         ...(useDocs ? { useDocs: true } : {}),
+        ...(useAgent && selectedModel?.agent ? { useAgent: true } : {}),
         ...(turnContext ? { context: turnContext } : {}),
         ...(attachments.length > 0 ? { attachments } : {})
       };
@@ -354,6 +377,8 @@ export function AiPanel({
       isGoogle,
       showThinking,
       useDocs,
+      useAgent,
+      selectedModel,
       pinnedFile,
       pinnedOutput,
       collectContext,
@@ -780,6 +805,30 @@ export function AiPanel({
             </div>
           </div>
 
+          {canAgent && (
+            <div className="ai-setting">
+              <span className="ai-setting-label">
+                <Bot size={13} /> Agent
+              </span>
+              <div className="ai-segmented" data-testid="ai-use-agent" role="group" aria-label="Agent mode">
+                <button
+                  type="button"
+                  className={`ai-seg-btn${!useAgent ? " is-active" : ""}`}
+                  onClick={() => setUseAgent(false)}
+                >
+                  off
+                </button>
+                <button
+                  type="button"
+                  className={`ai-seg-btn${useAgent ? " is-active" : ""}`}
+                  onClick={() => setUseAgent(true)}
+                >
+                  on
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="ai-setting-account">
             <span className="ai-setting-label">
               <KeyRound size={13} /> Account
@@ -865,7 +914,7 @@ export function AiPanel({
                 <details className="ai-agent-steps" open>
                   <summary>Agent activity ({node.steps.length})</summary>
                   {node.steps.map((step, stepIndex) => (
-                    <AgentStepView key={stepIndex} step={step} />
+                    <AgentStepView key={stepIndex} step={step} edit={editHandlers} />
                   ))}
                 </details>
               )}
@@ -968,6 +1017,7 @@ export function AiPanel({
                     <AgentStepView
                       key={stepIndex}
                       step={step}
+                      edit={editHandlers}
                       active={
                         streaming &&
                         stepIndex === pending.steps.length - 1 &&
@@ -1246,9 +1296,99 @@ function AssistantBody({ content, streaming }: { content: string; streaming?: bo
   );
 }
 
-/** Render one Antigravity agent activity item (code/tool/image/thought).
- *  `active` marks a tool_call that is still running (spins the wrench). */
-function AgentStepView({ step, active }: { step: AiAgentStep; active?: boolean }) {
+type ProposedEdit = Extract<AiAgentStep, { kind: "proposed_edit" }>;
+
+/**
+ * Interactive card for an agent-proposed code edit: click the header to jump to
+ * `file:line`, Apply to write it (the learner approves — never silent), Undo to
+ * restore. The pre-edit content returned by Apply is captured so Undo is exact.
+ */
+function ProposedEditCard({ step, edit }: { step: ProposedEdit; edit?: EditHandlers }) {
+  const [state, setState] = useState<"idle" | "applying" | "applied">("idle");
+  const [previous, setPrevious] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const range = step.startLine === step.endLine ? `${step.startLine}` : `${step.startLine}-${step.endLine}`;
+
+  const apply = async () => {
+    if (!edit) return;
+    setState("applying");
+    setErr(null);
+    try {
+      const prev = await edit.onApply(step.path, step.startLine, step.endLine, step.replacement);
+      setPrevious(prev);
+      setState("applied");
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Apply failed");
+      setState("idle");
+    }
+  };
+
+  const undo = async () => {
+    if (!edit || previous === null) return;
+    try {
+      await edit.onUndo(step.path, previous);
+      setState("idle");
+      setPrevious(null);
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : "Undo failed");
+    }
+  };
+
+  return (
+    <div className="ai-step ai-step-edit">
+      <button
+        type="button"
+        className="ai-edit-head"
+        title="Open at this line"
+        onClick={() => void edit?.onOpen(step.path, step.startLine)}
+      >
+        <Pencil size={12} /> {step.path}:{range}
+      </button>
+      {step.note && <div className="ai-edit-note">{step.note}</div>}
+      <pre className="ai-edit-diff">
+        {step.replacement
+          .split("\n")
+          .map((line) => `+ ${line}`)
+          .join("\n")}
+      </pre>
+      <div className="ai-edit-buttons">
+        {state === "applied" ? (
+          <button type="button" className="ai-link" onClick={() => void undo()}>
+            Undo
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="ai-link"
+            disabled={state === "applying" || !edit}
+            onClick={() => void apply()}
+          >
+            {state === "applying" ? "Applying…" : "Apply"}
+          </button>
+        )}
+        {state === "applied" && <span className="ai-edit-applied">applied</span>}
+        {err && <span className="ai-edit-error">{err}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Render one agent activity item (code/tool/image/thought/proposed_edit).
+ *  `active` marks a tool_call that is still running (spins the wrench).
+ *  `edit` wires the interactive Apply/Undo + jump-to-line on a proposed_edit. */
+function AgentStepView({
+  step,
+  active,
+  edit
+}: {
+  step: AiAgentStep;
+  active?: boolean;
+  edit?: EditHandlers;
+}) {
+  if (step.kind === "proposed_edit") {
+    return <ProposedEditCard step={step} edit={edit} />;
+  }
   if (step.kind === "code_call") {
     return (
       <div className="ai-step ai-step-code">

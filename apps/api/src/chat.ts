@@ -28,8 +28,10 @@ import { makeGeminiEmbedder } from "./rag/embedding.js";
 import { formatDocContext, searchDocs } from "./rag/search.js";
 import { JsonVectorStore } from "./rag/store.js";
 import { toAgentInput } from "./ai/backends/antigravity.js";
+import { runAgent } from "./ai/agent/agentLoop.js";
+import { readMemory } from "./ai/agent/tools.js";
 import { deleteUserKey, loadUserKey, storeUserKey, userKeyInfo } from "./ai/keystore.js";
-import { buildSummaryPrompt, buildSystemPrompt } from "./ai/prompts.js";
+import { buildAgentSystemPrompt, buildSummaryPrompt, buildSystemPrompt } from "./ai/prompts.js";
 import {
   addNode,
   compactThread,
@@ -436,6 +438,49 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
           next = await agent.next();
         }
         agentMeta = next.value;
+      } else if (body.useAgent && model.agent && effectiveGeminiKey) {
+        // Local agent tool-loop (Gemini function-calling): reads the learner's code,
+        // searches the docs, proposes edits + maintains STUDY_PLAN.md / MEMORY.md.
+        // Yields the same token/step events as the Antigravity path.
+        const userHome = await ensureUserHome(config.userHomesRoot, request.user.sub);
+        const memory = await readMemory(userHome);
+        const embedder = makeGeminiEmbedder(effectiveGeminiKey, config);
+        const store = new JsonVectorStore(
+          path.join(config.ragDataRoot, "index.json"),
+          config.ragEmbeddingModel,
+          config.ragEmbedDim
+        );
+        const agentSystemPrompt = buildAgentSystemPrompt(
+          body.workflow,
+          body.skill,
+          memory,
+          body.context,
+          body.attachments
+        );
+        // For a regenerate the branch history already ends with the user turn, so
+        // drop it and re-supply it as the agent's user message (avoid duplication).
+        const agentHistory = body.regenerate ? history.slice(0, -1) : history;
+        const agent = runAgent(
+          effectiveGeminiKey,
+          model.remoteModelId,
+          agentSystemPrompt,
+          agentHistory,
+          body.message,
+          { userHome, store, embedder, log: app.log },
+          controller.signal
+        );
+        let next = await agent.next();
+        while (!next.done) {
+          const event = next.value;
+          if (event.type === "token") {
+            assistant += event.data;
+          } else if (event.type === "step") {
+            agentSteps.push(event.step);
+          }
+          sse(reply, event);
+          next = await agent.next();
+        }
+        usage = next.value;
       } else {
         // Manual iteration (not for-await) so we can read the generator's return
         // value — the token usage reported on the final chunk.

@@ -126,3 +126,36 @@ export function buildSystemPrompt(
     attachmentsSection(attachments)
   );
 }
+
+const AGENT_RULES = [
+  "You are running as an AGENT with a small fixed toolset. Use tools instead of guessing:",
+  "- search_docs before answering documentation or embedded questions, and cite what it returns.",
+  "- read_file (and list_dir) to see the learner's real code before you reason about it.",
+  "- NEVER edit the learner's code silently: propose every code change with propose_edit (a diff the learner reviews and Applies). Read the file first so the line range is exact.",
+  "- write_study_plan to maintain STUDY_PLAN.md as a milestone-based roadmap (order by dependency, not by date).",
+  "- read_memory at the start to recall where the learner is; update_memory when they reach a new milestone — track progress by what they now understand or did, NOT by calendar date.",
+  "Keep tool use purposeful and stop once you can answer. Then write the final answer in Vietnamese with inline English technical-term glosses."
+].join("\n");
+
+/**
+ * System prompt for the agentic tool-loop. Same persona/skill/workflow as the plain
+ * chat prompt, plus the tool-use rules and the current MEMORY.md (so the agent
+ * continues from the learner's tracked progress).
+ */
+export function buildAgentSystemPrompt(
+  workflow: AiWorkflow,
+  skill: AiSkill,
+  memory: string,
+  context?: AiContext,
+  attachments?: AiAttachment[]
+): string {
+  const memorySection = memory.trim()
+    ? `\n\nThe learner's MEMORY.md (their tracked progress — build on it):\n\`\`\`\n${memory.trim()}\n\`\`\``
+    : "";
+  return (
+    [PERSONA, skillSection(skill), workflowSection(workflow), AGENT_RULES].join("\n\n") +
+    memorySection +
+    contextSection(context) +
+    attachmentsSection(attachments)
+  );
+}
