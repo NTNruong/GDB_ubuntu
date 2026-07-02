@@ -1,0 +1,5 @@
+// Self-test golden set for the committed NVIC sample corpus (apps/api/corpus/example-cmsis-nvic.md).
+// Ingest the sample first, then: npm run -w @internal/api rag:eval -- eval/rag-golden.sample.jsonl
+{"q":"On Cortex-M, does a higher or lower priority number preempt?","expectDoc":"CMSIS-Core (NVIC)","expectHeadingIncludes":"Priority","expectTextIncludes":["Lower numerical priority"]}
+{"q":"Which CMSIS function sets an interrupt's priority?","expectHeadingIncludes":"CMSIS API","expectTextIncludes":["NVIC_SetPriority"]}
+{"q":"Which register field splits priority into preempt vs sub-priority?","expectTextIncludes":["AIRCR"]}

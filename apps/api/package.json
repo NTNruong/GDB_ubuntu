@@ -10,7 +10,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "rag:ingest": "tsx src/rag/ingest.ts"
+    "rag:ingest": "tsx src/rag/ingest.ts",
+    "rag:eval": "tsx src/rag/eval.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

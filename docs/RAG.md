@@ -163,6 +163,42 @@ docker compose up -d api      # picks up RAG_DATA_HOST_ROOT
 The Docs path is **best-effort**: if retrieval fails (no key, empty index), the chat
 still answers, just without grounding — it never hard-fails the turn.
 
+## Evaluation (recall@k / MRR)
+
+Retrieval quality is measured, not assumed. `apps/api/src/rag/eval.ts` retrieves
+top-K for a set of golden questions and reports **hit-rate@{1,3,5,10}** (does a
+matching chunk appear in the top-k?) and **MRR** (mean reciprocal rank of the first
+match). Since each golden item has one correct-passage predicate, hit-rate and
+recall coincide here.
+
+**Golden-item schema** (JSONL, one object per line; blank lines and `//` comments
+are skipped):
+
+```json
+{"q": "question text", "expectDoc": "optional exact doc label", "expectHeadingIncludes": "optional case-insensitive heading substring", "expectTextIncludes": ["required", "case-insensitive substrings, ALL must appear in the same hit"]}
+```
+
+Anchor `expectTextIncludes` to a **unique text substring** rather than a chunk
+index/ordinal — chunk ids shift on re-chunking, but the substring survives.
+
+The repo ships only a tiny self-test golden set
+(`apps/api/eval/rag-golden.sample.jsonl`) against the committed NVIC sample corpus.
+The operator authors the real set — `apps/api/eval/rag-golden.jsonl` (gitignored,
+like the corpus: its anchors may quote copyrighted manuals) — with ~25–30 questions
+against the real server index, verifying each `expectTextIncludes` string actually
+`grep`s inside `corpus-md/`.
+
+Run:
+
+```bash
+GEMINI_API_KEY=… RAG_DATA_ROOT=… npm run -w @internal/api rag:eval -- eval/rag-golden.jsonl
+```
+
+**Decision gate:** hit-rate@5 ≥ **0.85** ⇒ retrieval is trustworthy as-is. Below
+that, the failure list (each miss's actual top-1 doc/heading) shows what retrieval
+returned instead, motivating hybrid/reranker work before spending effort there
+blind.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
