@@ -51,6 +51,17 @@ services:
       RAG_DATA_ROOT: "/rag-data"
       RAG_EMBEDDING_MODEL: "${RAG_EMBEDDING_MODEL:-gemini-embedding-2}"
       RAG_EMBED_DIM: "${RAG_EMBED_DIM:-768}"
+      # RAG_EMBED_BACKEND=local switches QUERY-TIME embedding (this container calls
+      # it live, unlike ingest which is host-side) to a local llama.cpp embeddings
+      # server (RX570, no Google quota) instead of Gemini. Ships dark: default
+      # "gemini" is today's behavior. LOCAL_EMBED_BASE_URL must be the host's
+      # tailnet/LAN address (rootless Docker blocks host.docker.internal), matching
+      # the LLAMA_BASE_URL pattern above. Full runbook: docs/RAG.md.
+      RAG_EMBED_BACKEND: "${RAG_EMBED_BACKEND:-gemini}"
+      LOCAL_EMBED_BASE_URL: "${LOCAL_EMBED_BASE_URL:-http://host.docker.internal:8001}"
+      LOCAL_EMBED_MODEL: "${LOCAL_EMBED_MODEL:-qwen3-embedding-0.6b}"
+      LOCAL_EMBED_DIM: "${LOCAL_EMBED_DIM:-1024}"
+      LOCAL_EMBED_API_KEY: "${LOCAL_EMBED_API_KEY:-}"
     extra_hosts:
       # Lets the api container reach a llama.cpp server running on the host.
       - "host.docker.internal:host-gateway"

@@ -11,8 +11,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { readConfig } from "../config.js";
 import { chunkMarkdown } from "./chunk.js";
-import { GeminiEmbedder } from "./embedding.js";
-import { QuotaExhaustedError, getEmbedRateLimiter } from "./rateLimiter.js";
+import { activeEmbedModelDim, indexFilePath, makeEmbedder } from "./embedderFactory.js";
+import { QuotaExhaustedError } from "./rateLimiter.js";
 import { JsonVectorStore, type StoredChunk } from "./store.js";
 
 type ManifestEntry = {
@@ -36,8 +36,9 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 async function main(): Promise<void> {
   const config = readConfig();
-  if (!config.geminiApiKey) {
-    throw new Error("GEMINI_API_KEY is required to embed the corpus");
+  // The local backend needs no Google key; only the (default) gemini backend does.
+  if (config.ragEmbedBackend === "gemini" && !config.geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is required to embed the corpus (or set RAG_EMBED_BACKEND=local)");
   }
   // Throttle between embedding calls so a large corpus doesn't blow the Gemini
   // per-minute quota (the embedder also retries 429s). CLI-only knob → read the
@@ -49,26 +50,14 @@ async function main(): Promise<void> {
 
   // Patient wait budget: ride out per-minute throttling instead of crashing, but stop
   // cleanly (rather than hang ~24h) once the daily cap is hit — a re-run then resumes.
+  // (No-op for the local backend, which has no rate limiter.)
   const maxWaitMs = Number.parseInt(process.env.RAG_INGEST_MAX_WAIT_MS ?? "300000", 10);
-  const limiter = getEmbedRateLimiter({
-    rpm: config.ragEmbedRpm,
-    tpm: config.ragEmbedTpm,
-    rpd: config.ragEmbedRpd
-  });
-  const embedder = new GeminiEmbedder(
-    config.geminiApiKey,
-    config.ragEmbeddingModel,
-    config.ragEmbedDim,
-    undefined,
-    5,
-    limiter,
-    maxWaitMs
-  );
-  const store = new JsonVectorStore(
-    path.join(config.ragDataRoot, "index.json"),
-    config.ragEmbeddingModel,
-    config.ragEmbedDim
-  );
+  const embedder = makeEmbedder(config, config.geminiApiKey, maxWaitMs);
+  if (!embedder) {
+    throw new Error("Failed to build the embedder");
+  }
+  const { model: embedModel, dim: embedDim } = activeEmbedModelDim(config);
+  const store = new JsonVectorStore(indexFilePath(config), embedModel, embedDim);
   // Resume support: skip chunks already embedded (same id) so an interrupted run — or one
   // stopped by the daily quota — picks up where it left off without re-spending quota.
   const existing = await store.existingIds();
@@ -115,7 +104,7 @@ async function main(): Promise<void> {
     total += stored.length;
     process.stdout.write(`${entry.doc}: ${stored.length} chunks (${skipped} skipped so far)\n`);
   }
-  process.stdout.write(`Indexed ${total} new chunks (${skipped} skipped, model ${config.ragEmbeddingModel}, dim ${config.ragEmbedDim}) → ${path.join(config.ragDataRoot, "index.json")}\n`);
+  process.stdout.write(`Indexed ${total} new chunks (${skipped} skipped, model ${embedModel}, dim ${embedDim}) → ${indexFilePath(config)}\n`);
 }
 
 main().catch((error: unknown) => {

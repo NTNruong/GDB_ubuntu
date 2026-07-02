@@ -73,13 +73,22 @@ export class JsonVectorStore implements VectorStore {
     if (this.chunks) {
       return this.chunks;
     }
+    let raw: string;
     try {
-      const raw = await readFile(this.file, "utf8");
-      const parsed = JSON.parse(raw) as IndexFile;
-      this.chunks = parsed.chunks ?? [];
+      raw = await readFile(this.file, "utf8");
     } catch {
       this.chunks = [];
+      return this.chunks;
     }
+    const parsed = JSON.parse(raw) as IndexFile;
+    if (parsed.model !== undefined && parsed.dim !== undefined) {
+      if (parsed.model !== this.model || parsed.dim !== this.dim) {
+        throw new Error(
+          `index model/dim mismatch: file=${parsed.model}/${parsed.dim} expected=${this.model}/${this.dim} — re-ingest or fix RAG_EMBED_BACKEND`
+        );
+      }
+    }
+    this.chunks = parsed.chunks ?? [];
     return this.chunks;
   }
 

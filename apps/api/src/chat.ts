@@ -20,11 +20,10 @@ import {
   type ChatMessage,
   type RagCitation
 } from "@internal/shared";
-import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiConfig } from "./config.js";
 import { enabledModels, findEnabledModel, streamAgent, streamChat } from "./ai/index.js";
-import { makeGeminiEmbedder } from "./rag/embedding.js";
+import { activeEmbedModelDim, indexFilePath, makeEmbedder } from "./rag/embedderFactory.js";
 import { formatDocContext, searchDocs } from "./rag/search.js";
 import { JsonVectorStore } from "./rag/store.js";
 import { toAgentInput } from "./ai/backends/antigravity.js";
@@ -326,15 +325,13 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
     // break the chat, so we log and continue without docs.
     let docCitations: RagCitation[] = [];
     let docContext = "";
-    if (body.useDocs && effectiveGeminiKey) {
+    // The local embed backend needs no Google key; gate on that OR a resolved Gemini key.
+    if (body.useDocs && (config.ragEmbedBackend === "local" || effectiveGeminiKey)) {
       try {
-        const embedder = makeGeminiEmbedder(effectiveGeminiKey, config);
+        const embedder = makeEmbedder(config, effectiveGeminiKey);
         if (embedder) {
-          const store = new JsonVectorStore(
-            path.join(config.ragDataRoot, "index.json"),
-            config.ragEmbeddingModel,
-            config.ragEmbedDim
-          );
+          const { model: embedModel, dim: embedDim } = activeEmbedModelDim(config);
+          const store = new JsonVectorStore(indexFilePath(config), embedModel, embedDim);
           const hits = await searchDocs(store, embedder, body.message);
           if (hits.length > 0) {
             docContext = formatDocContext(hits);
@@ -444,12 +441,9 @@ export function registerChat(app: FastifyInstance, config: ApiConfig): void {
         // Yields the same token/step events as the Antigravity path.
         const userHome = await ensureUserHome(config.userHomesRoot, request.user.sub);
         const memory = await readMemory(userHome);
-        const embedder = makeGeminiEmbedder(effectiveGeminiKey, config);
-        const store = new JsonVectorStore(
-          path.join(config.ragDataRoot, "index.json"),
-          config.ragEmbeddingModel,
-          config.ragEmbedDim
-        );
+        const embedder = makeEmbedder(config, effectiveGeminiKey);
+        const { model: embedModel, dim: embedDim } = activeEmbedModelDim(config);
+        const store = new JsonVectorStore(indexFilePath(config), embedModel, embedDim);
         const agentSystemPrompt = buildAgentSystemPrompt(
           body.workflow,
           body.skill,

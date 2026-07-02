@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readConfig } from "../config.js";
 import type { Embedder } from "./embedding.js";
-import { makeGeminiEmbedder } from "./embedding.js";
+import { activeEmbedModelDim, indexFilePath, makeEmbedder } from "./embedderFactory.js";
 import { searchDocs } from "./search.js";
 import { JsonVectorStore, type RagHit, type VectorStore } from "./store.js";
 
@@ -161,18 +161,16 @@ export function formatReport(r: EvalResult): string {
 
 async function main(): Promise<void> {
   const config = readConfig();
-  if (!config.geminiApiKey) {
-    throw new Error("GEMINI_API_KEY is required to embed eval queries");
+  // The local backend needs no Google key; only the (default) gemini backend does.
+  if (config.ragEmbedBackend === "gemini" && !config.geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is required to embed eval queries (or set RAG_EMBED_BACKEND=local)");
   }
-  const embedder = makeGeminiEmbedder(config.geminiApiKey, config);
+  const embedder = makeEmbedder(config, config.geminiApiKey);
   if (!embedder) {
-    throw new Error("Failed to build the Gemini embedder");
+    throw new Error("Failed to build the embedder");
   }
-  const store = new JsonVectorStore(
-    path.join(config.ragDataRoot, "index.json"),
-    config.ragEmbeddingModel,
-    config.ragEmbedDim
-  );
+  const { model: embedModel, dim: embedDim } = activeEmbedModelDim(config);
+  const store = new JsonVectorStore(indexFilePath(config), embedModel, embedDim);
   if ((await store.size()) === 0) {
     process.stderr.write("index empty — run rag:ingest first\n");
     process.exitCode = 1;

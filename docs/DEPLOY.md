@@ -140,7 +140,54 @@ Polaris/gfx803 is dropped by ROCm → use the **Vulkan (RADV)** backend. Run lla
    > interface only (`sudo ufw allow in on tailscale0 to any port 8000`).
 5. **Optional power cap (~85% TDP):** the card's default `power1_cap` already governs it; to lower further needs amdgpu OverDrive (`amdgpu.ppfeaturemask=0xffffffff` in GRUB → reboot), then write `/sys/class/drm/card<8GB>/device/hwmon/hwmon*/power1_cap` (µW). Some VBIOSes lock it; this is best-effort and non-essential.
 
-### b) App env (deploy `.env` next to `docker-compose.yml`)
+### b) Host llama.cpp embeddings server (Qwen3-Embedding on the RX570)
+
+RAG (Phase A) query-time embedding defaults to the Gemini free-tier API, which has a
+tight quota (~100 RPM / 30K TPM / 1K RPD — see [RAG.md](RAG.md) troubleshooting).
+`RAG_EMBED_BACKEND=local` moves it to a **second** llama.cpp server on the spare
+**RX570 (4GB, PCIe x4)**, so both chat and doc-retrieval embedding run entirely on
+local GPUs with no Google quota. Same Vulkan/RADV constraint as (a) — build once,
+reuse the same `llama-server` binary.
+
+1. Get the model (OpenAI-compatible `/v1/embeddings`, `--embeddings --pooling last`):
+   ```bash
+   cd ~/llama.cpp/models
+   wget https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-f16.gguf
+   ```
+2. Pick the **4GB** card via `--list-devices` (the RX570, distinct from the RX580 used
+   by (a) — identify by VRAM since both share PCI id 0x67DF). Reuse the same
+   `api-key.txt` from (a) so one secret protects both model ports.
+3. Run as a **systemd service**:
+   ```ini
+   # /etc/systemd/system/llama-embed.service
+   [Unit]
+   Description=llama.cpp embeddings server (Qwen3-Embedding, Vulkan RX570)
+   After=multi-user.target tailscaled.service
+   [Service]
+   User=truong
+   SupplementaryGroups=render video
+   WorkingDirectory=/home/truong/llama.cpp
+   # Same tailnet-only binding rationale as llama-server.service (a).
+   ExecStart=/home/truong/llama.cpp/build/bin/llama-server \
+     -m /home/truong/llama.cpp/models/Qwen3-Embedding-0.6B-f16.gguf \
+     --device Vulkan1 -c 4096 \
+     --embeddings --pooling last \
+     --host 100.x.x.x --port 8001 \
+     --api-key-file /home/truong/llama.cpp/api-key.txt
+   Restart=on-failure
+   RestartSec=3
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   ```bash
+   sudo systemctl daemon-reload && sudo systemctl enable --now llama-embed
+   KEY=$(cat /home/truong/llama.cpp/api-key.txt)
+   curl -s -H "Authorization: Bearer $KEY" http://gdb.char-newton.ts.net:8001/v1/embeddings \
+     -H 'content-type: application/json' -d '{"model":"qwen3-embedding-0.6b","input":"test"}'
+   # → {"data":[{"embedding":[...1024 floats...]}], ...} confirms native dim = 1024.
+   ```
+
+### c) App env (deploy `.env` next to `docker-compose.yml`)
 
 - `LLAMA_BASE_URL=http://gdb.char-newton.ts.net:8000` — under **rootless Docker** the container can't use `host.docker.internal` (host-loopback disabled), so point it at the host's tailnet name (or real LAN IP). Set `AI_ENABLED=0` to hide the local model.
 - `LLAMA_API_KEY=<contents of api-key.txt>` — **must match** llama-server's `--api-key-file` or every local-model call returns 401. This is what makes exposing :8000 on the tailnet safe.
@@ -148,10 +195,11 @@ Polaris/gfx803 is dropped by ROCm → use the **Vulkan (RADV)** backend. Run lla
 - `AI_KEY_SECRET=$(openssl rand -hex 32)` — encrypts per-user keys at rest. **Defaults to `SESSION_SECRET`**, so if that is already set you can skip this; keep it stable or stored keys become undecryptable.
 - `AI_DATA_HOST_ROOT=/home/gdbrunner/gdb-ai-data` — host bind for per-user chat threads + encrypted keys (separate from `USER_HOMES_HOST_ROOT` so chats never show in the file explorer). `mkdir -p` it as the service user. This is a **stateful path — back it up** alongside `users.json`.
 - `RAG_DATA_HOST_ROOT=/opt/gdb-rag/index` — host bind for the RAG doc index (built on the host by `bin/rag-ingest.sh`, mounted **read-only** into the api as `/rag-data`). `RAG_EMBEDDING_MODEL` (default `gemini-embedding-2`) and `RAG_EMBED_DIM` (default `768`) **must match what ingest used**, or the store rejects the vectors. Full runbook → [RAG.md](RAG.md).
+- `RAG_EMBED_BACKEND=local` — flips **query-time** RAG embedding (chat.ts, called live from inside this container) from Gemini to the (b) llama-embed server. Ships dark: default `gemini` is today's behavior. `LOCAL_EMBED_BASE_URL=http://gdb.char-newton.ts.net:8001` (tailnet name, same rootless-Docker constraint as `LLAMA_BASE_URL`), `LOCAL_EMBED_MODEL=qwen3-embedding-0.6b`, `LOCAL_EMBED_DIM=1024`, `LOCAL_EMBED_API_KEY=<contents of api-key.txt>`. Requires a **re-ingest** first (the index filename encodes model+dim — see [RAG.md](RAG.md) "Local embedding backend").
 
 Then `docker compose up -d` (env-only → no `--build`).
 
-### c) Per-user API keys
+### d) Per-user API keys
 
 Each logged-in user pastes their own Google AI Studio key in the assistant panel ("Add your Google API key"). It is stored **AES-256-GCM encrypted** under `AI_DATA_ROOT/<user>/gemini-key.enc`, never returned to the browser (only `••last4`), and redacted from logs. A user key **takes precedence** over `GEMINI_API_KEY`; with neither, that user simply sees only the local model. The local llama model needs no key.
 

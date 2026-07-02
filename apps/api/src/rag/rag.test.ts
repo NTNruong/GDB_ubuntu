@@ -66,6 +66,17 @@ describe("JsonVectorStore", () => {
     const hits = await store.search([1, 0, 0], 1);
     expect(hits[0]?.text).toBe("v2");
   });
+
+  it("throws on a model/dim mismatch instead of silently returning garbage cosine", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "rag-test-"));
+    dirs.push(dir);
+    const file = path.join(dir, "index.json");
+    await new JsonVectorStore(file, "gemini-embedding-2", 768).add([chunk("a", "x", [1, 0, 0])]);
+
+    // A different embedder (e.g. the local backend) pointed at the same file.
+    const mismatched = new JsonVectorStore(file, "qwen3-embedding-0.6b", 1024);
+    await expect(mismatched.size()).rejects.toThrow(/model\/dim mismatch/);
+  });
 });
 
 describe("searchDocs + formatDocContext", () => {

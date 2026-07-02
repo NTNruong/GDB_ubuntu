@@ -42,6 +42,16 @@ export type ApiConfig = {
   ragEmbedRpm: number;
   ragEmbedTpm: number;
   ragEmbedRpd: number;
+  /** Embedding backend: "gemini" (cloud, quota-limited) or "local" (host llama.cpp, no quota). */
+  ragEmbedBackend: "gemini" | "local";
+  /** Base URL of the local embedding server (llama.cpp `--embeddings`, OpenAI-compatible). */
+  localEmbedBaseUrl: string;
+  /** Model label sent to the local embedding server (free-form; llama-server just echoes it). */
+  localEmbedModel: string;
+  /** Native output dimensionality of the local embedding model. */
+  localEmbedDim: number;
+  /** Bearer token for the local embedding server; "" = no auth. */
+  localEmbedApiKey: string;
 };
 
 export function readConfig(): ApiConfig {
@@ -72,6 +82,13 @@ export function readConfig(): ApiConfig {
     // the limiter leaves headroom for Google's own accounting slop (band-aid, ISSUE-097).
     ragEmbedRpm: Number.parseInt(process.env.RAG_EMBED_RPM ?? "90", 10),
     ragEmbedTpm: Number.parseInt(process.env.RAG_EMBED_TPM ?? "27000", 10),
-    ragEmbedRpd: Number.parseInt(process.env.RAG_EMBED_RPD ?? "900", 10)
+    ragEmbedRpd: Number.parseInt(process.env.RAG_EMBED_RPD ?? "900", 10),
+    // Ships dark: default "gemini" preserves today's behavior. Flip to "local" only
+    // after re-ingesting against the host embedding server (dim differs → new index file).
+    ragEmbedBackend: process.env.RAG_EMBED_BACKEND === "local" ? "local" : "gemini",
+    localEmbedBaseUrl: process.env.LOCAL_EMBED_BASE_URL ?? "http://localhost:8001",
+    localEmbedModel: process.env.LOCAL_EMBED_MODEL ?? "qwen3-embedding-0.6b",
+    localEmbedDim: Number.parseInt(process.env.LOCAL_EMBED_DIM ?? "1024", 10),
+    localEmbedApiKey: process.env.LOCAL_EMBED_API_KEY ?? ""
   };
 }

@@ -33,7 +33,12 @@ describe("admin + account routes", () => {
       ragEmbedDim: 768,
       ragEmbedRpm: 90,
       ragEmbedTpm: 27000,
-      ragEmbedRpd: 900
+      ragEmbedRpd: 900,
+      ragEmbedBackend: "gemini",
+      localEmbedBaseUrl: "http://127.0.0.1:1",
+      localEmbedModel: "qwen3-embedding-0.6b",
+      localEmbedDim: 1024,
+      localEmbedApiKey: ""
     };
     await addUser(config.usersFile, "boss", "boss-pw", { role: "admin" });
     await addUser(config.usersFile, "user1", "user-pw"); // plain user

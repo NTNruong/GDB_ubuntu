@@ -14,15 +14,17 @@ toggle). This doc is the *operator* side: links, folders, conversion, ingest, ve
 ```
 host:  download PDFs / HTML  → /opt/gdb-rag/drop        (raw; copyrighted = never committed)
 host:  markitdown / docling  → /opt/gdb-rag/corpus-md   (.md + corpus.manifest.json)
-host:  bin/rag-ingest.sh     → /opt/gdb-rag/index/index.json   (embed each chunk via Gemini)
-api :  bind /opt/gdb-rag/index → /rag-data (read-only); chat reads /rag-data/index.json
+host:  bin/rag-ingest.sh     → /opt/gdb-rag/index/index_<model>_<dim>.json (embed each chunk)
+api :  bind /opt/gdb-rag/index → /rag-data (read-only); chat reads the matching index file
 ```
 
 Ingestion runs **on the host** and writes the index; the **container only reads** it
-(bind is `:ro`). The embedding **model + dimensions must match** on both sides — the
-store rejects vectors built with a different model/dim. Pilot uses
-`gemini-embedding-2` / `768` (multimodal, 3072-dim native, truncated to 768 via
-Matryoshka to keep the index compact).
+(bind is `:ro`). The index filename encodes the embedding model + dimensions
+(`index_<model>_<dim>.json`), so switching backend never silently mixes incompatible
+vectors — and loading a file whose persisted `model`/`dim` differs from the
+configured one throws loudly instead of scoring garbage cosine similarities. Pilot
+default is `gemini-embedding-2` / `768` (multimodal, 3072-dim native, truncated to
+768 via Matryoshka); the local backend (below) is `qwen3-embedding-0.6b` / `1024`.
 
 ## Folder layout on the server (`/opt/gdb-rag/`)
 
@@ -33,7 +35,7 @@ next to git and survive a repo re-clone.
 |-----|-------|
 | `drop/` | raw downloaded PDFs/HTML (incl. copyrighted vendor manuals) — local only |
 | `corpus-md/` | converted `.md` + `corpus.manifest.json` — local only |
-| `index/` | `index.json` (the embedded vector store) → bind-mounted into api as `/rag-data` |
+| `index/` | `index_<model>_<dim>.json` (the embedded vector store, one file per embedding model+dim) → bind-mounted into api as `/rag-data` |
 | `.venv/` | Python venv with the converters (markitdown + docling) |
 
 ## One-time setup
@@ -49,6 +51,9 @@ RAG_DATA_HOST_ROOT=/opt/gdb-rag/index
 # optional — only if you change the model/dim from the defaults below:
 # RAG_EMBEDDING_MODEL=gemini-embedding-2
 # RAG_EMBED_DIM=768
+# optional — switch query-time embedding to the local RX570 server (see
+# "Local embedding backend" below) instead of Gemini:
+# RAG_EMBED_BACKEND=local
 ```
 
 `docker-compose.yml` already maps `RAG_DATA_HOST_ROOT → /rag-data:ro` and sets
@@ -135,9 +140,9 @@ docling    drop/stm32f4-rm0090.pdf --to md --output corpus-md/stm32f4-rm0090.md
 RAG_ROOT=/opt/gdb-rag GEMINI_KEY_FILE=/opt/gdb-rag/gemini-key.txt bin/rag-ingest.sh
 ```
 
-Prints `Indexed N chunks (model …, dim …) → /opt/gdb-rag/index/index.json`. Re-running
-is an **upsert by id** (`<doc-slug>#<n>`), so re-ingest after editing the corpus; to
-fully rebuild, delete `index/index.json` first.
+Prints `Indexed N chunks (model …, dim …) → /opt/gdb-rag/index/index_<model>_<dim>.json`.
+Re-running is an **upsert by id** (`<doc-slug>#<n>`), so re-ingest after editing the
+corpus; to fully rebuild, delete that index file first.
 
 **Rate limits (429 / "too many requests"):** the free `gemini-embedding-2` tier is
 ~100 requests/min (30K tokens/min, 1K/day). `bin/rag-ingest.sh` throttles with `RAG_INGEST_DELAY_MS` (default
@@ -151,6 +156,36 @@ Then make the container see it:
 ```bash
 docker compose up -d api      # picks up RAG_DATA_HOST_ROOT
 ```
+
+## Local embedding backend
+
+Query-time embedding (what the api container calls live on every `useDocs` chat turn)
+defaults to Gemini, which has a tight free-tier quota (see Troubleshooting below). A
+second host llama.cpp server (Qwen3-Embedding-0.6B on the spare RX570 — setup:
+[DEPLOY.md §b](DEPLOY.md#b-host-llamacpp-embeddings-server-qwen3-embedding-on-the-rx570))
+serves the same role with **no Google quota**.
+
+Switching backend:
+
+1. **Re-ingest first.** The index filename encodes model+dim
+   (`index_qwen3-embedding-0-6b_1024.json` ≠ `index_gemini-embedding-2_768.json`), so
+   switching backend without re-ingesting just means the container can't find a
+   matching index (empty retrieval, not a crash — see Troubleshooting) rather than
+   mixing 768-dim and 1024-dim vectors in one file:
+   ```bash
+   RAG_ROOT=/opt/gdb-rag RAG_EMBED_BACKEND=local bin/rag-ingest.sh
+   ```
+2. **A/B before flipping the default** (this is what the [Evaluation](#evaluation-recallk--mrr)
+   harness is for — run it once per backend, since each opens its own index file):
+   ```bash
+   GEMINI_API_KEY=…    RAG_DATA_ROOT=/opt/gdb-rag/index                     npm run -w @internal/api rag:eval -- eval/rag-golden.jsonl
+   RAG_EMBED_BACKEND=local RAG_DATA_ROOT=/opt/gdb-rag/index LOCAL_EMBED_BASE_URL=http://localhost:8001 npm run -w @internal/api rag:eval -- eval/rag-golden.jsonl
+   ```
+   The gemini run still spends a little query quota; the local run is free.
+3. **Flip the deploy default** once local's hit-rate@5 is at least as good: set
+   `RAG_EMBED_BACKEND=local` in the deploy `.env` (+ `LOCAL_EMBED_*`, see
+   [DEPLOY.md §c](DEPLOY.md#c-app-env-deploy-env-next-to-docker-composeyml)) and
+   `docker compose up -d api`.
 
 ## Use in chat (verify)
 
@@ -203,11 +238,12 @@ blind.
 
 | Symptom | Cause / fix |
 |---------|-------------|
-| No citations, answer is generic | Docs toggle off; or no effective Gemini key (server `GEMINI_API_KEY` or a per-user key); or empty/missing index. |
+| No citations, answer is generic | Docs toggle off; or (gemini backend) no effective Gemini key (server `GEMINI_API_KEY` or a per-user key); or empty/missing index for the active backend — retrieval degrades silently (best-effort), it never hard-fails the turn. |
 | `Indexed 0 chunks` | Manifest `file` paths don't resolve, or the `.md` is empty (bad conversion). |
-| Container answers but never cites | `RAG_DATA_HOST_ROOT` not pointing at `/opt/gdb-rag/index`, or container not restarted. |
-| Store rejects vectors / dim error | `RAG_EMBEDDING_MODEL` / `RAG_EMBED_DIM` in the container differ from what ingest used. Keep both sides identical; to change model/dim, rebuild the index. |
-| `429` / rate-limit during ingest | Free tier ~100 req/min. Raise `RAG_INGEST_DELAY_MS` (ingest already retries with backoff, so it recovers on its own — this just avoids the churn). |
+| Container answers but never cites | `RAG_DATA_HOST_ROOT` not pointing at `/opt/gdb-rag/index`, container not restarted, or `RAG_EMBED_BACKEND` doesn't match what was ingested (the container looks for `index_<model>_<dim>.json` — see below). |
+| `index model/dim mismatch` error in logs | The index file's persisted `model`/`dim` doesn't match the container's active `RAG_EMBEDDING_MODEL`/`RAG_EMBED_DIM` (gemini) or `LOCAL_EMBED_MODEL`/`LOCAL_EMBED_DIM` (local) — e.g. `RAG_EMBED_BACKEND` was flipped without re-ingesting. The store throws loudly instead of scoring garbage cosine similarities; re-ingest for that backend (see "Local embedding backend"). |
+| Upgrading from a pre-C2 deploy (single `index.json`) | The index filename changed to `index_<model>_<dim>.json` (D4). One-time: `mv /opt/gdb-rag/index/index.json /opt/gdb-rag/index/index_gemini-embedding-2_768.json` (match whatever model/dim you actually ingested with), or just re-ingest. |
+| `429` / rate-limit during ingest (gemini backend) | Free tier ~100 req/min. Raise `RAG_INGEST_DELAY_MS` (ingest already retries with backoff, so it recovers on its own — this just avoids the churn); or switch to the local backend, which has no quota. |
 | Huge/slow ingest after a Docling manual | Inline base64 images are dropped at chunk time, but a table-heavy manual is still many chunks; that's expected. |
 | Garbled register tables | Converted with markitdown — re-convert that manual with Docling. |
 
